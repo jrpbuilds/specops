@@ -1,0 +1,85 @@
+name: specops-standard
+version: 1
+description: Standard SpecOps workflow for localized behavioral changes
+artifacts:
+  - id: exploration
+    generates: exploration.md
+    description: Evidence-backed repository exploration
+    template: ../../specops/templates/exploration.md
+    instruction: |
+      Investigate the current repository and record scope, architecture,
+      conventions, dependencies, tests, constraints, risks, and unknowns.
+      Stay Standard for low-risk detail resolvable from repository conventions
+      or a small reversible assumption. Escalate only for concrete sensitive,
+      architectural, destructive, migration, concurrency, infrastructure,
+      breaking-contract, or broad cross-module evidence, or a genuine blocker
+      after repository inspection. Explain the evidence and put
+      [ESCALATE:FULL] on its own final line; otherwise do not mention it.
+    requires: []
+
+  - id: proposal
+    generates: proposal.md
+    description: Bounded behavioral change proposal
+    template: ../../specops/templates/proposal.md
+    instruction: |
+      Explain why the change is needed, observable behavior, non-goals, impact,
+      and each new or modified capability using a stable kebab-case name.
+    requires: [exploration]
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Testable behavioral specification deltas
+    template: ../../specops/templates/spec.md
+    instruction: |
+      Create one delta specification per proposal capability. Use ADDED,
+      MODIFIED, REMOVED, or RENAMED Requirements, SHALL or MUST, and at least
+      one four-hash WHEN/THEN scenario per requirement.
+    requires: [proposal]
+
+  - id: tasks
+    generates: tasks.md
+    description: Ordered implementation and validation checklist
+    template: ../../specops/templates/tasks.md
+    instruction: |
+      Produce small dependency-ordered '- [ ] N.N' tasks mapped to requirements,
+      including focused tests, validation, documentation, and regression checks.
+    requires: [specs]
+
+  - id: verification
+    generates: verification.md
+    description: Requirement traceability and executed test evidence
+    template: ../../specops/templates/verification.md
+    instruction: |
+      Trace every requirement to implementation and actual command evidence.
+      Record exit codes and gaps. Escalate only when implementation exposes
+      concrete Full-tier scope or risk, or verification is genuinely blocked.
+      Put [ESCALATE:FULL] on its own final line; otherwise do not mention it.
+    requires: [tasks]
+
+  - id: judgment
+    generates: judgment.md
+    description: Two independent adversarial judgments
+    template: ../../specops/templates/judgment.md
+    instruction: |
+      Preserve both judge outputs, verdicts, reviewed diff hash, and remediation
+      cycle. PASS requires both standalone judge passes.
+    requires: [verification]
+
+  - id: review
+    generates: review-ledger.md
+    description: Refuted Standard-tier review ledger
+    template: ../../specops/templates/review-ledger.md
+    instruction: |
+      Preserve risk and reliability reviews plus their refuted, prioritized
+      ledger. Findings must be evidence-backed and severity-tagged.
+    requires: [judgment]
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Implement the approved localized behavioral change, keep tasks accurate,
+    run focused tests, and make small reversible choices for low-risk missing
+    detail. Escalate only for concrete Full-tier scope or material risk, or a
+    genuine blocker after repository inspection. Put [ESCALATE:FULL] on its
+    own final line; otherwise do not mention it.

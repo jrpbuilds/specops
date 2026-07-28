@@ -1,0 +1,63 @@
+name: specops-lean
+version: 1
+description: Lean SpecOps workflow for localized, low-risk changes
+artifacts:
+  - id: exploration
+    generates: exploration.md
+    description: Focused implementation brief
+    template: ../../specops/templates/exploration.md
+    instruction: |
+      Produce a concise, evidence-backed implementation brief for a localized
+      low-risk change. Record affected paths, existing intended behavior,
+      acceptance checks, a minimal implementation outline, and explicit
+      non-goals. A bug fix must restore already-intended behavior. Stay Lean
+      when low-risk details can be resolved from repository conventions or a
+      small reversible assumption; documentation wording is not a behavioral
+      requirement change. Escalate only for a measured scope beyond two files
+      or one module, a concrete material risk, or a genuine blocker that
+      remains after repository inspection. Full-tier signals are security,
+      architecture, destructive work, migration, concurrency, infrastructure,
+      or a breaking contract. When escalation is required, explain the
+      evidence and put the exact marker on its own final line. Otherwise do not
+      mention an escalation marker.
+    requires: []
+
+  - id: verification
+    generates: verification.md
+    description: Executed validation and acceptance evidence
+    template: ../../specops/templates/verification.md
+    instruction: |
+      Verify the focused brief against current code. Record commands actually
+      run, exit codes, relevant output, changed paths, acceptance coverage, and
+      gaps. Escalate only for measured scope overflow, concrete material risk,
+      or a genuine blocker. Put a required marker on its own final line;
+      otherwise do not mention escalation markers.
+    requires: [exploration]
+
+  - id: judgment
+    generates: judgment.md
+    description: Independent Lean-tier judgment
+    template: ../../specops/templates/judgment.md
+    instruction: |
+      Preserve the required judge output, reviewed diff hash, verdict, and
+      remediation cycle. Lean requires jd-judge-a to emit a standalone [PASS].
+    requires: [verification]
+
+  - id: review
+    generates: review-ledger.md
+    description: Focused Lean-tier risk review
+    template: ../../specops/templates/review-ledger.md
+    instruction: |
+      Preserve review-risk output and the reviewed diff hash. Findings must be
+      evidence-backed, actionable, and severity-tagged.
+    requires: [judgment]
+
+apply:
+  requires: [exploration]
+  tracks: null
+  instruction: |
+    Implement only the localized brief. Run focused tests, do not expand scope,
+    and make small reversible choices when low-risk detail is unspecified.
+    Escalate only for measured scope overflow, concrete material risk, or a
+    genuine blocker after repository inspection. Put a required marker on its
+    own final line; otherwise do not mention escalation markers.

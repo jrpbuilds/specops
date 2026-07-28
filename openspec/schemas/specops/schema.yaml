@@ -1,0 +1,97 @@
+name: specops
+version: 1
+description: SpecOps workflow - exploration through adversarial review
+artifacts:
+  - id: exploration
+    generates: exploration.md
+    description: Evidence-backed repository and problem exploration
+    template: exploration.md
+    instruction: |
+      Investigate the current repository before proposing a solution. Record
+      scope, relevant architecture, conventions, dependencies, test commands,
+      constraints, risks, and unresolved questions. Separate facts from
+      inference and cite paths. Do not make implementation changes.
+    requires: []
+
+  - id: proposal
+    generates: proposal.md
+    description: Bounded change proposal
+    template: proposal.md
+    instruction: |
+      Explain why the change is needed, what observable behavior changes, what
+      is explicitly out of scope, and what is affected. List each new or
+      modified capability using a stable kebab-case name. Mark breaking changes.
+    requires: [exploration]
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Testable behavioral specification deltas
+    template: spec.md
+    instruction: |
+      Create one delta specification per capability declared by the proposal.
+      Use ADDED, MODIFIED, REMOVED, or RENAMED Requirements sections. Each
+      requirement uses SHALL or MUST and has at least one four-hash Scenario
+      with WHEN and THEN bullets. A new capability starts with a useful Purpose.
+      Copy full existing requirement blocks when modifying behavior.
+    requires: [proposal]
+
+  - id: design
+    generates: design.md
+    description: Technical design and engineering decisions
+    template: design.md
+    instruction: |
+      Describe the implementation approach and why it satisfies the specs.
+      Include interfaces, data flow, alternatives, failure modes, security,
+      compatibility, migration and rollback, test strategy, and resolved risks.
+      Do not repeat the proposal or leave scope-changing questions unresolved.
+    requires: [proposal, specs]
+
+  - id: tasks
+    generates: tasks.md
+    description: Ordered implementation and validation checklist
+    template: tasks.md
+    instruction: |
+      Break the design into small dependency-ordered checkbox tasks. Use only
+      '- [ ] N.N' task syntax. Map work to requirements and include focused
+      tests, integration validation, documentation, and regression checks.
+    requires: [specs, design]
+
+  - id: verification
+    generates: verification.md
+    description: Requirement traceability and executed test evidence
+    template: verification.md
+    instruction: |
+      Trace every requirement and scenario to implementation and evidence.
+      Record commands actually executed, exit codes, and relevant output.
+      Distinguish genuine test-first RED/GREEN evidence from tests added later.
+      State gaps and return PASS only when the implementation is supportable.
+    requires: [tasks]
+
+  - id: judgment
+    generates: judgment.md
+    description: Independent adversarial judgments and remediation history
+    template: judgment.md
+    instruction: |
+      Preserve both judge outputs, their verdicts, the exact reviewed snapshot,
+      and any remediation cycles. PASS requires both judges to independently
+      emit a standalone [PASS] against current evidence.
+    requires: [verification]
+
+  - id: review
+    generates: review-ledger.md
+    description: Refuted and prioritized engineering review ledger
+    template: review-ledger.md
+    instruction: |
+      Preserve the synthesized panel result. Findings must be evidence-backed,
+      deduplicated, actionable, and ordered BLOCKER, HIGH, MEDIUM, LOW. Record
+      disputed or discarded claims separately when that context is useful.
+    requires: [judgment]
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    Implement only the approved change. Follow repository conventions, prefer
+    test-first work when the project supports it, keep the checklist accurate,
+    and stop on unsafe ambiguity or destructive work.
+
