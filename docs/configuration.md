@@ -2,22 +2,54 @@
 
 ## Agent manifest
 
-Edit `.opencode/sdd-manifest.json`, then run:
+The agent manifest lives at `~/.config/opencode/specops-manifest.json`. The
+plugin creates it on first load from the built-in default and never overwrites
+it afterwards — your edits persist across plugin updates.
+
+Edit it directly to change agent models, `maxSteps`, tools, or permissions:
+
+```json
+{
+  "agents": {
+    "sdd-apply": {
+      "model": "opencode/north-mini-code-free",
+      "maxSteps": 16,
+      "tools": { "question": false, "todowrite": false },
+      "permission": { "bash": "allow", "edit": "allow", "task": "deny" }
+    }
+  }
+}
+```
+
+The plugin reads this file on every load and registers all 19 workers
+programmatically via its `config()` hook. No `opencode.json` mutation is
+required.
+
+### Power-user file-based config
+
+If you prefer to materialize agent definitions into your project's
+`opencode.json` (e.g. for version control or editor autocompletion), run:
 
 ```bash
 python3 scripts/sync-opencode-manifest.py
 ```
 
-Use `--check` in CI to detect drift. Synchronization is atomic and deterministic.
-It preserves unrelated OpenCode settings and agents. Managed SpecOps agent IDs
-are authoritative and replaced from the manifest.
+This reads the manifest from `~/.config/opencode/specops-manifest.json` and
+writes the agent entries into the project's `opencode.json`. Existing agents
+and unrelated config are preserved. Use `--check` in CI to detect drift.
 
-Model access is provider-specific. If an `opencode-go/*` model is unavailable,
+Model access is provider-specific. If an `opencode/*` model is unavailable,
 replace only its manifest mapping with a compatible configured provider/model.
 
 ## Runtime policy
 
-`.opencode/specops.json` controls orchestration:
+`.opencode/specops.json` (per-project) controls orchestration. Copy the
+template from `examples/specops.json`:
+
+```bash
+mkdir -p .opencode
+cp examples/specops.json .opencode/specops.json
+```
 
 ```json
 {
@@ -48,6 +80,9 @@ replace only its manifest mapping with a compatible configured provider/model.
   }
 }
 ```
+
+When `.opencode/specops.json` is missing, SpecOps uses safe defaults from
+`DEFAULT_CONFIG` in `src/core.ts`.
 
 `openspec.command: null` uses the pinned bundled OpenSpec dependency through the
 system `node` executable. An array overrides the executable and prefix arguments

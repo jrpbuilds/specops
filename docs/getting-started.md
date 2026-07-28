@@ -7,29 +7,34 @@
 - OpenCode 1.16.2 or a compatible newer release.
 - Credentials and provider access for the models in the SpecOps manifest.
 
-OpenSpec is pinned as a project dependency. A global OpenSpec install is not
-needed.
+OpenSpec is pinned as a bundled dependency of the `@jrpbuilds/specops` npm
+package. A global OpenSpec install is not needed.
 
-## Install in this repository
+## Install
 
-From the repository root:
+Add the plugin to your OpenCode config:
 
 ```bash
-npm install
-python3 scripts/sync-opencode-manifest.py
-npm run check
+curl -fsSL https://raw.githubusercontent.com/jrpbuilds/specops/master/scripts/install.sh | bash
 ```
 
-The sync command creates `opencode.json` when absent, merges the managed agents,
-and creates only missing prompt files. It preserves all unrelated top-level
-configuration, existing non-SpecOps agents, and existing prompt customizations.
+Or manually add `"@jrpbuilds/specops"` to the `plugin` array in your
+`opencode.json`:
 
-Commit the installed plugin and establish a clean baseline before using
-automatic mode:
+```json
+{ "plugin": ["@jrpbuilds/specops"] }
+```
+
+OpenCode's Bun runtime installs the package from npm on the next launch. On
+first load, the plugin writes the default agent manifest to
+`~/.config/opencode/specops-manifest.json` — edit it to customize agent models
+and permissions. It persists across plugin updates.
+
+Establish a clean baseline before using automatic mode:
 
 ```bash
 git add .
-git commit -m "install SpecOps"
+git commit -m "baseline"
 opencode .
 ```
 
@@ -66,19 +71,16 @@ you want to edit artifacts between stages.
 ## What enters the repository
 
 ```text
-.opencode/
-  lib/                 Runtime helpers
-  plugins/             OpenCode plugin entrypoint
-  prompts/             Versioned agent contracts
-  sdd-manifest.json    Agent/model/permission mapping
-  specops.json         Runtime policy
 openspec/
   config.yaml          Project context and rules
-  schemas/specops/     Workflow schema and templates
+  schemas/specops/     Workflow schema and templates (seeded by the plugin)
   specs/               Archived source-of-truth behavior
   changes/             Active and archived change memory
-opencode.json          Generated OpenCode agent definitions
+.opencode/             (optional, per-project)
+  specops.json         Runtime policy override
 ```
 
-These files are intentionally local and versionable. There is no hidden SpecOps
-database.
+The agent manifest lives at `~/.config/opencode/specops-manifest.json` (global,
+persists across plugin updates). The plugin code itself is installed from npm
+to `~/.cache/opencode/node_modules/@jrpbuilds/specops/` by OpenCode's Bun
+runtime. There is no hidden SpecOps database.
