@@ -1,0 +1,28 @@
+{
+  "$schema": "./specops.schema.json",
+  "openspec": {
+    "command": null,
+    "schema": "specops"
+  },
+  "workflow": {
+    "default_tier": "auto",
+    "onboarding": "if-missing",
+    "lean_max_files": 2,
+    "lean_max_modules": 1,
+    "full_min_files": 9,
+    "full_min_modules": 4
+  },
+  "automation": {
+    "max_fix_cycles": 3,
+    "require_clean_worktree": true,
+    "blocking_severities": ["BLOCKER", "HIGH"]
+  },
+  "review": {
+    "max_diff_bytes": 200000,
+    "transient_retries": 1,
+    "agent_timeout_seconds": 300
+  },
+  "integrations": {
+    "mcp": "inherit"
+  }
+}

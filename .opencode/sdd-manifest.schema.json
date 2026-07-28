@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specops.dev/schemas/sdd-manifest.schema.json",
+  "title": "SpecOps agent manifest",
+  "type": "object",
+  "required": ["agents"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "agents": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^\\s]+$"
+          },
+          {
+            "type": "object",
+            "required": ["model"],
+            "properties": {
+              "model": {
+                "type": "string",
+                "pattern": "^[^/\\s]+/[^\\s]+$"
+              },
+              "reasoning_effort": {
+                "type": "string"
+              },
+              "thinking": {}
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
+    }
+  }
+}
+
