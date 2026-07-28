@@ -22,7 +22,9 @@ import {
   type WorkflowTier,
 } from "./core.js"
 import type { AgentRunner } from "./progress.js"
-import { escalationMarker, parseAssessment, parseTierInvocation } from "./parsing.js"
+import { parseAssessment, parseTierInvocation } from "./parsing.js"
+import { parseEscalationRequest } from "./escalation.js"
+import type { EscalationRequest } from "./escalation.js"
 import {
   assertCleanWorktree,
   baseCommit,
@@ -40,6 +42,13 @@ export type TierHistoryEntry = {
   at: string
 }
 
+export type EscalationRecord = EscalationRequest & {
+  from: WorkflowTier
+  to: WorkflowTier
+  fingerprint: string
+  at: string
+}
+
 /** The on-disk adaptive run state written to `specops-run.json`. */
 export type AdaptiveRunState = {
   version: 2
@@ -53,6 +62,7 @@ export type AdaptiveRunState = {
   assessment: TierAssessment
   routing_reasons: string[]
   tier_history: TierHistoryEntry[]
+  escalation_history?: EscalationRecord[]
   created_at: string
 }
 
@@ -127,6 +137,7 @@ export async function prepareVisibleRun(
     assessment,
     routing_reasons: selected.reasons,
     tier_history: [],
+    escalation_history: [],
     created_at: new Date().toISOString(),
   }
   await writeFile(
@@ -185,6 +196,7 @@ export async function escalateVisibleRun(
   change: string,
   target: WorkflowTier,
   reason: string,
+  request?: EscalationRequest,
 ): Promise<{ escalated: boolean; plan: WorkflowPlan; history: TierHistoryEntry[] }> {
   if (!reason.trim()) throw new Error("Escalation reason is required")
   const changeDirectory = path.join(directory, "openspec", "changes", change)
@@ -213,6 +225,19 @@ export async function escalateVisibleRun(
   state.tier = next
   state.schema = plan.schema
   state.tier_history.push(entry)
+  if (request) {
+    const fingerprint = [request.category, request.target, request.boundary_crossed, ...request.evidence]
+      .map((item) => item.trim().toLowerCase())
+      .join("|")
+    state.escalation_history ??= []
+    state.escalation_history.push({
+      ...request,
+      from: entry.from,
+      to: entry.to,
+      fingerprint,
+      at: entry.at,
+    })
+  }
   await writeFile(
     path.join(changeDirectory, "specops-run.json"),
     JSON.stringify(state, null, 2) + "\n",
@@ -233,7 +258,7 @@ export async function escalateVisibleRun(
  *
  * Gates checked, in order:
  * 1. Footprint escalation (the actual diff outgrew the tier).
- * 2. Requested escalation markers from any judge or reviewer.
+ * 2. Validated structured escalation requests from any judge or reviewer.
  * 3. Judgment pass (all required judges emitted `[PASS]`).
  * 4. Review completeness (all required reviewers + refuter ran).
  * 5. No blocking findings in the refuted ledger.
@@ -293,10 +318,10 @@ export async function finalizeVisibleRun(
     input.ledger,
     input.panelEvidence,
   ]
-    .map(escalationMarker)
-    .filter((tier): tier is WorkflowTier => Boolean(tier))
+    .map(parseEscalationRequest)
+    .filter((request): request is NonNullable<typeof request> => Boolean(request))
     .reduce<WorkflowTier | undefined>(
-      (current, tier) => (current ? higherTier(current, tier) : tier),
+      (current, request) => (current ? higherTier(current, request.target) : request.target),
       undefined,
     )
   if (requestedEscalation && higherTier(run.tier, requestedEscalation) !== run.tier) {

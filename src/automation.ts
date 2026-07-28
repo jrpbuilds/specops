@@ -27,14 +27,12 @@ import {
   ProgressTracker,
 } from "./progress.js"
 import {
-  escalationMarker,
   parseAssessment,
   parseTierInvocation,
   untrusted,
 } from "./parsing.js"
 import {
   adjudicateEscalation,
-  legacyEscalationRequest,
   parseEscalationRequest,
   type EscalationDecision,
 } from "./escalation.js"
@@ -65,7 +63,7 @@ import {
   receiptIsFresh,
 } from "./runs.js"
 
-const ESCALATION_INSTRUCTIONS = `If the current tier is genuinely insufficient, include a final JSON object of this exact shape in your response: {"escalation":{"target":"standard|full","category":"scope_overflow|public_contract|security|migration|concurrency|requirements_changed|blocked","confidence":"low|medium|high","summary":"...","evidence":["path or command evidence"],"boundary_crossed":"...","why_current_tier_is_insufficient":"..."}}. Do not request escalation for vague uncertainty, style preferences, or provider capacity failures.`
+const ESCALATION_INSTRUCTIONS = `If the current tier is genuinely insufficient, end your response with one line beginning ESCALATION_JSON: followed by this exact JSON shape: {"escalation":{"target":"standard|full","category":"scope_overflow|public_contract|security|migration|concurrency|requirements_changed|blocked","confidence":"low|medium|high","summary":"...","evidence":["path or command evidence"],"boundary_crossed":"...","why_current_tier_is_insufficient":"..."}}. Do not request escalation for vague uncertainty, style preferences, or provider capacity failures.`
 
 /**
  * Run the complete headless SpecOps automatic workflow for a goal.
@@ -81,7 +79,7 @@ const ESCALATION_INSTRUCTIONS = `If the current tier is genuinely insufficient, 
  * 11. Review panel (adaptive reviewers + refuter).
  * 12. Archive (receipt, freshness check, validate, archive).
  *
- * Escalation markers from any worker trigger an immediate tier upgrade via
+ * Validated structured escalation requests from any worker trigger a tier upgrade via
  * {@link escalateVisibleRun}, after which the run rebuilds the newly required
  * artifacts and re-runs apply/verify. Remediation cycles (judgment or review
  * failures) loop back to verify up to `automation.max_fix_cycles`.
@@ -105,9 +103,7 @@ export async function runAutomatic(
 ): Promise<string> {
   const seenEscalations = new Set<string>()
   const inspectEscalation = (output: string, current: WorkflowTier): EscalationDecision | undefined => {
-    const structured = parseEscalationRequest(output)
-    const marker = escalationMarker(output)
-    const request = structured ?? (marker ? legacyEscalationRequest(marker, output) : undefined)
+    const request = parseEscalationRequest(output)
     if (!request) return undefined
     const decision = adjudicateEscalation(current, request, seenEscalations)
     if (decision.accepted) seenEscalations.add(decision.fingerprint)
@@ -173,6 +169,7 @@ export async function runAutomatic(
     assessment,
     routing_reasons: selected.reasons,
     tier_history: [],
+    escalation_history: [],
     created_at: new Date().toISOString(),
   }
   await writeFile(
@@ -227,6 +224,7 @@ export async function runAutomatic(
             change,
             target,
             `${agent}: ${escalation?.reason} Evidence: ${escalation?.request.evidence.join(", ")}`,
+            escalation?.request,
           )
           plan = result.plan
           progress.setTotal(plan.planning.length + 8)
@@ -257,6 +255,7 @@ export async function runAutomatic(
         change,
         target,
         `sdd-apply: ${escalation?.reason} Evidence: ${escalation?.request.evidence.join(", ")}`,
+        escalation?.request,
       )
       plan = result.plan
       progress.setTotal(plan.planning.length + 8)
@@ -305,6 +304,7 @@ export async function runAutomatic(
         change,
         verificationTarget,
         `sdd-verify: ${verificationDecision?.reason} Evidence: ${verificationDecision?.request.evidence.join(", ")}`,
+        verificationDecision?.request,
       )
       plan = result.plan
       progress.setTotal(plan.planning.length + 8)
@@ -337,7 +337,8 @@ export async function runAutomatic(
         input.directory,
         change,
         judgmentTarget,
-        `A judgment worker discovered ${judgmentTarget}-tier scope or risk.`,
+        `${judgmentDecisions[0].reason} Evidence: ${judgmentDecisions[0].request.evidence.join(", ")}`,
+        judgmentDecisions[0].request,
       )
       plan = result.plan
       progress.setTotal(plan.planning.length + 8)
@@ -391,7 +392,8 @@ export async function runAutomatic(
         input.directory,
         change,
         reviewTarget,
-        `A review worker discovered ${reviewTarget}-tier scope or risk.`,
+        `${reviewDecisions[0].reason} Evidence: ${reviewDecisions[0].request.evidence.join(", ")}`,
+        reviewDecisions[0].request,
       )
       plan = result.plan
       generated.delete("tasks")

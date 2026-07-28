@@ -8,7 +8,6 @@ export type EscalationCategory =
   | "concurrency"
   | "requirements_changed"
   | "blocked"
-  | "unknown"
 
 export type EscalationRequest = {
   target: "standard" | "full"
@@ -18,7 +17,6 @@ export type EscalationRequest = {
   evidence: string[]
   boundary_crossed: string
   why_current_tier_is_insufficient: string
-  legacy_marker?: boolean
 }
 
 export type EscalationDecision = {
@@ -36,7 +34,6 @@ const CATEGORIES = new Set<EscalationCategory>([
   "concurrency",
   "requirements_changed",
   "blocked",
-  "unknown",
 ])
 
 const TARGETS = new Set(["standard", "full"])
@@ -53,14 +50,13 @@ function strings(value: unknown): string[] {
     : []
 }
 
-/** Extract the structured escalation object from a worker response. */
+/** Extract the explicitly-delimited structured escalation object from a worker response. */
 export function parseEscalationRequest(output: string): EscalationRequest | undefined {
-  const first = output.indexOf("{")
-  const last = output.lastIndexOf("}")
-  if (first < 0 || last <= first) return undefined
+  const match = output.match(/(?:^|\r?\n)\s*ESCALATION_JSON:\s*(\{[^\r\n]*\})\s*$/)
+  if (!match) return undefined
   let parsed: unknown
   try {
-    parsed = JSON.parse(output.slice(first, last + 1))
+    parsed = JSON.parse(match[1])
   } catch {
     return undefined
   }
@@ -114,20 +110,6 @@ export function adjudicateEscalation(
     accepted: true,
     request,
     fingerprint,
-    reason: request.legacy_marker ? `${request.summary} Compatibility mode; structured evidence is preferred.` : request.summary,
-  }
-}
-
-/** Convert a legacy marker into an explicitly low-confidence compatibility request. */
-export function legacyEscalationRequest(target: "standard" | "full", output: string): EscalationRequest {
-  return {
-    target,
-    category: "unknown",
-    confidence: "low",
-    summary: `Legacy escalation marker requested ${target} tier.`,
-    evidence: [output.trim().slice(-500) || "Legacy marker"],
-    boundary_crossed: "unspecified",
-    why_current_tier_is_insufficient: "No structured explanation was supplied.",
-    legacy_marker: true,
+    reason: request.summary,
   }
 }

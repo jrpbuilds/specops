@@ -10,11 +10,10 @@ import {
 } from "../src/prompts-controller.js"
 import { escalateVisibleRun } from "../src/runs.js"
 import {
-  escalationMarker,
   parseAssessment,
   parseTierInvocation,
 } from "../src/parsing.js"
-import { footprintEscalation } from "../src/git.js"
+import { footprintEscalation, moduleKey } from "../src/git.js"
 import { isTransientProviderError } from "../src/runner.js"
 import { manifestAgentConfig } from "../src/manifest.js"
 import {
@@ -52,6 +51,12 @@ describe("visible automatic controller", () => {
     expect(SPECOPS_CONTROLLER_PROMPT).not.toContain("\\`")
     expect(COMMANDS.specops?.agent).toBe("specops-interactive-controller")
     expect(SPECOPS_INTERACTIVE_PROMPT).toContain("Do not ask the user to select a workflow tier")
+  })
+
+  it("groups implementation footprint by meaningful boundaries", () => {
+    expect(moduleKey("src/auth/Login.ts")).toBe("src/auth")
+    expect(moduleKey("tests/Feature/AuthTest.ts")).toBe("tests/Feature")
+    expect(moduleKey("database/migrations/001_add_users.sql")).toBe("database/migrations")
   })
 
   it("parses explicit minimum tiers without polluting the goal", () => {
@@ -164,13 +169,6 @@ describe("visible automatic controller", () => {
     expect(footprintEscalation("lean", { files: 3, modules: 1 }, config)).toBe("standard")
     expect(footprintEscalation("standard", { files: 9, modules: 2 }, config)).toBe("full")
     expect(footprintEscalation("full", { files: 20, modules: 8 }, config)).toBeUndefined()
-  })
-
-  it("accepts only standalone escalation markers", () => {
-    expect(escalationMarker("Evidence exceeds the tier.\n[ESCALATE:STANDARD]")).toBe("standard")
-    expect(escalationMarker("[ESCALATE:FULL]\n[ESCALATE:STANDARD]")).toBe("full")
-    expect(escalationMarker("No [ESCALATE:STANDARD] is needed.")).toBeUndefined()
-    expect(escalationMarker("- [ESCALATE:FULL] is an available marker")).toBeUndefined()
   })
 
   it("distinguishes transient provider failures from workflow findings", () => {

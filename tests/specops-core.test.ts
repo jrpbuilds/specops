@@ -17,7 +17,6 @@ import {
 } from "../src/core.js"
 import {
   adjudicateEscalation,
-  legacyEscalationRequest,
   parseEscalationRequest,
 } from "../src/escalation.js"
 
@@ -51,7 +50,7 @@ describe("SpecOps core", () => {
   })
 
   it("parses and adjudicates evidence-backed escalation requests", () => {
-    const output = JSON.stringify({
+    const output = `ESCALATION_JSON: ${JSON.stringify({
       escalation: {
         target: "full",
         category: "security",
@@ -61,7 +60,7 @@ describe("SpecOps core", () => {
         boundary_crossed: "security",
         why_current_tier_is_insufficient: "The current tier does not include the security review stages.",
       },
-    })
+    })}`
     const request = parseEscalationRequest(output)
     expect(request?.category).toBe("security")
     const decision = adjudicateEscalation("standard", request!)
@@ -70,10 +69,9 @@ describe("SpecOps core", () => {
     expect(adjudicateEscalation("standard", request!, new Set([decision.fingerprint])).accepted).toBe(false)
   })
 
-  it("marks legacy markers as compatibility escalations", () => {
-    const request = legacyEscalationRequest("standard", "[ESCALATE:STANDARD]")
-    expect(request.legacy_marker).toBe(true)
-    expect(adjudicateEscalation("lean", request).reason).toContain("Compatibility mode")
+  it("rejects unstructured or malformed escalation output", () => {
+    expect(parseEscalationRequest("[ESCALATE:STANDARD]")).toBeUndefined()
+    expect(parseEscalationRequest('ESCALATION_JSON: {"escalation": {}}')).toBeUndefined()
   })
 
   it("recognizes configured blocking severities", () => {

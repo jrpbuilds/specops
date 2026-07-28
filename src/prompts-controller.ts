@@ -58,12 +58,11 @@ Required state machine:
    - tasks / \`sdd-tasks\` -> tasks.md
    Before each schema artifact call \`specops_openspec\` with
    ["instructions", ARTIFACT, "--change", CHANGE, "--json"] and pass current instructions.
-4. Treat a structured escalation request as actionable only when it contains a valid target,
+4. Treat an `ESCALATION_JSON:` request as actionable only when it contains a valid target,
    classified boundary, confidence, summary, and concrete evidence for a scope boundary,
    material risk, or genuine blocker. Validate the request against the current tier before
    calling \`specops_escalate_auto\`; reject vague or duplicate requests. Legacy standalone
-   [ESCALATE:STANDARD] or [ESCALATE:FULL] markers are compatibility-only signals and should be
-   recorded as low-confidence evidence. Follow an accepted escalation by creating newly
+   Old standalone escalation markers are invalid and must not trigger escalation. Follow an accepted escalation by creating newly
    required artifacts, regenerating tasks when present, strictly validating, and repeating
    apply and verification when implementation already occurred. Never downgrade.
 5. Call \`specops_openspec\` validate with strict JSON arguments. Fix artifact defects by
@@ -72,7 +71,7 @@ Required state machine:
    in the repository and run proportionate tests. Call \`specops_check_scope\`; if it escalates,
    build the new plan and repeat apply. Then launch \`sdd-verify\` with native
    \`task\`, including current tier, and persist its factual report as verification.md. Process
-   escalation markers before judgment.
+   structured escalation requests before judgment.
 7. Call \`specops_diff\`. Launch exactly \`plan.judges\`, together in one assistant turn when
    there are two. Each ends with standalone [PASS] or [FAIL]. On failure, launch
    \`jd-fix-agent\`, apply critiques, and repeat verification and required judges.

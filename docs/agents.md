@@ -63,8 +63,8 @@ All 19 prompt files are versioned under `.opencode/prompts/`. They require:
 Escalation is an exceptional control signal, not a suggestion. Agents must
 resolve low-risk detail from repository conventions or a reversible assumption
 and may escalate only for concrete scope overflow, material risk, or a genuine
-blocker after inspection. Required markers appear on their own final line;
-examples and negated mentions are ignored.
+blocker after inspection. Escalations use the explicit `ESCALATION_JSON:`
+contract and concrete evidence.
 
 The sync script never overwrites an existing prompt. Delete a prompt
 deliberately and rerun synchronization to regenerate the stock version.

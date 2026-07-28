@@ -208,7 +208,7 @@ function standardPrompt(agentId: string, persona: Persona): string {
     escalation = `
 - Escalation is exceptional. Resolve low-risk detail from repository conventions or a small reversible assumption.
 - Escalate only for concrete scope overflow, material risk, or a genuine blocker that remains after repository inspection.
-- If escalation is required, include a final JSON object with an `escalation` field containing target, category, confidence, summary, evidence, boundary_crossed, and why_current_tier_is_insufficient. Do not use escalation for vague uncertainty or provider capacity failures.`
+- If escalation is required, end with one line beginning `ESCALATION_JSON:` followed by a JSON object with an `escalation` field containing target, category, confidence, summary, evidence, boundary_crossed, and why_current_tier_is_insufficient. Do not use escalation for vague uncertainty or provider capacity failures.`
   }
 
   return `# ${persona.title}

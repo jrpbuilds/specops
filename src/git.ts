@@ -202,13 +202,19 @@ export async function implementationFootprint(directory: string): Promise<{
     ":(exclude)openspec/**",
   ])
   const paths = [...new Set([...tracked.split("\n"), ...untracked.split("\n")].filter(Boolean))].sort()
-  const modules = new Set(
-    paths.map((relative) => {
-      const parts = relative.split("/")
-      return parts.length > 1 ? parts[0] : "(root)"
-    }),
-  )
+  const modules = new Set(paths.map(moduleKey))
   return { files: paths.length, modules: modules.size, paths }
+}
+
+/** Group changed paths by a useful repository boundary rather than only the first segment. */
+export function moduleKey(relative: string): string {
+  const parts = relative.split("/")
+  if (parts.length === 1) return "(root)"
+  if (["src", "app", "lib", "packages"].includes(parts[0])) return parts.slice(0, 2).join("/")
+  if (parts[0] === "tests" && parts.length >= 2) return parts.slice(0, 2).join("/")
+  if (parts[0] === "resources" && parts.length >= 2) return parts.slice(0, 2).join("/")
+  if (parts[0] === "database" && parts.length >= 2) return parts.slice(0, 2).join("/")
+  return parts[0]
 }
 
 /**

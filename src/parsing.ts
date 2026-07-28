@@ -209,26 +209,6 @@ export function parseAssessment(output: string): TierAssessment {
 }
 
 /**
- * Detect a standalone `[ESCALATE:STANDARD]` or `[ESCALATE:FULL]` marker.
- *
- * Only markers that are the sole content of their own line are commands.
- * Inline examples and negated prose (e.g. "no [ESCALATE:STANDARD] is needed")
- * are deliberately ignored so model prose cannot trigger a spurious escalation.
- *
- * @param output - The worker's full response text.
- * @returns The highest tier requested, or `undefined` when no marker is present.
- */
-export function escalationMarker(output: string): WorkflowTier | undefined {
-  const standalone = output
-    .split(/\r?\n/)
-    .map((line) => line.trim().match(/^\[ESCALATE:(STANDARD|FULL)\]$/i)?.[1]?.toLowerCase())
-    .filter((tier): tier is "standard" | "full" => tier === "standard" || tier === "full")
-  if (standalone.includes("full")) return "full"
-  if (standalone.includes("standard")) return "standard"
-  return undefined
-}
-
-/**
  * Parse a `--tier=lean|standard|full` prefix from an invocation, returning
  * the stripped goal and the requested minimum tier.
  *
