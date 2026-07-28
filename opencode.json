@@ -1,0 +1,290 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "sdd-init": {
+      "mode": "subagent",
+      "model": "opencode/deepseek-v4-flash-free",
+      "maxSteps": 6,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-init.md}"
+    },
+    "sdd-explore": {
+      "mode": "subagent",
+      "model": "opencode/ling-3.0-flash-free",
+      "maxSteps": 8,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-explore.md}"
+    },
+    "sdd-propose": {
+      "mode": "subagent",
+      "model": "opencode/nemotron-3-ultra-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-propose.md}"
+    },
+    "sdd-spec": {
+      "mode": "subagent",
+      "model": "opencode/nemotron-3-ultra-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-spec.md}"
+    },
+    "sdd-design": {
+      "mode": "subagent",
+      "model": "opencode/nemotron-3-ultra-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-design.md}"
+    },
+    "sdd-tasks": {
+      "mode": "subagent",
+      "model": "opencode/laguna-s-2.1-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-tasks.md}"
+    },
+    "sdd-apply": {
+      "mode": "subagent",
+      "model": "opencode/north-mini-code-free",
+      "maxSteps": 16,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "allow",
+        "edit": "allow",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-apply.md}"
+    },
+    "sdd-verify": {
+      "mode": "subagent",
+      "model": "opencode/mimo-v2.5-free",
+      "maxSteps": 10,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "allow",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-verify.md}"
+    },
+    "sdd-archive": {
+      "mode": "subagent",
+      "model": "opencode/deepseek-v4-flash-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-archive.md}"
+    },
+    "sdd-onboard": {
+      "mode": "subagent",
+      "model": "opencode/deepseek-v4-flash-free",
+      "maxSteps": 8,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-onboard.md}"
+    },
+    "jd-judge-a": {
+      "mode": "subagent",
+      "model": "opencode/nemotron-3-ultra-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/jd-judge-a.md}"
+    },
+    "jd-judge-b": {
+      "mode": "subagent",
+      "model": "opencode/mimo-v2.5-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/jd-judge-b.md}"
+    },
+    "jd-fix-agent": {
+      "mode": "subagent",
+      "model": "opencode/north-mini-code-free",
+      "maxSteps": 12,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "allow",
+        "edit": "allow",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/jd-fix-agent.md}"
+    },
+    "review-risk": {
+      "mode": "subagent",
+      "model": "opencode/mimo-v2.5-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/review-risk.md}"
+    },
+    "review-readability": {
+      "mode": "subagent",
+      "model": "opencode/laguna-s-2.1-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/review-readability.md}"
+    },
+    "review-reliability": {
+      "mode": "subagent",
+      "model": "opencode/mimo-v2.5-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/review-reliability.md}"
+    },
+    "review-resilience": {
+      "mode": "subagent",
+      "model": "opencode/ling-3.0-flash-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/review-resilience.md}"
+    },
+    "review-refuter": {
+      "mode": "subagent",
+      "model": "opencode/nemotron-3-ultra-free",
+      "maxSteps": 4,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/review-refuter.md}"
+    },
+    "sdd-assess": {
+      "mode": "subagent",
+      "model": "opencode/deepseek-v4-flash-free",
+      "maxSteps": 6,
+      "tools": {
+        "question": false,
+        "todowrite": false
+      },
+      "permission": {
+        "bash": "deny",
+        "edit": "deny",
+        "task": "deny"
+      },
+      "prompt": "{file:./.opencode/prompts/sdd-assess.md}"
+    }
+  }
+}
