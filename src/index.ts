@@ -20,7 +20,7 @@ import type { Config } from "@opencode-ai/plugin"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./manifest.js"
+import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./manifest.js"
 import { promptText } from "./prompts.js"
 import { SpecOpsPlugin } from "./orchestrator.js"
 
@@ -43,7 +43,7 @@ export const MANIFEST_PATH = path.join(
  * {@link DEFAULT_MANIFEST} on first run.
  *
  * The manifest has no `$schema` field (kept minimal). Users edit it directly
- * to customize agent models, maxSteps, tools, and permissions; those edits
+ * to customize agent models, maxSteps, tools, permissions, and provider options; those edits
  * persist across plugin updates because the plugin never overwrites an
  * existing file.
  *
@@ -96,14 +96,7 @@ export const SpecOpsPluginWithManifest = (async (input: Parameters<typeof SpecOp
       openCodeConfig.agent ??= {}
       for (const [agentId, definition] of Object.entries(manifest.agents)) {
         // `??=` preserves any user override already present in opencode.json.
-        openCodeConfig.agent[agentId] ??= {
-          mode: "subagent",
-          model: definition.model,
-          maxSteps: definition.maxSteps,
-          tools: definition.tools,
-          permission: definition.permission,
-          prompt: promptText(agentId),
-        }
+        openCodeConfig.agent[agentId] ??= manifestAgentConfig(agentId, definition)
       }
     },
   }
@@ -120,5 +113,5 @@ export default {
 } satisfies import("@opencode-ai/plugin").PluginModule
 
 /** Re-export the manifest path and loader for tools, tests, and the sync script. */
-export { DEFAULT_MANIFEST, promptText, SpecOpsPlugin }
+export { DEFAULT_MANIFEST, manifestAgentConfig, promptText, SpecOpsPlugin }
 export type { SpecOpsManifest }

@@ -16,12 +16,29 @@ import {
 } from "../src/parsing.js"
 import { footprintEscalation } from "../src/git.js"
 import { isTransientProviderError } from "../src/runner.js"
+import { manifestAgentConfig } from "../src/manifest.js"
 import {
   judgmentDayWithRunner,
   reviewPanelWithRunner,
 } from "../src/judgment.js"
 
 describe("visible automatic controller", () => {
+  it("preserves OpenCode provider options from the manifest", () => {
+    const config = manifestAgentConfig("sdd-apply", {
+      model: "provider/model",
+      maxSteps: 16,
+      tools: { question: false },
+      permission: { bash: "allow", edit: "allow", task: "deny" },
+      reasoningEffort: "high",
+      textVerbosity: "low",
+    })
+
+    expect(config.reasoningEffort).toBe("high")
+    expect(config.textVerbosity).toBe("low")
+    expect(config.mode).toBe("subagent")
+    expect(config.prompt).toContain("sdd-apply")
+  })
+
   it("routes automatic mode through native task workers", () => {
     expect(COMMANDS["specops-auto"]?.agent).toBe("specops-controller")
     expect(COMMANDS["specops-auto"]?.subtask).toBe(false)

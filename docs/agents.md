@@ -1,7 +1,7 @@
 # Agents and prompts
 
-`.opencode/sdd-manifest.json` is the central mapping from agent ID to model,
-reasoning options, and permission policy. A definition can use either:
+`~/.config/opencode/specops-manifest.json` is the central mapping from agent ID
+to model, reasoning options, and permission policy. A definition can use either:
 
 ```json
 "example": "provider/model"
@@ -12,13 +12,14 @@ or:
 ```json
 "example": {
   "model": "provider/model",
-  "reasoning_effort": "high",
+  "reasoningEffort": "high",
   "temperature": 0.1
 }
 ```
 
-Custom object fields pass through to the generated agent. The sync script adds
-`mode: "subagent"` and the prompt file reference.
+Custom object fields pass through to the generated agent as OpenCode
+provider/model options. The plugin adds `mode: "subagent"` and the generated
+prompt. `reasoningEffort` is the documented OpenCode spelling.
 
 ## Stage agents
 

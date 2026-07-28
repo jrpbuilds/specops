@@ -1,3 +1,5 @@
+import { promptText } from "./prompts.js"
+
 /**
  * Built-in default agent manifest.
  *
@@ -30,18 +32,34 @@ export type AgentPermission = {
 /**
  * One agent entry in the manifest. The `model` is a `provider/model` string.
  * `maxSteps` bounds the agent's tool-call budget. `tools` and `permission`
- * enforce least-privilege per role.
+ * enforce least-privilege per role. Additional fields are passed through to
+ * OpenCode as provider/model options, such as `reasoningEffort`.
  */
 export type AgentDefinition = {
   model: string
   maxSteps: number
   tools: AgentTools
   permission: AgentPermission
+  [option: string]: unknown
 }
 
 /** The manifest shape persisted to `~/.config/opencode/specops-manifest.json`. */
 export type SpecOpsManifest = {
   agents: Record<string, AgentDefinition>
+}
+
+/**
+ * Convert a manifest entry into an OpenCode subagent definition.
+ * Provider/model options are deliberately preserved rather than whitelisted;
+ * OpenCode supports additional provider-specific options such as
+ * `reasoningEffort`.
+ */
+export function manifestAgentConfig(agentId: string, definition: AgentDefinition) {
+  return {
+    ...definition,
+    mode: "subagent" as const,
+    prompt: promptText(agentId),
+  }
 }
 
 /**
