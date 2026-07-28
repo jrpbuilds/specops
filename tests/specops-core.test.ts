@@ -14,7 +14,7 @@ import {
   type SpecOpsReceipt,
   type TierAssessment,
   validateConfig,
-} from "../.opencode/lib/specops-core.js"
+} from "../src/core.js"
 
 describe("SpecOps core", () => {
   const assessment = (overrides: Partial<TierAssessment> = {}): TierAssessment => ({

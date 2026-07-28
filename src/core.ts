@@ -1,9 +1,25 @@
+/**
+ * SpecOps core library.
+ *
+ * Provides the runtime configuration model, workflow-tier routing, evidence
+ * receipts, and shared helpers used by the orchestrator and its split modules.
+ *
+ * This module is intentionally framework-agnostic: it has no dependency on the
+ * OpenCode plugin SDK and can be unit-tested in isolation.
+ */
+
 import { createHash } from "node:crypto"
 import { readdir, readFile, stat } from "node:fs/promises"
 import path from "node:path"
 
+/**
+ * The canonical SpecOps project configuration shape, loaded from
+ * `.opencode/specops.json` in the project root.
+ */
 export type SpecOpsConfig = {
+  /** OpenSpec CLI invocation policy and active schema name. */
   openspec: { command: string[] | null; schema: string }
+  /** Adaptive workflow tier thresholds and onboarding policy. */
   workflow: {
     default_tier: "auto" | WorkflowTier
     onboarding: "if-missing" | "always"
@@ -12,19 +28,26 @@ export type SpecOpsConfig = {
     full_min_files: number
     full_min_modules: number
   }
+  /** Automation safety gates for the automatic workflow. */
   automation: {
     max_fix_cycles: number
     require_clean_worktree: boolean
     blocking_severities: Array<"BLOCKER" | "HIGH" | "MEDIUM" | "LOW">
   }
+  /** Review-phase resource bounds and retry policy. */
   review: {
     max_diff_bytes: number
     transient_retries: number
     agent_timeout_seconds: number
   }
+  /** External integration policy (currently only MCP). */
   integrations: { mcp: "inherit" | "disabled" }
 }
 
+/**
+ * Safe default configuration used when a project omits any field. Merging is
+ * performed by {@link mergeConfig}; validation by {@link validateConfig}.
+ */
 export const DEFAULT_CONFIG: SpecOpsConfig = {
   openspec: { command: null, schema: "specops" },
   workflow: {
@@ -48,6 +71,15 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
   integrations: { mcp: "inherit" },
 }
 
+/**
+ * Deep-merge a partial user configuration with {@link DEFAULT_CONFIG}.
+ *
+ * Top-level sections are merged shallowly; any missing section falls back to
+ * the default. Non-object input yields a fresh default clone.
+ *
+ * @param value - Parsed JSON from `.opencode/specops.json` (may be partial).
+ * @returns A complete, type-checked configuration object.
+ */
 export function mergeConfig(value: unknown): SpecOpsConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) return structuredClone(DEFAULT_CONFIG)
   const source = value as Partial<SpecOpsConfig>
@@ -60,6 +92,12 @@ export function mergeConfig(value: unknown): SpecOpsConfig {
   }
 }
 
+/**
+ * Strictly validate a merged {@link SpecOpsConfig} and throw on any unsafe or
+ * out-of-range field. Returns the same config when valid so callers can chain.
+ *
+ * @throws {Error} when any field violates its documented bounds.
+ */
 export function validateConfig(config: SpecOpsConfig): SpecOpsConfig {
   const fail = (field: string): never => {
     throw new Error(`invalid SpecOps configuration field: ${field}`)
@@ -132,10 +170,25 @@ export function validateConfig(config: SpecOpsConfig): SpecOpsConfig {
   return config
 }
 
+/**
+ * Detect a standalone `[PASS]` marker on its own line. Inline occurrences such
+ * as "The code says [PASS] inline." are intentionally rejected so model prose
+ * cannot fabricate a pass verdict.
+ *
+ * @param output - The full agent response text.
+ * @returns `true` only when a `[PASS]` token sits alone on a line.
+ */
 export function hasStandalonePass(output: string): boolean {
   return /(?:^|\r?\n)\s*\[PASS]\s*(?:\r?\n|$)/i.test(output)
 }
 
+/**
+ * Detect configured blocking severities (`BLOCKER`/`HIGH`/etc.) in the refuted
+ * review ledger. Recognizes bracketed tags, Markdown headings, and prefix labels.
+ *
+ * @param output - The refuted ledger text.
+ * @param severities - Configured blocking severities from `automation.blocking_severities`.
+ */
 export function hasBlockingFinding(output: string, severities: string[]): boolean {
   return severities.some((severity) => {
     const escaped = severity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -143,6 +196,15 @@ export function hasBlockingFinding(output: string, severities: string[]): boolea
   })
 }
 
+/**
+ * Convert an arbitrary user goal into a safe, stable change slug.
+ *
+ * Performs NFKD normalization, lowercasing, non-alphanumeric collapsing to
+ * hyphens, and a 52-character length cap. Always returns a non-empty slug
+ * (falls back to `"specops-change"` when nothing survives normalization).
+ *
+ * @param goal - The raw user goal text.
+ */
 export function slugifyGoal(goal: string): string {
   const slug = goal
     .normalize("NFKD")
@@ -155,12 +217,24 @@ export function slugifyGoal(goal: string): string {
   return slug || "specops-change"
 }
 
+/**
+ * Compute the SHA-256 hex digest of a string or buffer.
+ *
+ * @param content - The bytes to hash.
+ */
 export function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex")
 }
 
+/**
+ * The three SpecOps workflow tiers, ordered from smallest to largest scope.
+ */
 export type WorkflowTier = "lean" | "standard" | "full"
 
+/**
+ * The structured assessment returned by the `sdd-assess` worker. Each field is
+ * used by {@link selectWorkflowTier} to deterministically route the change.
+ */
 export type TierAssessment = {
   suggested_tier: WorkflowTier
   change_kind:
@@ -189,6 +263,10 @@ export type TierAssessment = {
   evidence: string[]
 }
 
+/**
+ * The per-tier workflow plan: which planning artifacts to generate, which
+ * judges and reviewers to run, and whether the refuter is required.
+ */
 export type WorkflowPlan = {
   tier: WorkflowTier
   schema: "specops-lean" | "specops-standard" | "specops"
@@ -200,8 +278,12 @@ export type WorkflowPlan = {
   refuter: boolean
 }
 
+/** Numeric ordering of tiers; used by {@link higherTier}. */
 const TIER_ORDER: Record<WorkflowTier, number> = { lean: 0, standard: 1, full: 2 }
 
+/**
+ * The static plan for each tier. See {@link WorkflowPlan} for field semantics.
+ */
 export const WORKFLOW_PLANS: Record<WorkflowTier, WorkflowPlan> = {
   lean: {
     tier: "lean",
@@ -234,10 +316,28 @@ export const WORKFLOW_PLANS: Record<WorkflowTier, WorkflowPlan> = {
   },
 }
 
+/**
+ * Return the higher of two tiers (monotonic, never downgrades).
+ *
+ * @param left - Candidate tier.
+ * @param right - Candidate tier.
+ */
 export function higherTier(left: WorkflowTier, right: WorkflowTier): WorkflowTier {
   return TIER_ORDER[left] >= TIER_ORDER[right] ? left : right
 }
 
+/**
+ * Deterministically select the minimum safe workflow tier for an assessment.
+ *
+ * Combines a non-negotiable safety floor (driven by risk signals), the assessor's
+ * suggestion, the project default, and any explicit `--tier=` request. The
+ * returned plan is authoritative for the rest of the run.
+ *
+ * @param assessment - Parsed output from `sdd-assess`.
+ * @param requested - The `--tier=` flag value, or `"auto"`.
+ * @param config - The merged project configuration.
+ * @returns The selected plan, the safety floor, and human-readable reasons.
+ */
 export function selectWorkflowTier(
   assessment: TierAssessment,
   requested: "auto" | WorkflowTier,
@@ -285,6 +385,13 @@ export function selectWorkflowTier(
   return { plan: WORKFLOW_PLANS[tier], floor, reasons: [...new Set(reasons)] }
 }
 
+/**
+ * Recursively enumerate all files below `root`, sorted by relative path.
+ *
+ * @param root - Absolute directory to walk.
+ * @param relative - Internal accumulator for the current relative prefix.
+ * @returns POSIX-style relative paths, one per file.
+ */
 async function filesBelow(root: string, relative = ""): Promise<string[]> {
   const directory = path.join(root, relative)
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
@@ -297,6 +404,12 @@ async function filesBelow(root: string, relative = ""): Promise<string[]> {
   return result
 }
 
+/**
+ * Compute a deterministic SHA-256 over every file in a change directory, excluding
+ * the receipt, progress, and run-state files (which change on every write).
+ *
+ * @param changeDirectory - Absolute path to the OpenSpec change directory.
+ */
 export async function hashArtifactTree(changeDirectory: string): Promise<string> {
   const files = (await filesBelow(changeDirectory)).filter(
     (file) =>
@@ -316,6 +429,10 @@ export async function hashArtifactTree(changeDirectory: string): Promise<string>
   return hash.digest("hex")
 }
 
+/**
+ * Legacy v1 evidence receipt. Retained for backward compatibility with
+ * archived changes produced before tier history was introduced.
+ */
 export type SpecOpsReceiptV1 = {
   version: 1
   change: string
@@ -339,6 +456,10 @@ export type SpecOpsReceiptV1 = {
   }
 }
 
+/**
+ * Current v2 evidence receipt. Binds a change to a specific base commit,
+ * diff hash, and artifact tree hash so stale evidence cannot be archived.
+ */
 export type SpecOpsReceiptV2 = {
   version: 2
   change: string
@@ -372,8 +493,18 @@ export type SpecOpsReceiptV2 = {
   }
 }
 
+/** Discriminated union of supported receipt versions. */
 export type SpecOpsReceipt = SpecOpsReceiptV1 | SpecOpsReceiptV2
 
+/**
+ * Verify that a receipt still matches the current repository state.
+ *
+ * Compares base commit, diff hash, and artifact-tree hash. Any mismatch means
+ * the evidence became stale after the receipt was written and must not archive.
+ *
+ * @param receipt - The receipt to verify.
+ * @param snapshot - The freshly recomputed repository snapshot.
+ */
 export function receiptIsFresh(
   receipt: SpecOpsReceipt,
   snapshot: { baseCommit: string; diffHash: string; artifactHash: string },

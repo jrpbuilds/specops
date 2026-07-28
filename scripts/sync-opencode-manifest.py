@@ -178,7 +178,13 @@ def atomic_write(path: Path, content: str) -> None:
 
 
 def desired_state(root: Path) -> tuple[dict[str, Any], dict[str, str]]:
-    manifest_path = root / ".opencode" / "sdd-manifest.json"
+    manifest_path = Path.home() / ".config" / "opencode" / "specops-manifest.json"
+    if not manifest_path.exists():
+        raise SystemExit(
+            f"SpecOps manifest not found at {manifest_path}. "
+            "Add @jrpbuilds/specops to your opencode.json plugin array and launch "
+            "opencode once to create it, then re-run this script."
+        )
     manifest = load_json(manifest_path)
     definitions = manifest.get("agents")
     if not isinstance(definitions, dict) or not definitions:

@@ -2,20 +2,24 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
+import { COMMANDS } from "../src/commands.js"
+import { ProgressTracker } from "../src/progress.js"
 import {
-  COMMANDS,
-  ProgressTracker,
   SPECOPS_CONTROLLER_PROMPT,
   SPECOPS_INTERACTIVE_PROMPT,
-  escalateVisibleRun,
+} from "../src/prompts-controller.js"
+import { escalateVisibleRun } from "../src/runs.js"
+import {
   escalationMarker,
-  footprintEscalation,
-  isTransientProviderError,
-  judgmentDayWithRunner,
   parseAssessment,
   parseTierInvocation,
+} from "../src/parsing.js"
+import { footprintEscalation } from "../src/git.js"
+import { isTransientProviderError } from "../src/runner.js"
+import {
+  judgmentDayWithRunner,
   reviewPanelWithRunner,
-} from "../.opencode/plugins/sdd-orchestrator.js"
+} from "../src/judgment.js"
 
 describe("visible automatic controller", () => {
   it("routes automatic mode through native task workers", () => {

@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync-opencode-manifest.py"
@@ -16,15 +17,28 @@ SPEC.loader.exec_module(sync)
 
 class SyncManifestTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Use a fresh temp HOME so the manifest is read from a per-test
+        # ~/.config/opencode/specops-manifest.json without touching the user's
+        # real config. The sync script reads from Path.home().
+        self.home = tempfile.TemporaryDirectory()
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         (self.root / ".opencode").mkdir()
+        # Patch Path.home so the sync script resolves the manifest under our
+        # temporary HOME. We patch the `pathlib.Path` symbol used by the script
+        # module, not the global, to avoid affecting other tests.
+        self._patcher = mock.patch.object(Path, "home", return_value=Path(self.home.name))
+        self._patcher.start()
 
     def tearDown(self) -> None:
+        self._patcher.stop()
         self.temporary.cleanup()
+        self.home.cleanup()
 
     def write_manifest(self, agents: dict[str, object]) -> None:
-        (self.root / ".opencode" / "sdd-manifest.json").write_text(
+        manifest_dir = Path.home() / ".config" / "opencode"
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        (manifest_dir / "specops-manifest.json").write_text(
             json.dumps({"agents": agents}), encoding="utf-8"
         )
 
@@ -106,6 +120,12 @@ class SyncManifestTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             sync.desired_state(self.root)
+
+    def test_missing_manifest_errors_clearly(self) -> None:
+        with self.assertRaises(SystemExit) as ctx:
+            sync.desired_state(self.root)
+        self.assertIn("specops-manifest.json", str(ctx.exception))
+        self.assertIn("@jrpbuilds/specops", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -1,28 +1,70 @@
 {
-  "name": "specops-opencode",
+  "name": "@jrpbuilds/specops",
   "version": "0.1.0",
-  "description": "Spec-driven development orchestration for OpenCode, powered by OpenSpec.",
+  "description": "Spec-driven development orchestration plugin for OpenCode, powered by OpenSpec.",
   "type": "module",
-  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "openspec",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "sync": "python3 scripts/sync-opencode-manifest.py",
     "sync:check": "python3 scripts/sync-opencode-manifest.py --check",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "validate:openspec": "openspec schema validate specops-lean && openspec schema validate specops-standard && openspec schema validate specops",
-    "check": "npm run sync:check && npm run typecheck && npm run test && npm run test:python && npm run validate:openspec"
+    "check": "npm run typecheck && npm run test && npm run test:python && npm run validate:openspec"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "spec-driven-development",
+    "sdd",
+    "openspec",
+    "specops",
+    "ai",
+    "llm",
+    "orchestration",
+    "workflow"
+  ],
+  "author": "jrpbuilds",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jrpbuilds/specops.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jrpbuilds/specops/issues"
+  },
+  "homepage": "https://github.com/jrpbuilds/specops#readme",
+  "engines": {
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.6.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.16.2"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "1.16.2",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
-  },
-  "engines": {
-    "node": ">=20.19.0"
   }
 }
