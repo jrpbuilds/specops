@@ -145,7 +145,7 @@ const VERDICT_AGENTS_REVIEW = new Set([
 ])
 
 /**
- * Agents that can emit an adaptive escalation marker on their own final line.
+ * Agents that can emit a structured adaptive escalation request.
  * Excludes the assessor, archivist, onboarding analyst, fix agent, and refuter,
  * which never escalate.
  */
@@ -208,7 +208,7 @@ function standardPrompt(agentId: string, persona: Persona): string {
     escalation = `
 - Escalation is exceptional. Resolve low-risk detail from repository conventions or a small reversible assumption.
 - Escalate only for concrete scope overflow, material risk, or a genuine blocker that remains after repository inspection.
-- Put a required adaptive escalation marker on its own final line. Otherwise do not mention escalation markers.`
+- If escalation is required, include a final JSON object with an `escalation` field containing target, category, confidence, summary, evidence, boundary_crossed, and why_current_tier_is_insufficient. Do not use escalation for vague uncertainty or provider capacity failures.`
   }
 
   return `# ${persona.title}

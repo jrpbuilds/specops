@@ -33,6 +33,12 @@ import {
   untrusted,
 } from "./parsing.js"
 import {
+  adjudicateEscalation,
+  legacyEscalationRequest,
+  parseEscalationRequest,
+  type EscalationDecision,
+} from "./escalation.js"
+import {
   assertCleanWorktree,
   baseCommit,
   collectDiff,
@@ -58,6 +64,8 @@ import {
   readAdaptiveRun,
   receiptIsFresh,
 } from "./runs.js"
+
+const ESCALATION_INSTRUCTIONS = `If the current tier is genuinely insufficient, include a final JSON object of this exact shape in your response: {"escalation":{"target":"standard|full","category":"scope_overflow|public_contract|security|migration|concurrency|requirements_changed|blocked","confidence":"low|medium|high","summary":"...","evidence":["path or command evidence"],"boundary_crossed":"...","why_current_tier_is_insufficient":"..."}}. Do not request escalation for vague uncertainty, style preferences, or provider capacity failures.`
 
 /**
  * Run the complete headless SpecOps automatic workflow for a goal.
@@ -95,6 +103,16 @@ export async function runAutomatic(
   parentID: string,
   progress: ProgressTracker,
 ): Promise<string> {
+  const seenEscalations = new Set<string>()
+  const inspectEscalation = (output: string, current: WorkflowTier): EscalationDecision | undefined => {
+    const structured = parseEscalationRequest(output)
+    const marker = escalationMarker(output)
+    const request = structured ?? (marker ? legacyEscalationRequest(marker, output) : undefined)
+    if (!request) return undefined
+    const decision = adjudicateEscalation(current, request, seenEscalations)
+    if (decision.accepted) seenEscalations.add(decision.fingerprint)
+    return decision
+  }
   const observedRunner: AgentRunner = (agent, prompt, parent) =>
     runner(agent, prompt, parent, progress.reporter, progress.signal)
   const invocation = parseTierInvocation(goal)
@@ -182,7 +200,7 @@ export async function runAutomatic(
         if (artifact === "init") {
           output = await observedRunner(
             "sdd-init",
-            `Prepare a concise safe bootstrap for this ${plan.tier}-tier goal. Return Markdown with scope, assumptions, non-goals, and readiness risks.\n\n${untrusted("goal", goal)}\n\n${untrusted("project-onboarding", onboardingContext)}`,
+            `Prepare a concise safe bootstrap for this ${plan.tier}-tier goal. Return Markdown with scope, assumptions, non-goals, and readiness risks. ${ESCALATION_INSTRUCTIONS}\n\n${untrusted("goal", goal)}\n\n${untrusted("project-onboarding", onboardingContext)}`,
             parentID,
           )
           await writeArtifact(input.directory, change, "init.md", output)
@@ -201,13 +219,14 @@ export async function runAutomatic(
           )
         }
         generated.add(artifact)
-        const target = escalationMarker(output)
+        const escalation = inspectEscalation(output, plan.tier)
+        const target = escalation?.accepted ? escalation.request.target : undefined
         if (target && higherTier(plan.tier, target) !== plan.tier) {
           const result = await escalateVisibleRun(
             input.directory,
             change,
             target,
-            `${agent} emitted [ESCALATE:${target.toUpperCase()}] during planning.`,
+            `${agent}: ${escalation?.reason} Evidence: ${escalation?.request.evidence.join(", ")}`,
           )
           plan = result.plan
           progress.setTotal(plan.planning.length + 8)
@@ -227,16 +246,17 @@ export async function runAutomatic(
       const applyGuide = await instructions(input.directory, config, change, "apply")
       const output = await observedRunner(
         "sdd-apply",
-        `Implement this approved ${plan.tier}-tier change now. Edit code and tests only within scope, run focused validation, and do not commit or mutate Git history. Make small reversible choices for unspecified low-risk detail. Escalate only for measured scope overflow, concrete material risk, or a genuine blocker after repository inspection; put a required marker on its own final line and otherwise do not mention markers.\n\n${untrusted("openspec-apply-instructions", applyGuide)}`,
+        `Implement this approved ${plan.tier}-tier change now. Edit code and tests only within scope, run focused validation, and do not commit or mutate Git history. Make small reversible choices for unspecified low-risk detail. ${ESCALATION_INSTRUCTIONS}\n\n${untrusted("openspec-apply-instructions", applyGuide)}`,
         parentID,
       )
-      const target = escalationMarker(output)
+      const escalation = inspectEscalation(output, plan.tier)
+      const target = escalation?.accepted ? escalation.request.target : undefined
       if (!target || higherTier(plan.tier, target) === plan.tier) return
       const result = await escalateVisibleRun(
         input.directory,
         change,
         target,
-        `sdd-apply discovered ${target}-tier scope or risk.`,
+        `sdd-apply: ${escalation?.reason} Evidence: ${escalation?.request.evidence.join(", ")}`,
       )
       plan = result.plan
       progress.setTotal(plan.planning.length + 8)
@@ -275,15 +295,16 @@ export async function runAutomatic(
       "verification",
       "sdd-verify",
       parentID,
-      `Selected workflow tier: ${plan.tier}. Escalate only for measured scope overflow, concrete material risk, or a genuine blocker after repository inspection. Put a required marker on its own final line and otherwise do not mention markers.`,
+      `Selected workflow tier: ${plan.tier}. ${ESCALATION_INSTRUCTIONS}`,
     )
-    const verificationTarget = escalationMarker(verification)
+    const verificationDecision = inspectEscalation(verification, plan.tier)
+    const verificationTarget = verificationDecision?.accepted ? verificationDecision.request.target : undefined
     if (verificationTarget && higherTier(plan.tier, verificationTarget) !== plan.tier) {
       const result = await escalateVisibleRun(
         input.directory,
         change,
         verificationTarget,
-        `sdd-verify discovered ${verificationTarget}-tier scope or risk.`,
+        `sdd-verify: ${verificationDecision?.reason} Evidence: ${verificationDecision?.request.evidence.join(", ")}`,
       )
       plan = result.plan
       progress.setTotal(plan.planning.length + 8)
@@ -304,11 +325,11 @@ export async function runAutomatic(
       cycle,
     )
     const judgment = await adaptiveJudgmentWithRunner(observedRunner, plan, diff, goal, parentID)
-    const judgmentTargets = Object.values(judgment.outputs)
-      .map((output) => escalationMarker(output ?? ""))
-      .filter((target): target is WorkflowTier => Boolean(target))
-    const judgmentTarget = judgmentTargets.reduce<WorkflowTier | undefined>(
-      (current, target) => (current ? higherTier(current, target) : target),
+    const judgmentDecisions = Object.values(judgment.outputs)
+      .map((output) => inspectEscalation(output ?? "", plan.tier))
+      .filter((decision): decision is EscalationDecision => Boolean(decision?.accepted))
+    const judgmentTarget = judgmentDecisions.reduce<WorkflowTier | undefined>(
+      (current, decision) => (current ? higherTier(current, decision.request.target) : decision.request.target),
       undefined,
     )
     if (judgmentTarget && higherTier(plan.tier, judgmentTarget) !== plan.tier) {
@@ -358,11 +379,11 @@ export async function runAutomatic(
       cycle,
     )
     const panel = await adaptiveReviewWithRunner(observedRunner, plan, diff, parentID)
-    const reviewTargets = Object.values(panel.outputs)
-      .map((output) => escalationMarker(output ?? ""))
-      .filter((target): target is WorkflowTier => Boolean(target))
-    const reviewTarget = reviewTargets.reduce<WorkflowTier | undefined>(
-      (current, target) => (current ? higherTier(current, target) : target),
+    const reviewDecisions = Object.values(panel.outputs)
+      .map((output) => inspectEscalation(output ?? "", plan.tier))
+      .filter((decision): decision is EscalationDecision => Boolean(decision?.accepted))
+    const reviewTarget = reviewDecisions.reduce<WorkflowTier | undefined>(
+      (current, decision) => (current ? higherTier(current, decision.request.target) : decision.request.target),
       undefined,
     )
     if (reviewTarget && higherTier(plan.tier, reviewTarget) !== plan.tier) {

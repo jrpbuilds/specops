@@ -15,6 +15,11 @@ import {
   type TierAssessment,
   validateConfig,
 } from "../src/core.js"
+import {
+  adjudicateEscalation,
+  legacyEscalationRequest,
+  parseEscalationRequest,
+} from "../src/escalation.js"
 
 describe("SpecOps core", () => {
   const assessment = (overrides: Partial<TierAssessment> = {}): TierAssessment => ({
@@ -43,6 +48,32 @@ describe("SpecOps core", () => {
     expect(hasStandalonePass("Evidence\n[PASS]\n")).toBe(true)
     expect(hasStandalonePass("The code says [PASS] inline.")).toBe(false)
     expect(hasStandalonePass("[PASS] but with a caveat")).toBe(false)
+  })
+
+  it("parses and adjudicates evidence-backed escalation requests", () => {
+    const output = JSON.stringify({
+      escalation: {
+        target: "full",
+        category: "security",
+        confidence: "high",
+        summary: "The change crosses the authorization boundary.",
+        evidence: ["src/auth/policy.ts", "tests/AuthPolicyTest.ts"],
+        boundary_crossed: "security",
+        why_current_tier_is_insufficient: "The current tier does not include the security review stages.",
+      },
+    })
+    const request = parseEscalationRequest(output)
+    expect(request?.category).toBe("security")
+    const decision = adjudicateEscalation("standard", request!)
+    expect(decision.accepted).toBe(true)
+    expect(decision.fingerprint).toContain("security")
+    expect(adjudicateEscalation("standard", request!, new Set([decision.fingerprint])).accepted).toBe(false)
+  })
+
+  it("marks legacy markers as compatibility escalations", () => {
+    const request = legacyEscalationRequest("standard", "[ESCALATE:STANDARD]")
+    expect(request.legacy_marker).toBe(true)
+    expect(adjudicateEscalation("lean", request).reason).toContain("Compatibility mode")
   })
 
   it("recognizes configured blocking severities", () => {

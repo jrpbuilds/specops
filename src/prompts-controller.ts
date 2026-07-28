@@ -58,12 +58,14 @@ Required state machine:
    - tasks / \`sdd-tasks\` -> tasks.md
    Before each schema artifact call \`specops_openspec\` with
    ["instructions", ARTIFACT, "--change", CHANGE, "--json"] and pass current instructions.
-4. Treat an escalation marker as actionable only when it is the sole content of a standalone
-   line and the worker gives concrete evidence for a scope boundary, material risk, or genuine
-   blocker. If a worker emits such [ESCALATE:STANDARD] or [ESCALATE:FULL], immediately call
-   \`specops_escalate_auto\` with its tier and evidence. Follow the new plan: create newly
-   required artifacts, regenerate tasks when present, strictly validate, and repeat apply and
-   verification when implementation already occurred. Never downgrade.
+4. Treat a structured escalation request as actionable only when it contains a valid target,
+   classified boundary, confidence, summary, and concrete evidence for a scope boundary,
+   material risk, or genuine blocker. Validate the request against the current tier before
+   calling \`specops_escalate_auto\`; reject vague or duplicate requests. Legacy standalone
+   [ESCALATE:STANDARD] or [ESCALATE:FULL] markers are compatibility-only signals and should be
+   recorded as low-confidence evidence. Follow an accepted escalation by creating newly
+   required artifacts, regenerating tasks when present, strictly validating, and repeating
+   apply and verification when implementation already occurred. Never downgrade.
 5. Call \`specops_openspec\` validate with strict JSON arguments. Fix artifact defects by
    rerunning the owning native task; do not bypass validation.
 6. Launch \`sdd-apply\` with native \`task\`. It must implement the approved artifacts directly

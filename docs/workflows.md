@@ -30,12 +30,22 @@ wording choices or missing low-risk details can be resolved from repository
 conventions or a small reversible assumption. A worker may escalate only for
 concrete evidence that scope crosses the tier boundary, material risk is
 present, or safe progress is genuinely blocked after repository inspection.
-Required markers must appear on their own line; examples or negated mentions
-are ignored. SpecOps then moves the same change to the higher cumulative
+Structured escalation requests must include concrete evidence; legacy markers
+are compatibility-only. SpecOps then moves the same change to the higher cumulative
 OpenSpec schema, records the reason, creates newly required artifacts,
 refreshes tasks, and reruns implementation and evidence. It never downgrades.
 After implementation, SpecOps also measures actual changed files and top-level
 modules so underestimated scope escalates deterministically.
+
+### Escalation decisions
+
+Workers should request escalation with a structured JSON object containing the
+target tier, classified boundary, confidence, summary, and concrete evidence.
+SpecOps validates the request against the current tier and deduplicates the
+same category/boundary/evidence combination. Legacy standalone escalation
+markers remain accepted for compatibility but are recorded as low-confidence
+compatibility requests. Provider rate limits, timeouts, and vague uncertainty
+are not workflow escalation evidence.
 
 Every tier requires a clean Git baseline, factual verification, remediation of
 blocking findings, a fresh SHA-256-bound receipt, strict validation, and
