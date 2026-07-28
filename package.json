@@ -1,0 +1,28 @@
+{
+  "name": "specops-opencode",
+  "version": "0.1.0",
+  "description": "Spec-driven development orchestration for OpenCode, powered by OpenSpec.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "sync": "python3 scripts/sync-opencode-manifest.py",
+    "sync:check": "python3 scripts/sync-opencode-manifest.py --check",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
+    "validate:openspec": "openspec schema validate specops-lean && openspec schema validate specops-standard && openspec schema validate specops",
+    "check": "npm run sync:check && npm run typecheck && npm run test && npm run test:python && npm run validate:openspec"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "1.6.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.16.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
