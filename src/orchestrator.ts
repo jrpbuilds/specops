@@ -1,394 +1,361 @@
-/**
- * SpecOps plugin entry: command and tool registration.
- *
- * This slimmed orchestrator wires the 17 commands and 13 tools onto the
- * OpenCode plugin hook. All heavy logic lives in the split modules; this file
- * is intentionally thin so the plugin surface is easy to audit.
- */
-
-import type { Config, Plugin, PluginInput, PluginModule } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
+import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { stat } from "node:fs/promises"
-import {
-  WORKFLOW_PLANS,
-  type WorkflowPlan,
-} from "./core.js"
-import {
-  linkedWorkerReporter,
-  ProgressTracker,
-  type AgentRunner,
-  type MetadataContext,
-} from "./progress.js"
-import { stripFence } from "./parsing.js"
-import { implementationFootprint, footprintEscalation, collectDiff } from "./git.js"
-import {
-  onboard,
-  onboardWithContext,
-  openSpecOrThrow,
-  readConfig,
-  READ_ONLY_OPENSPEC_COMMANDS,
-  writeArtifact,
-} from "./openspec.js"
-import {
-  judgmentDayWithRunner,
-  reviewPanelWithRunner,
-} from "./judgment.js"
-import {
-  escalateVisibleRun,
-  finalizeVisibleRun,
-  prepareVisibleRun,
-  readAdaptiveRun,
-} from "./runs.js"
-import { runAutomatic } from "./automation.js"
-import { doctor } from "./doctor.js"
+import type { Plugin } from "@opencode-ai/plugin"
+import { tool } from "@opencode-ai/plugin"
+import { contextPacket } from "./capabilities/context.js"
 import { COMMANDS } from "./commands.js"
-import { SPECOPS_CONTROLLER_PROMPT, SPECOPS_INTERACTIVE_PROMPT } from "./prompts-controller.js"
-import { waitForProvider } from "./runner.js"
+import { doctor } from "./doctor.js"
+import { executeValidation } from "./evidence/commands.js"
+import { READ_ONLY_OPENSPEC_COMMANDS, openSpecOrThrow, onboard, readConfig } from "./openspec.js"
+import { publishProgress, type MetadataContext } from "./progress.js"
+import { TOOL_IDS } from "./protocol.js"
+import { changeRoot, readMachine, readRun, writeMachine } from "./state/store.js"
+import {
+    cancelRun,
+    completeAction,
+    finalizeRun,
+    issueDirective,
+    startRun,
+    answerQuestionAction,
+    dismissQuestionAction,
+} from "./workflow/engine.js"
+import { pendingQuestionBlockView } from "./workflow/questions.js"
+
+/** Validated change-name pattern used by every tool that accepts a `change` argument. */
+const CHANGE_NAME = /^[a-z0-9][a-z0-9-]*$/
 
 /**
- * The SpecOps plugin. Registered by `index.ts` via the default export.
- *
- * The plugin:
- * 1. Reads the project's `.opencode/specops.json` configuration.
- * 2. Creates an {@link AgentRunner} bound to the current session.
- * 3. Exposes the `config()` hook to register commands and the two controllers.
- * 4. Exposes 13 tools used by the controllers and standalone commands.
+ * Allow-list of artifact file names that may be requested through the
+ * `specops_request_context` tool. Limits the controller's view to the same
+ * deterministic artifacts the workflow produces.
  */
-export const SpecOpsPlugin: Plugin = async (input) => {
-  const config = await readConfig(input.directory)
-  const runner = await createRunner(input, config)
-  return {
-    config: async (openCodeConfig) => {
-      openCodeConfig.command ??= {}
-      for (const [name, command] of Object.entries(COMMANDS)) {
-        openCodeConfig.command[name] ??= command
-      }
-      openCodeConfig.agent ??= {}
-      openCodeConfig.agent["specops-auto"] ??= {
-        mode: "primary",
-        model: "opencode/deepseek-v4-flash-free",
-        steps: 1000,
-        prompt: SPECOPS_CONTROLLER_PROMPT,
-        tools: {
-          question: false,
-          todowrite: false,
-          task: true,
-        },
-      }
-      openCodeConfig.agent.specops ??= {
-        mode: "primary",
-        model: "opencode/deepseek-v4-flash-free",
-        steps: 1000,
-        prompt: SPECOPS_INTERACTIVE_PROMPT,
-        tools: {
-          question: true,
-          todowrite: false,
-          task: true,
-        },
-      }
+const CONTEXT_ARTIFACTS = new Set([
+    "routing.md",
+    "exploration.md",
+    "proposal.md",
+    "design.md",
+    "tasks.md",
+    "verification.md",
+    "review-ledger.json",
+])
+
+/**
+ * Register the final SpecOps command and tool surface.
+ *
+ * Composes the deterministic protocol tools (start/next/complete/finalize,
+ * context, validation, status, cancel) with diagnostic tools (onboard,
+ * doctor, openspec) under a single OpenCode {@link Plugin}. The `config`
+ * hook installs every SpecOps command without overwriting user overrides.
+ * @param _input - OpenCode plugin input (currently unused).
+ * @returns Plugin object exposing the SpecOps tool surface.
+ */
+export const SpecOpsPlugin: Plugin = async _input => ({
+    config: async config => {
+        config.command ??= {}
+        for (const [name, command] of Object.entries(COMMANDS)) {
+            config.command[name] ??= command
+        }
     },
     tool: {
-      specops_prepare_auto: tool({
-        description:
-          "Validate an sdd-assess result, select the minimum safe workflow, prepare its OpenSpec change, and return the authoritative tier plan.",
-        args: {
-          goal: tool.schema.string().min(1),
-          assessment: tool.schema.string().min(1),
-          requestedTier: tool.schema.enum(["auto", "lean", "standard", "full"]),
-        },
-        async execute(args, context) {
-          return JSON.stringify(
-            await prepareVisibleRun(
-              context.directory,
-              await readConfig(context.directory),
-              args.goal,
-              args.assessment,
-              args.requestedTier,
-            ),
-            null,
-            2,
-          )
-        },
-      }),
-      specops_escalate_auto: tool({
-        description:
-          "Monotonically escalate an adaptive SpecOps change, update its OpenSpec schema, and return the newly authoritative workflow plan.",
-        args: {
-          change: tool.schema.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-          target: tool.schema.enum(["standard", "full"]),
-          reason: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          return JSON.stringify(
-            await escalateVisibleRun(context.directory, args.change, args.target, args.reason),
-            null,
-            2,
-          )
-        },
-      }),
-      specops_wait_for_provider: tool({
-        description:
-          "Wait before retrying the same native worker after a transient provider capacity or streaming failure. This does not change workflow state.",
-        args: {
-          agent: tool.schema.string().min(1),
-          attempt: tool.schema.number().int().min(1),
-        },
-        async execute(args, context) {
-          const seconds = Math.min(30, 5 * 2 ** Math.min(args.attempt - 1, 3))
-          await waitForProvider(seconds, context.abort)
-          return `Provider retry wait completed for ${args.agent} after ${seconds}s. Relaunch the same task with unchanged arguments.`
-        },
-      }),
-      specops_save_onboarding: tool({
-        description:
-          "Persist complete sdd-onboard Markdown as the repo-local OpenSpec project memory.",
-        args: {
-          content: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          await onboard(context.directory)
-          const destination = path.join(context.directory, "openspec", "onboarding.md")
-          const { writeFile } = await import("node:fs/promises")
-          await writeFile(destination, stripFence(args.content), "utf-8")
-          return "Stored project memory at openspec/onboarding.md"
-        },
-      }),
-      specops_save_artifact: tool({
-        description:
-          "Persist one native worker output beneath an existing OpenSpec change using a safe relative path.",
-        args: {
-          change: tool.schema.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-          path: tool.schema.string().min(1),
-          content: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          if (
-            ![
-              "init.md",
-              "exploration.md",
-              "proposal.md",
-              "design.md",
-              "tasks.md",
-              "verification.md",
-            ].includes(args.path) &&
-            !/^specs\/[a-z0-9][a-z0-9-]*\/spec\.md$/.test(args.path)
-          ) {
-            throw new Error(`Artifact path is not controller-writable: ${args.path}`)
-          }
-          await stat(
-            path.join(
-              context.directory,
-              "openspec",
-              "changes",
-              args.change,
-              ".openspec.yaml",
-            ),
-          )
-          await writeArtifact(context.directory, args.change, args.path, args.content)
-          return `Stored openspec/changes/${args.change}/${args.path}`
-        },
-      }),
-      specops_diff: tool({
-        description:
-          "Collect the complete bounded implementation diff for visible judges and reviewers, excluding OpenSpec memory and evidence.",
-        args: {},
-        async execute(_args, context) {
-          const current = await readConfig(context.directory)
-          return collectDiff(context.directory, current.review.max_diff_bytes)
-        },
-      }),
-      specops_check_scope: tool({
-        description:
-          "Measure the actual implementation footprint and automatically escalate when configured file/module thresholds exceed the active tier.",
-        args: {
-          change: tool.schema.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-        },
-        async execute(args, context) {
-          const current = await readConfig(context.directory)
-          const changeDirectory = path.join(
-            context.directory,
-            "openspec",
-            "changes",
-            args.change,
-          )
-          const run = await readAdaptiveRun(changeDirectory)
-          const footprint = await implementationFootprint(context.directory)
-          const target = footprintEscalation(run.tier, footprint, current)
-          if (!target) {
-            return JSON.stringify({
-              escalated: false,
-              plan: WORKFLOW_PLANS[run.tier],
-              footprint,
-            })
-          }
-          return JSON.stringify(
-            {
-              ...(await escalateVisibleRun(
-                context.directory,
-                args.change,
-                target,
-                `Actual implementation footprint is ${footprint.files} files across ${footprint.modules} modules.`,
-              )),
-              footprint,
+        [TOOL_IDS.startRun]: tool({
+            description: "Create a final-format deterministic run from a strict assessment.",
+            args: {
+                goal: tool.schema.string().min(1),
+                assessment: tool.schema.string().min(2),
+                requestedTier: tool.schema.enum(["auto", "lean", "standard", "full"]),
+                mode: tool.schema.enum(["automatic", "interactive"]),
             },
-            null,
-            2,
-          )
-        },
-      }),
-      specops_finalize_auto: tool({
-        description:
-          "Persist final visible judge/review evidence, enforce gates and freshness, strictly validate, and archive a passing change.",
-        args: {
-          change: tool.schema.string().regex(/^[a-z0-9][a-z0-9-]*$/),
-          goal: tool.schema.string().min(1),
-          cycle: tool.schema.number().int().min(0).max(10),
-          judgeA: tool.schema.string().min(1),
-          judgeB: tool.schema.string().optional(),
-          ledger: tool.schema.string().min(1),
-          panelEvidence: tool.schema.string().min(1),
-          completedReviewers: tool.schema.array(
-            tool.schema.enum([
-              "review-risk",
-              "review-readability",
-              "review-reliability",
-              "review-resilience",
-            ]),
-          ),
-          refuterUsed: tool.schema.boolean(),
-        },
-        async execute(args, context) {
-          return finalizeVisibleRun(
-            context.directory,
-            await readConfig(context.directory),
-            args,
-          )
-        },
-      }),
-      specops_onboard: tool({
-        description:
-          "Create missing repo-local OpenSpec/SpecOps assets and refresh durable onboarding memory without replacing OpenSpec configuration.",
-        args: {
-          context: tool.schema.string().optional(),
-        },
-        async execute(args, context) {
-          const report = linkedWorkerReporter(context, "SpecOps onboarding")
-          const observed: AgentRunner = (agent, prompt, parent) =>
-            runner(agent, prompt, parent, report, context.abort)
-          const result = await onboardWithContext(
-            context.directory,
-            observed,
-            args.context ?? "",
-            context.sessionID,
-          )
-          return `${result.message}\nStored refreshed project memory at openspec/onboarding.md.`
-        },
-      }),
-      specops_doctor: tool({
-        description: "Run read-only SpecOps readiness diagnostics.",
-        args: {},
-        async execute(_args, context) {
-          return doctor(context.directory, await readConfig(context.directory))
-        },
-      }),
-      specops_openspec: tool({
-        description:
-          "Run a read-only bundled OpenSpec CLI command. Pass argv without the openspec executable.",
-        args: {
-          args: tool.schema.array(tool.schema.string()).min(1),
-        },
-        async execute(args, context) {
-          if (!READ_ONLY_OPENSPEC_COMMANDS.has(args.args[0])) {
-            throw new Error(`OpenSpec command is not permitted by this read-only tool: ${args.args[0]}`)
-          }
-          return openSpecOrThrow(
-            context.directory,
-            await readConfig(context.directory),
-            args.args,
-            context.abort,
-          )
-        },
-      }),
-      specops_judgment_day: tool({
-        description:
-          "Run two independent judges in parallel; if either fails, invoke the fix agent to produce a remediation plan.",
-        args: {
-          diff: tool.schema.string().min(1),
-          taskDescription: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          const report = linkedWorkerReporter(context, "SpecOps Judgment Day")
-          const observed: AgentRunner = (agent, prompt, parent) =>
-            runner(agent, prompt, parent, report, context.abort)
-          return JSON.stringify(
-            await judgmentDayWithRunner(observed, args.diff, args.taskDescription, context.sessionID),
-            null,
-            2,
-          )
-        },
-      }),
-      specops_review_panel: tool({
-        description:
-          "Run risk, readability, reliability, and resilience reviews in parallel, then refute and prioritize them.",
-        args: {
-          diff: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          const report = linkedWorkerReporter(context, "SpecOps review panel")
-          const observed: AgentRunner = (agent, prompt, parent) =>
-            runner(agent, prompt, parent, report, context.abort)
-          return JSON.stringify(
-            await reviewPanelWithRunner(observed, args.diff, context.sessionID),
-            null,
-            2,
-          )
-        },
-      }),
-      specops_run_auto: tool({
-        description:
-          "Run the complete SpecOps workflow from goal through implementation, bounded remediation, review, evidence receipt, and archive.",
-        args: {
-          goal: tool.schema.string().min(1),
-        },
-        async execute(args, context) {
-          const progress = new ProgressTracker(
-            context as MetadataContext,
-            context.directory,
-            args.goal,
-            context.abort,
-          )
-          try {
-            const output = await runAutomatic(
-              input,
-              runner,
-              await readConfig(context.directory),
-              args.goal,
-              context.sessionID,
-              progress,
-            )
-            return progress.result(output)
-          } catch (error) {
-            await progress.finish(context.abort.aborted ? "cancelled" : "failed", error)
-            throw error
-          }
-        },
-      }),
+            async execute(args, context) {
+                const config = await readConfig(context.directory)
+                await onboard(context.directory)
+                return JSON.stringify(
+                    await startRun(context.directory, config, {
+                        goal: args.goal,
+                        assessmentOutput: args.assessment,
+                        requestedTier: args.requestedTier,
+                        mode: args.mode,
+                    }),
+                    null,
+                    2,
+                )
+            },
+        }),
+        [TOOL_IDS.nextAction]: tool({
+            description:
+                "Return the next controller directive (dispatch, ask-question, block, finalize).",
+            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            async execute(args, context) {
+                return JSON.stringify(
+                    await issueDirective(
+                        context.directory,
+                        args.change,
+                        await readConfig(context.directory),
+                    ),
+                    null,
+                    2,
+                )
+            },
+        }),
+        [TOOL_IDS.completeAction]: tool({
+            description: "Validate and persist an issued deterministic worker result.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                dispatchId: tool.schema.string().min(1),
+                output: tool.schema.string(),
+            },
+            async execute(args, context) {
+                const state = await completeAction(
+                    context.directory,
+                    args.change,
+                    args.dispatchId,
+                    args.output,
+                    await readConfig(context.directory),
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return JSON.stringify(state, null, 2)
+            },
+        }),
+        [TOOL_IDS.answerQuestion]: tool({
+            description: "Record an answer to a worker-raised pending question.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                questionId: tool.schema.string().min(1),
+                selectedOption: tool.schema.string().optional(),
+                otherText: tool.schema.string().optional(),
+            },
+            async execute(args, context) {
+                if ((args.selectedOption === undefined) === (args.otherText === undefined)) {
+                    throw new Error("Provide exactly one of selectedOption or otherText")
+                }
+                const state = await answerQuestionAction(
+                    context.directory,
+                    args.change,
+                    args.questionId,
+                    args.selectedOption,
+                    args.otherText,
+                    await readConfig(context.directory),
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return JSON.stringify(state, null, 2)
+            },
+        }),
+        [TOOL_IDS.dismissQuestion]: tool({
+            description: "Record that the user dismissed the native question UI without answering.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                questionId: tool.schema.string().min(1),
+            },
+            async execute(args, context) {
+                const state = await dismissQuestionAction(
+                    context.directory,
+                    args.change,
+                    args.questionId,
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return JSON.stringify(state, null, 2)
+            },
+        }),
+        [TOOL_IDS.requestContext]: tool({
+            description: "Read bounded, scheduler-safe run context and persisted artifacts.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                artifacts: tool.schema.array(tool.schema.string()).optional(),
+            },
+            async execute(args, context) {
+                const config = await readConfig(context.directory)
+                const state = await readRun(context.directory, args.change)
+                const names = args.artifacts ?? []
+                if (names.some(name => !CONTEXT_ARTIFACTS.has(name))) {
+                    throw new Error("requested context artifact is not available")
+                }
+
+                const artifacts = await readContextArtifacts(
+                    context.directory,
+                    args.change,
+                    names,
+                    config.review.maxContextBytes,
+                )
+                return JSON.stringify({ context: contextPacket(state), artifacts }, null, 2)
+            },
+        }),
+        [TOOL_IDS.runValidation]: tool({
+            description: "Execute a registered arbitrary validation command without a shell.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                dispatchId: tool.schema.string().min(1),
+                validationId: tool.schema.string().min(1),
+                executable: tool.schema.string().min(1),
+                args: tool.schema.array(tool.schema.string()),
+                cwd: tool.schema.string().optional(),
+            },
+            async execute(args, context) {
+                const config = await readConfig(context.directory)
+                const state = await readRun(context.directory, args.change)
+                if (
+                    !state.dispatches.some(
+                        dispatch => dispatch.id === args.dispatchId && dispatch.status === "issued",
+                    )
+                ) {
+                    throw new Error("validation requires an issued dispatch")
+                }
+
+                const requirement = state.requirements.requiredValidations.find(
+                    (
+                        candidate,
+                    ): candidate is Extract<
+                        (typeof state.requirements.requiredValidations)[number],
+                        { kind: "command" }
+                    > => candidate.id === args.validationId && candidate.kind === "command",
+                )
+                if (
+                    !requirement ||
+                    requirement.executable !== args.executable ||
+                    JSON.stringify(requirement.args) !== JSON.stringify(args.args) ||
+                    requirement.cwd !== args.cwd
+                ) {
+                    throw new Error("validation command does not match the run evidence registry")
+                }
+
+                const evidence = await executeValidation(
+                    context.directory,
+                    config,
+                    args,
+                    context.abort,
+                )
+                const registry = await readMachine(
+                    context.directory,
+                    args.change,
+                    "specops-evidence.json",
+                    {
+                        version: 1,
+                        commands: [] as unknown[],
+                    },
+                )
+                registry.commands.push(evidence)
+                await writeMachine(
+                    context.directory,
+                    args.change,
+                    "specops-evidence.json",
+                    registry,
+                )
+                return JSON.stringify(evidence, null, 2)
+            },
+        }),
+        [TOOL_IDS.getStatus]: tool({
+            description: "Read final-format deterministic run state.",
+            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            async execute(args, context) {
+                return JSON.stringify(await readRun(context.directory, args.change), null, 2)
+            },
+        }),
+        [TOOL_IDS.cancelRun]: tool({
+            description: "Persist a safe cancellation outcome for an active run.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                reason: tool.schema.string().min(1).optional(),
+            },
+            async execute(args, context) {
+                return JSON.stringify(
+                    await cancelRun(context.directory, args.change, args.reason),
+                    null,
+                    2,
+                )
+            },
+        }),
+        [TOOL_IDS.finalize]: tool({
+            description: "Finalize a run only when deterministic completion gates are satisfied.",
+            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            async execute(args, context) {
+                const state = await finalizeRun(
+                    context.directory,
+                    args.change,
+                    await readConfig(context.directory),
+                )
+                const dto = pendingQuestionBlockView(state, args.change)
+                if (dto) {
+                    return JSON.stringify(dto, null, 2)
+                }
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return JSON.stringify(state, null, 2)
+            },
+        }),
+        [TOOL_IDS.onboard]: tool({
+            description: "Install final SpecOps OpenSpec assets.",
+            args: {},
+            async execute(_args, context) {
+                await onboard(context.directory)
+                return "SpecOps final assets installed."
+            },
+        }),
+        [TOOL_IDS.doctor]: tool({
+            description: "Diagnose final SpecOps configuration and assets.",
+            args: {},
+            async execute(_args, context) {
+                return doctor(context.directory, await readConfig(context.directory))
+            },
+        }),
+        [TOOL_IDS.openSpec]: tool({
+            description: "Run a read-only OpenSpec command.",
+            args: { args: tool.schema.array(tool.schema.string()).min(1) },
+            async execute(args, context) {
+                if (!READ_ONLY_OPENSPEC_COMMANDS.has(args.args[0])) {
+                    throw new Error("OpenSpec command is not read-only")
+                }
+                return openSpecOrThrow(
+                    context.directory,
+                    await readConfig(context.directory),
+                    args.args,
+                )
+            },
+        }),
     },
-  }
-}
+})
 
 /**
- * Create the agent runner lazily, avoiding a circular import between
- * `runner.ts` (which imports `progress.ts`) and this module (which imports both).
+ * Read a subset of context artifact files from a change directory, honouring
+ * a byte budget so a single large artifact cannot crowd out the others.
+ * @param directory - Repository root containing the `.specops` directory.
+ * @param change - Change slug identifying the run's directory.
+ * @param names - Artifact file names to read; must be in
+ *   {@link CONTEXT_ARTIFACTS}.
+ * @param limit - Maximum total bytes to return across all artifacts.
+ * @returns Map of artifact file name to its (possibly truncated) content.
  */
-async function createRunner(
-  input: PluginInput,
-  config: Awaited<ReturnType<typeof readConfig>>,
-): Promise<AgentRunner> {
-  const { createAgentRunner } = await import("./runner.js")
-  return createAgentRunner(input, config)
+async function readContextArtifacts(
+    directory: string,
+    change: string,
+    names: string[],
+    limit: number,
+): Promise<Record<string, string>> {
+    const result: Record<string, string> = {}
+    let remaining = limit
+    for (const name of names) {
+        if (remaining <= 0) {
+            break
+        }
+        const content = await readFile(path.join(changeRoot(directory, change), name), "utf8")
+        result[name] = content.slice(0, remaining)
+        remaining -= Buffer.byteLength(result[name])
+    }
+    return result
 }
-
-/** Re-exported for the index module and consumers that need the raw plugin. */
-export { SpecOpsPlugin as default, type WorkflowPlan }

@@ -1,51 +1,164 @@
-# Development
+# Development and release verification
 
-## Validation
+SpecOps is developed as a clean-slate OpenCode plugin. A change is complete only when the source
+tree, generated runtime surfaces, packed package, installer, schemas, and documentation agree on
+the same architecture.
 
-Run the complete local gate:
+## Prerequisites
+
+- Node.js 20.19 or newer
+- npm
+- OpenCode for the optional real-host smoke test
+
+Install the pinned development dependencies:
+
+```bash
+npm install
+```
+
+## Generated surfaces
+
+The capability registry is the source of truth for agent identity, mode, role, authority, and
+default model. Generate the manifest-derived documentation after an intentional registry or
+command change:
+
+```bash
+npm run generate
+```
+
+This command builds the TypeScript, regenerates `docs/agents.md` and `docs/commands.md`, and
+formats the repository. Do not hand-edit those two generated files.
+
+`npm run generated:check` verifies:
+
+- the registry, canonical ID collection, default manifest, and prompts contain the same exact
+  agent set;
+- each scheduler capability resolves to a registered agent;
+- every public command targets a registered controller or protocol tool;
+- generated documentation is current.
+
+## Formatting and static analysis
+
+Use the write-mode formatter before validation:
+
+```bash
+npm run format
+npm run format:check
+npm run typecheck
+```
+
+The production and test TypeScript configurations enable strict checking, unused-local checks,
+unused-parameter checks, and consistent filename casing. Public APIs and non-obvious safety
+invariants should have JSDoc or focused comments; comments should explain ownership or constraints
+rather than restate syntax.
+
+## Focused tests
+
+Run a focused loop while editing:
+
+```bash
+npm test
+npm run validate:openspec
+```
+
+Vitest covers scheduler behavior, command/controller consistency, manifest replacement, plugin
+hook registration, permission boundaries, prompts, protocol tools, the idempotent installer, and
+the checked-in example configuration. OpenSpec validates all three final schemas.
+
+## Packed-package integration
+
+The packed test is the release-critical integration boundary:
+
+```bash
+npm run test:packed
+```
+
+It creates a real npm archive, extracts it into a temporary clean installation, supplies the
+OpenCode peer dependency as a host would, and loads only the packed `dist` entry point. The test
+then:
+
+- starts with a partial manifest and confirms exact atomic materialisation;
+- invokes the real plugin configuration hook;
+- resolves every canonical agent and public command;
+- confirms controller and worker modes, prompts, tools, and authority;
+- invokes the packed doctor tool;
+- onboards a fresh Git project, starts a final-format run, requests the first scheduler action,
+  and reads it through the status tool;
+- rejects source-only TypeScript and checkout-path leakage.
+
+The test does not copy source files into the package and does not read or modify the developer's
+real OpenCode configuration.
+
+## Real OpenCode smoke test
+
+When the `opencode` binary is available, run:
+
+```bash
+npm run smoke:opencode
+```
+
+This repeats the packed test, loads the packed file URL through a real isolated OpenCode
+configuration, checks `opencode run --help`, and invokes:
+
+```bash
+opencode run --command specops-auto --dir <isolated-project> --format json \
+  "Confirm packed CLI automatic execution"
+```
+
+The harness observes the first scheduler action and sends `SIGINT`, or reports the exact external
+provider boundary when authentication or networking prevents that point. It also uses
+`opencode debug config` and `opencode debug agent` to prove both controllers resolve.
+
+## Full validation
+
+Run:
 
 ```bash
 npm run check
+npm pack --dry-run
 ```
 
-It verifies:
+`npm run check` executes formatting, generated-surface drift checks, strict TypeScript, Vitest,
+packed-package integration, OpenSpec validation, and documentation link checks.
+`npm pack --dry-run` is a final review of the publishable file list.
 
-1. manifest and generated OpenCode configuration are synchronized;
-2. TypeScript passes strict checking;
-3. orchestrator and receipt unit tests pass;
-4. Python synchronization tests pass; and
-5. the custom OpenSpec schema validates.
-
-To verify OpenCode discovery:
+Before release, also inspect:
 
 ```bash
-opencode debug config
+git status --short
+git diff --check
 ```
 
-The `plugin_origins` result should contain only
-`.opencode/plugins/sdd-orchestrator.ts`. Runtime helpers belong in
-`.opencode/lib/`, because every source file directly inside the plugin directory
-is treated as a plugin entrypoint.
+Then run repository-wide stale-reference searches for removed agent IDs, obsolete run-state
+versions, escalation types, static workflow plans, deprecated fields, superseded prompts, and
+migration or compatibility code. A final package must contain only the canonical architecture.
 
-## Changing an agent
+## Test isolation
 
-1. Edit `.opencode/sdd-manifest.json`.
-2. Edit the existing prompt when its engineering contract changes.
-3. Run `npm run sync`.
-4. Run `npm run check`.
-5. Inspect `opencode.json` and commit manifest, prompt, and generated changes.
+Tests use temporary `HOME`, `XDG_CONFIG_HOME`, and package directories. Keep this property when
+adding coverage:
 
-The Python tests cover both short and object manifest formats, configuration
-preservation, prompt preservation, and unsafe IDs.
+- never write to the developer's real OpenCode configuration;
+- never rely on an already installed global plugin;
+- never use a source checkout to make a packed test pass;
+- never contact a model provider from the default validation suite;
+- bound spawned processes, captured output, and temporary artifacts.
 
-The TypeScript tests cover strict pass markers, blocking severity parsing,
-slugging, configuration merging, artifact hashing, receipt freshness, Judgment
-Day remediation, and complete review-panel synthesis.
+## Adding a focused command
 
-## Compatibility
+The current public command set is not an immutable product list. A future focused command is valid
+only if it enters through a registered controller or protocol tool and then uses the deterministic
+scheduler. It must not dispatch a worker directly, mutate run state itself, or bypass artifact,
+evidence, independence, repair-budget, or completion gates.
 
-The plugin pins the SDK version used for its type contract and loads through
-OpenCode's project plugin mechanism. When upgrading OpenCode or the SDK, run the
-full gate and `opencode debug config`, then smoke-test `/specops-doctor` before
-changing the pin.
+## Code review checklist
 
+- Agent spellings come from `src/capabilities/ids.ts`.
+- Tool spellings come from `src/protocol.ts`.
+- Agent roles and authority come from the capability registry.
+- Planner and designer output is validated before controller-owned atomic persistence.
+- Only implementer and repairer capabilities mutate repository code.
+- Consultation and independent review provenance remain distinct.
+- The general risk reviewer detects cross-cutting facets but does not replace specialists.
+- Visible and non-interactive automatic adapters resolve the same command and scheduler.
+- New tests prove the packed behavior, not only source-level behavior.

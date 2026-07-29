@@ -1,115 +1,81 @@
 # Architecture
 
-SpecOps separates durable state, deterministic orchestration, and probabilistic
-engineering judgment.
+SpecOps separates deterministic control from model reasoning. The controller owns workflow state,
+artifact persistence, evidence registration, invalidation, budgets, and completion. Agents receive
+one scheduler-authorized action and return bounded content or repository mutations permitted by
+their role.
 
-```mermaid
-flowchart TD
-    U[User goal] --> AS[sdd-assess]
-    AS --> RT{Deterministic tier router}
-    RT --> L[Lean schema]
-    RT --> S[Standard schema]
-    RT --> F[Full schema]
-    L --> P[Tier planning]
-    S --> P
-    F --> P
-    P --> A[Apply]
-    A --> V[Verification evidence]
-    P -- broader scope --> RT
-    A -- broader scope --> RT
-    V -- broader risk --> RT
-    V --> J[Tier-required judges]
-    J --> G{Required passes?}
-    G -- no --> X[Fix agent]
-    X --> V
-    G -- yes --> R[Tier-required review]
-    R --> Q[Risk or refuter ledger]
-    Q -- blocker/high --> X
-    Q -- clear --> E[Bound receipt]
-    E --> Z{Evidence still fresh?}
-    Z -- yes --> AR[OpenSpec archive]
-    Z -- no --> STOP[Fail safely]
-```
+## Runtime layers
 
-## Durable project memory
+1. **OpenCode integration** registers public commands, deterministic protocol tools, and the exact
+   final agent catalogue through one config hook.
+2. **Canonical capability registry** owns agent IDs, roles, modes, default models, tools, and
+   non-overridable permissions.
+3. **Deterministic scheduler** examines current requirements, artifact validity, dispatch
+   provenance, repair state, and budgets to select one next action.
+4. **Workflow engine** issues dispatch records, validates worker results, persists controller-owned
+   artifacts, applies bounded escalation decisions, and produces receipts.
+5. **State and artifact stores** use atomic replacement beneath one OpenSpec change.
+6. **Evidence registry** executes declared project commands without a shell and records immutable
+   hashes and bounded excerpts.
 
-OpenSpec is the source of truth. Active change artifacts, verification,
-judgments, review results, and receipts live beneath `openspec/changes/`.
-Archived capability specifications live beneath `openspec/specs/`. Every later
-stage obtains fresh OpenSpec instructions and dependencies rather than trusting
-the conversation transcript.
+## Shared execution engine
 
-`openspec/onboarding.md` is created on first automatic onboarding. Existing
-`openspec/config.yaml` files are not overwritten, and an existing default
-OpenSpec schema is preserved. SpecOps selects `specops-lean`,
-`specops-standard`, or `specops` per change.
+Interactive and automatic runs differ only at their checkpoint policy. Both use OpenCode's native
+task mechanism and call the same `issueAction`, `completeAction`, validation, and finalization
+functions.
 
-## Orchestrator
+Automatic execution has two OpenCode adapters:
 
-`.opencode/plugins/sdd-orchestrator.ts` registers the commands and tools. It:
+- `/specops-auto` starts it from the visible command palette.
+- `opencode run --command specops-auto --dir <project> <goal>` starts the same command and
+  controller without opening the TUI.
 
-- launches specialist sessions through the OpenCode SDK;
-- executes judges and reviewers with `Promise.all`;
-- invokes the fix agent when any tier-required judge fails;
-- bounds remediation with `automation.max_fix_cycles`;
-- runs the pinned OpenSpec CLI without shell interpolation;
-- writes only orchestration-owned OpenSpec artifacts;
-- refuses oversized or stale review snapshots; and
-- archives only after strict validation and a fresh receipt.
+No public command contains its own workflow implementation. Future commands must enter through a
+registered protocol tool or controller.
 
-The runtime helper is outside `.opencode/plugins/` so OpenCode discovers exactly
-one plugin entrypoint.
+## Ownership boundaries
 
-The plugin does not replace OpenCode's tool layer. Its primary orchestrator
-retains the user's configured filesystem, Git, and MCP capabilities. Specialist
-sessions inherit the same configured tool catalog unless project policy sets
-MCP to `disabled`; their role permissions still limit shell, edits, and nested
-delegation.
+| Concern                         | Owner                        |
+| ------------------------------- | ---------------------------- |
+| Scope and required capabilities | Deterministic routing policy |
+| Next executable action          | Scheduler                    |
+| Proposal/spec/task reasoning    | Planner                      |
+| Independent Full-tier design    | Designer                     |
+| Artifact validation and writes  | Controller                   |
+| Repository code mutation        | Implementer or repairer      |
+| Command execution               | Evidence registry            |
+| Correctness/compliance verdicts | Independent judges           |
+| Review deduplication            | Refuter                      |
+| Invalidation and completion     | Controller                   |
 
-## Review snapshot
+Planner and designer agents are read-only. Their responses become authoritative only after
+controller validation and atomic persistence. This keeps artifact reasoning separate from
+repository mutation.
 
-The implementation snapshot includes staged, unstaged, and untracked files.
-`openspec/` is excluded so evidence files do not recursively change the reviewed
-diff. Text untracked files are represented as new-file patches; binary untracked
-files are represented by path and byte size. The snapshot is rejected when it
-exceeds the configured byte limit.
+## Command and agent materialisation
 
-The receipt binds:
+On plugin load, the package wrapper:
 
-- the baseline Git commit;
-- the implementation diff SHA-256;
-- all OpenSpec change artifacts except the receipt itself;
-- the selected tier, escalation history, and every judge required by that tier;
-- the refuted review ledger; and
-- the remediation cycle count.
+1. Resolves OpenCode's XDG configuration directory.
+2. Loads the user model manifest.
+3. Replaces the file if it is absent, malformed, partial, or contains a non-final catalogue.
+4. Registers commands through the inner plugin hook.
+5. Registers every manifest agent into the same resolved OpenCode config object.
 
-A commit by a subagent, an implementation edit after review, or an artifact
-change after evidence collection makes the receipt stale and blocks archive.
+This order prevents a command from surviving without its controller. The persisted manifest stores
+user model choices; OpenCode's resolved in-memory config contains the complete executable agent
+definitions, including embedded prompts and registry-controlled authority.
 
-## Runtime observability
+## Scheduler invariants
 
-`/specops-auto` runs under a dedicated primary controller and dispatches every
-specialist through OpenCode's built-in `task` tool. OpenCode therefore owns the
-parent/child relationship, renders a native subagent row, and exposes each
-transcript through `ctrl+x`, then `down`. Parallel judge and review task calls
-are retained as separate selectable workers.
+- At most one action is issued for a scheduling decision.
+- A dispatch records capability, purpose, independence, input hash, agent, and status.
+- Consultation never satisfies independent review.
+- General risk review can detect facets but cannot fulfill specialist review.
+- Repository mutations stale all downstream verification and assurance artifacts.
+- A receipt is impossible while a required artifact is absent or stale.
+- Escalation can only add bounded requirements or raise scope.
+- Repair budgets and repeated-fingerprint budgets terminate loops deterministically.
 
-Visible and headless controllers consume the same workflow plans. Model
-assessment supplies evidence, while deterministic routing enforces thresholds,
-sensitive-risk floors, requested minimums, and monotonic escalation. Active
-changes use cumulative `specops-lean`, `specops-standard`, and `specops`
-schemas, so escalation adds rigor without discarding earlier artifacts.
-
-Transient provider capacity failures are outside the routing model. The
-controller preserves the phase, agent, configured model, prompt, and change ID,
-then retries with capped exponential backoff until success or user
-interruption. Headless retries are enforced in code; visible retries use the
-controller's dedicated wait tool so native subagent transcripts remain
-inspectable.
-
-The compact `/specops-auto-headless` runner creates child sessions through the
-SDK instead. It reports phase, worker IDs, remediation cycle, and elapsed time
-through tool metadata and a repo-local `specops-progress.json`, but OpenCode
-1.16 does not promote those custom-tool child sessions into its native subagent
-pane. The two modes share the same agents, artifacts, gates, receipt, and
-archive safety.
+The final run format is described in [Artifacts and state](artifacts-and-state.md).

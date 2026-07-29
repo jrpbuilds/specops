@@ -1,22 +1,6 @@
-# SpecOps project configuration examples
+# Example project configuration
 
-These files are templates for the per-project SpecOps runtime policy. Copy
-them into your project's `.opencode/` directory to customize SpecOps behavior
-for that project. The plugin reads them from `<project>/.opencode/`.
-
-## Files
-
-- `specops.json` — Runtime policy: workflow tier thresholds, automation gates,
-  review limits, and MCP integration mode. Copy to `.opencode/specops.json`
-  in your project and edit as needed. When this file is missing, SpecOps uses
-  safe defaults from `DEFAULT_CONFIG` in `src/core.ts`.
-- `specops.schema.json` — JSON Schema for `specops.json`. Reference it from
-  your `specops.json` via `"$schema"` for editor validation:
-  ```json
-  { "$schema": "./specops.schema.json", ... }
-  ```
-
-## Usage
+Copy both files into a clean project's `.opencode/` directory:
 
 ```bash
 mkdir -p .opencode
@@ -24,7 +8,25 @@ cp examples/specops.json .opencode/specops.json
 cp examples/specops.schema.json .opencode/specops.schema.json
 ```
 
-These are project-level files; they are not part of the npm package and are
-not required to use SpecOps. The agent manifest (models, steps, permissions)
-lives separately at `~/.config/opencode/specops-manifest.json` and is managed
-by the plugin on first load.
+`specops.json` demonstrates the final configuration shape. The adjacent JSON Schema documents
+every supported field and rejects unknown properties.
+
+The project configuration controls workflow policy, budgets, evidence commands, environment
+handling, and review thresholds. It does not define agents. The exact canonical agent catalogue
+is materialised separately in OpenCode's configuration directory from the packaged capability
+registry.
+
+Verification commands accept an arbitrary executable and argument array. They run directly
+without a shell and remain subject to confined working directories, timeouts, controlled
+environment changes, and output limits.
+
+The same file configures visible and non-interactive automatic runs. For CI:
+
+```bash
+opencode run --command specops-auto --dir "$PWD" --format json "workflow goal"
+```
+
+Set `workflow.defaultTier` in `specops.json` when automation requires a minimum tier.
+
+See [Configuration](../docs/configuration.md) for field semantics and
+[Security and integrations](../docs/security-and-integrations.md) for the execution boundary.

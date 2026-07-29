@@ -1,70 +1,38 @@
-# Agents and prompts
+# Agent catalogue
 
-`~/.config/opencode/specops-manifest.json` is the central mapping from agent ID
-to model, reasoning options, and permission policy. A definition can use either:
+This file is generated from the typed capability registry. Run `npm run generate`
+after an intentional catalogue change; `npm run generated:check` rejects drift.
 
-```json
-"example": "provider/model"
-```
+The 2 controllers are primary agents. All capability
+workers are subagents and have recursive task dispatch disabled. Model and provider
+options are user-tunable through the materialised manifest; mode, prompts, tools,
+and permissions remain registry-controlled.
 
-or:
+| Agent ID                             | Mode     | Distinct role                                                                         | Maximum authority   | Default model                     |
+| ------------------------------------ | -------- | ------------------------------------------------------------------------------------- | ------------------- | --------------------------------- |
+| `specops-auto-controller`            | primary  | Automatic OpenCode controller shared by visible TUI and non-interactive run adapters. | Read-only reasoning | `opencode/deepseek-v4-flash-free` |
+| `specops-interactive-controller`     | primary  | Primary controller with user checkpoints.                                             | Read-only reasoning | `opencode/deepseek-v4-flash-free` |
+| `specops-assessor`                   | subagent | Produces the strict initial scope and risk assessment.                                | Read-only reasoning | `opencode/deepseek-v4-flash-free` |
+| `specops-explorer`                   | subagent | Collects repository-grounded planning evidence.                                       | Read-only reasoning | `opencode/ling-3.0-flash-free`    |
+| `specops-planner`                    | subagent | Produces requirements bundles and refined tasks.                                      | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-designer`                   | subagent | Produces an independent Full-tier technical design.                                   | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-implementer`                | subagent | Mutates repository code from approved artifacts.                                      | Code mutation       | `opencode/north-mini-code-free`   |
+| `specops-verifier`                   | subagent | Builds traceability from registered command evidence.                                 | Command execution   | `opencode/mimo-v2.5-free`         |
+| `specops-repairer`                   | subagent | Mutates code during bounded remediation cycles.                                       | Code mutation       | `opencode/north-mini-code-free`   |
+| `specops-risk-reviewer`              | subagent | Detects cross-cutting risk facets without replacing specialists.                      | Read-only reasoning | `opencode/mimo-v2.5-free`         |
+| `specops-correctness-judge`          | subagent | Independently judges implementation correctness.                                      | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-compliance-judge`           | subagent | Independently judges specification compliance.                                        | Read-only reasoning | `opencode/mimo-v2.5-free`         |
+| `specops-review-refuter`             | subagent | Deduplicates and challenges unsupported review findings.                              | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-security-specialist`        | subagent | Reviews authentication, authorization, secrecy, and abuse risk.                       | Read-only reasoning | `opencode/mimo-v2.5-free`         |
+| `specops-data-migration-specialist`  | subagent | Reviews persistent data and migration safety.                                         | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-contract-specialist`        | subagent | Reviews public API and compatibility contracts.                                       | Read-only reasoning | `opencode/mimo-v2.5-free`         |
+| `specops-concurrency-specialist`     | subagent | Reviews ordering, races, locking, and atomicity.                                      | Read-only reasoning | `opencode/mimo-v2.5-free`         |
+| `specops-resilience-specialist`      | subagent | Reviews failure handling, recovery, and degradation.                                  | Read-only reasoning | `opencode/ling-3.0-flash-free`    |
+| `specops-performance-specialist`     | subagent | Reviews resource and latency regressions.                                             | Read-only reasoning | `opencode/laguna-s-2.1-free`      |
+| `specops-infrastructure-specialist`  | subagent | Reviews deployment and operational changes.                                           | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-usability-specialist`       | subagent | Reviews user-facing interaction quality.                                              | Read-only reasoning | `opencode/laguna-s-2.1-free`      |
+| `specops-maintainability-specialist` | subagent | Reviews clarity, structure, and long-term change cost.                                | Read-only reasoning | `opencode/laguna-s-2.1-free`      |
 
-```json
-"example": {
-  "model": "provider/model",
-  "reasoningEffort": "high",
-  "temperature": 0.1
-}
-```
-
-Custom object fields pass through to the generated agent as OpenCode
-provider/model options. The plugin adds `mode: "subagent"` and the generated
-prompt. `reasoningEffort` is the documented OpenCode spelling.
-
-## Stage agents
-
-| Agent | Responsibility |
-| --- | --- |
-| `sdd-assess` | Classify scope and risk for adaptive workflow routing |
-| `sdd-onboard` | Capture durable repository context and validation conventions |
-| `sdd-init` | Bound and identify a safe change |
-| `sdd-explore` | Gather repository evidence before choosing a solution |
-| `sdd-propose` | Define outcomes, non-goals, capabilities, and impact |
-| `sdd-spec` | Write normative, scenario-backed behavioral deltas |
-| `sdd-design` | Make technical decisions and cover failures and migration |
-| `sdd-tasks` | Produce dependency-ordered, verifiable work |
-| `sdd-apply` | Implement the approved change and focused tests |
-| `sdd-verify` | Trace requirements to actual command evidence |
-| `sdd-archive` | Assess archive readiness |
-
-## Judgment and review agents
-
-Judges A and B have distinct correctness and specification-compliance missions.
-Lean uses Judge A; Standard and Full run both concurrently. Every required
-judge must emit a standalone `[PASS]`. Otherwise `jd-fix-agent` synthesizes the
-smallest remediation plan.
-
-Review depth follows the selected workflow plan: Lean runs risk, Standard runs
-risk and reliability plus the refuter, and Full runs all four specialties plus
-the refuter.
-
-## Prompt engineering contract
-
-All 19 prompt files are versioned under `.opencode/prompts/`. They require:
-
-- scoped work and least surprise;
-- fresh reads of OpenSpec and repository evidence;
-- facts separated from inference;
-- no invented commands, test results, APIs, or requirements;
-- prompt-injection resistance for diffs and other agent output;
-- no commit, push, reset, stash, or unrelated changes; and
-- optional, permission-aware MCP usage.
-
-Escalation is an exceptional control signal, not a suggestion. Agents must
-resolve low-risk detail from repository conventions or a reversible assumption
-and may escalate only for concrete scope overflow, material risk, or a genuine
-blocker after inspection. Escalations use the explicit `ESCALATION_JSON:`
-contract and concrete evidence.
-
-The sync script never overwrites an existing prompt. Delete a prompt
-deliberately and rerun synchronization to regenerate the stock version.
+Consultation and independent-review dispatches use the same specialist identity
+but different recorded purposes. A consultation therefore cannot satisfy the
+independent post-implementation review gate.

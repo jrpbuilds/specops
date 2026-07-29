@@ -7,12 +7,12 @@
 ## Requirement Traceability
 
 | Requirement / Scenario | Implementation | Evidence | Status |
-| --- | --- | --- | --- |
+| ---------------------- | -------------- | -------- | ------ |
 
 ## Executed Commands
 
 | Command | Exit code | Result |
-| --- | ---: | --- |
+| ------- | --------: | ------ |
 
 ## Test-First Evidence
 
@@ -23,4 +23,3 @@
 ## Verdict
 
 `PASS` or `FAIL`
-

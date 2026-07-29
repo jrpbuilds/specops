@@ -1,251 +1,186 @@
 /**
- * Git helpers for the SpecOps workflow.
+ * Low-level git and process helpers for SpecOps.
  *
- * All Git interaction is funneled through this module so the orchestrator can
- * enforce a clean-worktree baseline, collect bounded diffs, and measure the
- * implementation footprint without leaking Git concerns elsewhere.
+ * All child-process invocations are shell-free. The git wrapper sets
+ * `NO_COLOR` and a narrow `PATH` to minimise environment leakage.
  */
 
+import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { spawn } from "node:child_process"
-import type { SpecOpsConfig, WorkflowTier } from "./core.js"
 
-/** The result of a spawned child process. */
-type CommandResult = { stdout: string; stderr: string; code: number }
-
-/** A UTF-8 decoder configured to reject invalid byte sequences (binary detection). */
-const TEXT_DECODER = new TextDecoder("utf-8", { fatal: true })
+/** Result from a direct executable invocation; no shell is ever involved. */
+export type ProcessResult = {
+    stdout: string
+    stderr: string
+    code: number
+    outputTruncated: boolean
+    stdoutTruncated: boolean
+    stderrTruncated: boolean
+}
 
 /**
- * Spawn a command with sanitized environment and capture its output.
+ * Run an executable with an argument array. Supplying an environment replaces
+ * inherited variables, allowing callers to use a deliberately narrow runtime.
  *
- * `shell: false` prevents shell injection. `NO_COLOR` and `OPENSPEC_TELEMETRY`
- * are forced off so output is parseable and telemetry stays local.
- *
- * @param command - The executable to run.
- * @param args - Arguments passed verbatim (no shell expansion).
- * @param cwd - The working directory for the child.
- * @param signal - Optional abort signal to kill the child on cancellation.
+ * @param command - Path or name of the executable to spawn.
+ * @param args - Arguments passed to the child process.
+ * @param cwd - Working directory for the child process.
+ * @param signal - Optional `AbortSignal` to cancel the running process.
+ * @param environment - Optional env vars (replaces, not merges, `process.env`).
+ * @param maxOutputBytes - Optional cap on combined stdout/stderr buffering;
+ * exceeding this kills the child with `SIGTERM`.
+ * @returns A {@link ProcessResult} with captured output streams and exit code.
  */
 export async function runProcess(
-  command: string,
-  args: string[],
-  cwd: string,
-  signal?: AbortSignal,
-): Promise<CommandResult> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: { ...process.env, NO_COLOR: "1", OPENSPEC_TELEMETRY: "0" },
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+    command: string,
+    args: string[],
+    cwd: string,
+    signal?: AbortSignal,
+    environment?: Record<string, string>,
+    maxOutputBytes?: number,
+): Promise<ProcessResult> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(command, args, {
+            cwd,
+            shell: false,
+            env: environment ?? process.env,
+            stdio: ["ignore", "pipe", "pipe"],
+        })
+        const stdout: Buffer[] = []
+        const stderr: Buffer[] = []
+        let outputBytes = 0
+        let stdoutTruncated = false
+        let stderrTruncated = false
+
+        /** Accumulate a chunk of output, truncating at `maxOutputBytes` if set. */
+        const collect =
+            (target: Buffer[], stream: "stdout" | "stderr") =>
+            (chunk: Buffer): void => {
+                const remaining =
+                    maxOutputBytes === undefined ? chunk.length : maxOutputBytes - outputBytes
+                if (remaining > 0) {
+                    target.push(chunk.subarray(0, remaining))
+                    outputBytes += Math.min(chunk.length, remaining)
+                }
+                if (maxOutputBytes !== undefined && chunk.length > remaining) {
+                    if (stream === "stdout") stdoutTruncated = true
+                    else stderrTruncated = true
+                }
+            }
+
+        child.stdout.on("data", collect(stdout, "stdout"))
+        child.stderr.on("data", collect(stderr, "stderr"))
+        child.on("error", reject)
+        /** Kill the child process on abort signal. */
+        const abort = (): boolean => child.kill("SIGTERM")
+        signal?.addEventListener("abort", abort, { once: true })
+        child.on("close", code => {
+            signal?.removeEventListener("abort", abort)
+            resolve({
+                stdout: Buffer.concat(stdout).toString("utf8"),
+                stderr: Buffer.concat(stderr).toString("utf8"),
+                code: code ?? 1,
+                outputTruncated: stdoutTruncated || stderrTruncated,
+                stdoutTruncated,
+                stderrTruncated,
+            })
+        })
     })
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk))
-    child.on("error", reject)
-    child.on("close", (code) => {
-      resolve({
-        stdout: Buffer.concat(stdout).toString("utf-8"),
-        stderr: Buffer.concat(stderr).toString("utf-8"),
-        code: code ?? 1,
-      })
-    })
-    const abort = () => child.kill("SIGTERM")
-    signal?.addEventListener("abort", abort, { once: true })
-    child.on("close", () => signal?.removeEventListener("abort", abort))
-  })
 }
 
 /**
- * Run a Git command and return its stdout. Throws on non-zero exit.
- *
- * @param directory - The repository working tree.
- * @param args - Git arguments (e.g. `["rev-parse", "HEAD"]`).
+ * Read the current implementation baseline commit.
+ * @param directory - Repository working directory.
+ * @returns The trimmed `HEAD` commit SHA.
+ * @throws If the underlying `git rev-parse HEAD` invocation fails.
  */
-export async function git(directory: string, args: string[]): Promise<string> {
-  const result = await runProcess("git", args, directory)
-  if (result.code !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`)
-  return result.stdout
-}
-
-/** Return the current HEAD commit SHA of the repository. */
 export async function baseCommit(directory: string): Promise<string> {
-  return (await git(directory, ["rev-parse", "HEAD"])).trim()
+    return (await git(directory, ["rev-parse", "HEAD"])).trim()
 }
 
 /**
- * Assert that the working tree is clean outside `openspec/`. The automatic
- * workflow requires an unambiguous implementation baseline so its evidence
- * has a single base commit to bind against.
- *
- * @throws {Error} when tracked or untracked changes exist outside `openspec/`.
+ * Refuse automation if user code changes already exist outside OpenSpec
+ * metadata.
+ * @param directory - Repository working directory.
+ * @throws If any non-`openspec/` tracked or untracked paths are present in the worktree.
  */
 export async function assertCleanWorktree(directory: string): Promise<void> {
-  const status = await git(directory, ["status", "--porcelain=v1", "--untracked-files=all"])
-  const implementationChanges = status
-    .split("\n")
-    .filter(Boolean)
-    .filter((line) => {
-      const changedPath = line.slice(3).replace(/^"|"$/g, "")
-      const paths = changedPath.split(" -> ")
-      return !paths.every((candidate) => candidate.startsWith("openspec/"))
-    })
-  if (implementationChanges.length) {
-    throw new Error(
-      "SpecOps automatic mode requires a clean implementation worktree outside openspec/ so its evidence has an unambiguous baseline. Commit, stash, or remove existing code changes yourself, then retry.\n" +
-        implementationChanges.join("\n"),
-    )
-  }
-}
-
-/**
- * Detect whether a buffer contains binary content. Uses a NUL-byte check
- * followed by strict UTF-8 decoding so the diff stays text-only.
- *
- * @param buffer - The file bytes to inspect.
- */
-export function isBinary(buffer: Buffer): boolean {
-  if (buffer.includes(0)) return true
-  try {
-    TEXT_DECODER.decode(buffer)
-    return false
-  } catch {
-    return true
-  }
-}
-
-/**
- * Collect the complete implementation diff against HEAD, excluding `openspec/`.
- *
- * Includes tracked changes (via `git diff`) and untracked files (via
- * `git ls-files`), each rendered as a unified-diff hunk. Throws when the
- * resulting diff exceeds `review.max_diff_bytes`.
- *
- * @param directory - The repository working tree.
- * @param maximumBytes - Hard upper bound from `review.max_diff_bytes`.
- */
-export async function collectDiff(directory: string, maximumBytes: number): Promise<string> {
-  const tracked = await git(directory, [
-    "diff",
-    "--no-ext-diff",
-    "--binary",
-    "HEAD",
-    "--",
-    ".",
-    ":(exclude)openspec/**",
-  ])
-  const untrackedOutput = await git(directory, [
-    "ls-files",
-    "--others",
-    "--exclude-standard",
-    "-z",
-    "--",
-    ".",
-    ":(exclude)openspec/**",
-  ])
-  const sections = [tracked]
-  for (const relative of untrackedOutput.split("\0").filter(Boolean).sort()) {
-    const data = await readFile(path.join(directory, relative))
-    if (isBinary(data)) {
-      sections.push(`\n--- untracked binary: ${relative} (${data.byteLength} bytes) ---\n`)
-    } else {
-      sections.push(
-        `\ndiff --git a/${relative} b/${relative}\nnew file mode 100644\n--- /dev/null\n+++ b/${relative}\n` +
-          data
-            .toString("utf-8")
-            .split("\n")
-            .map((line) => `+${line}`)
-            .join("\n"),
-      )
+    const status = await git(directory, ["status", "--porcelain=v1", "--untracked-files=all"])
+    const changes = status
+        .split("\n")
+        .filter(Boolean)
+        .filter(line => !line.slice(3).replace(/^"|"$/g, "").startsWith("openspec/"))
+    if (changes.length) {
+        throw new Error(`SpecOps requires a clean implementation worktree.\n${changes.join("\n")}`)
     }
-  }
-  const diff = sections.join("")
-  if (Buffer.byteLength(diff) > maximumBytes) {
-    throw new Error(
-      `Review diff is ${Buffer.byteLength(diff)} bytes, above review.max_diff_bytes=${maximumBytes}. Increase the explicit limit or split the change.`,
+}
+
+/**
+ * Collect the repository diff while excluding controller-owned OpenSpec
+ * files.
+ * @param directory - Repository working directory.
+ * @param maxBytes - Hard ceiling on the assembled diff size.
+ * @returns The combined tracked plus untracked implementation diff.
+ * @throws If the assembled diff exceeds `maxBytes`.
+ */
+export async function collectDiff(directory: string, maxBytes: number): Promise<string> {
+    const tracked = await git(directory, [
+        "diff",
+        "--no-ext-diff",
+        "--binary",
+        "HEAD",
+        "--",
+        ".",
+        ":(exclude)openspec/**",
+    ])
+    const untracked = (
+        await git(directory, [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+            ":(exclude)openspec/**",
+        ])
     )
-  }
-  return diff || "(no implementation diff)"
+        .split("\0")
+        .filter(Boolean)
+        .sort()
+    const sections = [tracked]
+    for (const relative of untracked) {
+        const data = await readFile(path.join(directory, relative))
+        sections.push(
+            `\ndiff --git a/${relative} b/${relative}\nnew file mode 100644\n--- /dev/null\n+++ b/${relative}\n${data
+                .toString("utf8")
+                .split("\n")
+                .map(line => `+${line}`)
+                .join("\n")}`,
+        )
+    }
+
+    const diff = sections.join("") || "(no implementation diff)"
+    if (Buffer.byteLength(diff) > maxBytes) {
+        throw new Error(`review diff exceeds configured maximum of ${maxBytes} bytes`)
+    }
+    return diff
 }
 
 /**
- * Measure the actual implementation footprint: file count, module count, and
- * the list of changed paths (tracked + untracked, excluding `openspec/`).
- *
- * Used by {@link footprintEscalation} to detect when the real diff outgrew the
- * tier that was originally selected.
- *
- * @param directory - The repository working tree.
+ * Internal git wrapper: runs `git` with `NO_COLOR` and a narrowed `PATH`.
+ * @param directory - Repository working directory.
+ * @param args - Arguments passed to `git`.
+ * @returns The stdout of the git invocation.
+ * @throws If git exits with a non-zero code, attaching stderr to the message.
  */
-export async function implementationFootprint(directory: string): Promise<{
-  files: number
-  modules: number
-  paths: string[]
-}> {
-  const tracked = await git(directory, [
-    "diff",
-    "--name-only",
-    "HEAD",
-    "--",
-    ".",
-    ":(exclude)openspec/**",
-  ])
-  const untracked = await git(directory, [
-    "ls-files",
-    "--others",
-    "--exclude-standard",
-    "--",
-    ".",
-    ":(exclude)openspec/**",
-  ])
-  const paths = [...new Set([...tracked.split("\n"), ...untracked.split("\n")].filter(Boolean))].sort()
-  const modules = new Set(paths.map(moduleKey))
-  return { files: paths.length, modules: modules.size, paths }
-}
-
-/** Group changed paths by a useful repository boundary rather than only the first segment. */
-export function moduleKey(relative: string): string {
-  const parts = relative.split("/")
-  if (parts.length === 1) return "(root)"
-  if (["src", "app", "lib", "packages"].includes(parts[0])) return parts.slice(0, 2).join("/")
-  if (parts[0] === "tests" && parts.length >= 2) return parts.slice(0, 2).join("/")
-  if (parts[0] === "resources" && parts.length >= 2) return parts.slice(0, 2).join("/")
-  if (parts[0] === "database" && parts.length >= 2) return parts.slice(0, 2).join("/")
-  return parts[0]
-}
-
-/**
- * Decide whether the actual implementation footprint should escalate the
- * workflow tier. Returns the target tier when escalation is required, or
- * `undefined` when the current tier still fits.
- *
- * - Files/modules at or above `full_min_*` force Full.
- * - Files/modules above `lean_max_*` (when currently Lean) raise to Standard.
- *
- * @param tier - The currently active tier.
- * @param footprint - The measured footprint from {@link implementationFootprint}.
- * @param config - The merged project configuration.
- */
-export function footprintEscalation(
-  tier: WorkflowTier,
-  footprint: { files: number; modules: number },
-  config: SpecOpsConfig,
-): WorkflowTier | undefined {
-  if (
-    footprint.files >= config.workflow.full_min_files ||
-    footprint.modules >= config.workflow.full_min_modules
-  ) {
-    return tier === "full" ? undefined : "full"
-  }
-  if (
-    tier === "lean" &&
-    (footprint.files > config.workflow.lean_max_files ||
-      footprint.modules > config.workflow.lean_max_modules)
-  ) {
-    return "standard"
-  }
-  return undefined
+async function git(directory: string, args: string[]): Promise<string> {
+    const result = await runProcess("git", args, directory, undefined, {
+        PATH: process.env.PATH ?? "",
+        NO_COLOR: "1",
+    })
+    if (result.code !== 0) {
+        throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`)
+    }
+    return result.stdout
 }

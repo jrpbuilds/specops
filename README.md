@@ -1,166 +1,223 @@
 # SpecOps
 
-SpecOps is a lightweight, open-code Spec-Driven Development plugin for
-[OpenCode](https://opencode.ai), powered by
-[OpenSpec](https://openspec.dev/).
+SpecOps is an OpenCode plugin for deterministic, evidence-driven software changes backed by
+OpenSpec artifacts. Language models supply bounded reasoning and implementation work; TypeScript
+owns routing, scheduling, persistence, invalidation, command evidence, review independence, repair
+budgets, and completion gates.
 
-It turns a goal into durable, repo-local specifications, implementation,
-verification evidence, two independent judgments, and a refuted engineering
-review. The name is a nod to Spec-Driven Development plus surgical subagent
-execution.
+The project is intentionally clean-slate. It supports one run-state format (version 2) and one
+canonical agent catalogue. There are no aliases, migrations, or fallback pipelines for earlier
+pre-release designs.
 
-## What is included
+## What SpecOps provides
 
-- Fully automated `/specops-auto <goal>` execution with visible, inspectable
-  native OpenCode workers, intelligent Lean/Standard/Full workflow sizing,
-  evidence-driven escalation, and bounded repair loops.
-- Checkpointed `/specops <goal>` execution for user edits between every phase.
-- A custom OpenSpec schema from exploration through review and archive.
-- Nineteen least-privilege agents with centrally configurable models.
-- Parallel Judgment Day and four-specialist review panels.
-- SHA-256-bound receipts that prevent stale evidence from being archived.
-- Optional use of the user's existing MCP tools, with no required MCP server.
-- Additive manifest synchronization that preserves unrelated OpenCode settings.
+- Lean, Standard, and Full scope tiers selected from repository evidence, risk, and uncertainty.
+- A single deterministic scheduler shared by interactive and automatic execution.
+- Full-tier planning in three ordered stages: requirements bundle, independent design, task
+  refinement.
+- Risk-facet specialists selected independently from scope tier.
+- Direct command execution with argument arrays, no shell, confined working directories, timeout,
+  controlled environment, and bounded output.
+- Durable artifact provenance and dependency-based invalidation.
+- Bounded worker-raised questions for material decisions that repository inspection cannot resolve,
+  with answer-bound provenance and deterministic invalidation.
+- Independent correctness and specification-compliance judgments.
+- A refuted review ledger and bounded repair cycles.
+- A strict, user-editable model manifest generated from the canonical capability registry.
 
-All durable project memory lives under `openspec/` in the project repository.
-SpecOps does not require Engram, a database, a hosted service, or an MCP server.
+## Installation
 
-## Adaptive execution
+OpenCode 1.16.2 or newer and Node.js 20.19 or newer are required.
 
-SpecOps starts with the smallest workflow that can safely complete the goal:
-
-| Tier | Typical use |
-| --- | --- |
-| Lean | Localized documentation, configuration, tests, and restorative bug fixes |
-| Standard | Localized new or changed behavior requiring proposal and specifications |
-| Full | Sensitive, architectural, breaking, migratory, destructive, infrastructural, concurrent, cross-cutting, or large changes |
-
-It escalates only when concrete repository evidence crosses a scope or safety
-boundary, or when safe progress is genuinely blocked after inspection.
-Low-risk wording choices and reversible assumptions remain at the current
-tier. Transient provider capacity errors also do not affect routing: SpecOps
-keeps the configured agent and model, waits with backoff, and retries until the
-provider recovers or the user interrupts.
-
-## Quick start
-
-Requirements: Git, Node.js 20.19 or newer, OpenCode 1.16.2 or a compatible
-newer release, and access to the models configured in the user-editable
-agent manifest.
-
-### One-line install
+For a published install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jrpbuilds/specops/master/scripts/install.sh | bash
+opencode plugin @jrpbuilds/specops -g
 ```
 
-This registers `@jrpbuilds/specops` as both an OpenCode server plugin and a
-TUI plugin (idempotent), so it appears in the Plugins menu. OpenCode's Bun
-runtime installs the package from npm on the next launch. On first load, the
-plugin writes the default agent manifest to
-`~/.config/opencode/specops-manifest.json` — edit it to customize agent
-models and permissions; the file persists across plugin updates.
+The repository also contains an idempotent installer:
 
-### Manual install
-
-Add the package to your `opencode.json` and global
-`~/.config/opencode/tui.json`:
-
-```json
-{
-  "plugin": ["@jrpbuilds/specops"]
-}
+```bash
+bash scripts/install.sh
 ```
 
-```json
-{
-  "plugin": ["@jrpbuilds/specops"]
-}
-```
-
-Then launch `opencode .` in any project directory.
-
-### First use
-
-Inside OpenCode:
+It registers `@jrpbuilds/specops` in OpenCode's server and TUI configuration. On the first plugin
+load, SpecOps automatically writes the exact final agent manifest to:
 
 ```text
+$XDG_CONFIG_HOME/opencode/specops-manifest.json
+```
+
+When `XDG_CONFIG_HOME` is unset, the path is
+`~/.config/opencode/specops-manifest.json`. No manual agent-file copying is required.
+
+The manifest controls models, step limits, and provider-specific options. Agent IDs, modes,
+prompts, tools, and permissions remain controlled by the packaged capability registry. An empty,
+partial, malformed, or wrong-catalogue manifest is atomically replaced with the final catalogue;
+removed IDs are never merged or preserved.
+
+After installation:
+
+```text
+/specops-onboard
 /specops-doctor
-/specops-auto add a focused health endpoint with tests and documentation
+/specops describe the change you want
 ```
 
-Automatic mode requires a clean, committed Git baseline and never creates a
-commit, pushes, stashes, resets, or opens a pull request. Review the resulting
-working tree yourself. During a run, use `ctrl+x`, then `down` to open
-OpenCode's subagent pane and select any worker transcript.
+See [Getting started](docs/getting-started.md) for the complete clean-install and development
+reinstall flows.
 
-For a controlled workflow:
+## Execution modes
 
-```text
-/specops add a focused health endpoint with tests and documentation
-```
+| Command                | Behaviour                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| `/specops <goal>`      | Interactive controller with checkpoints and native worker-question handling.    |
+| `/specops-auto <goal>` | Automatic controller using visible native workers; pauses for material choices. |
+| `/specops-status`      | Reads an existing version 2 run.                                                |
+| `/specops-doctor`      | Validates installation, manifest, commands, agents, prompts, and schemas.       |
+| `/specops-onboard`     | Installs final OpenSpec schemas into the current repository.                    |
 
-This pauses after each artifact and before implementation and archive.
+The generated [command catalogue](docs/commands.md) records the exact runtime target for every
+public command.
 
-### Power-user file-based config
+### Non-interactive CLI auto
 
-The plugin registers all 19 worker agents programmatically via its `config()`
-hook, so no `opencode.json` mutation is required. If you prefer to materialize
-agent definitions into your project's `opencode.json` (e.g. for version control
-or editor autocompletion), run:
+The same automatic workflow is available without opening the TUI through OpenCode's supported
+CLI adapter:
 
 ```bash
-python3 scripts/sync-opencode-manifest.py
+opencode run --command specops-auto --dir /path/to/project \
+  "add a health endpoint with tests"
 ```
 
-This reads the manifest from `~/.config/opencode/specops-manifest.json` and
-writes the agent entries into the project's `opencode.json`. Existing agents
-and unrelated config are preserved.
+Use `--format json` for raw NDJSON events suitable for CI. The positional message is the workflow
+goal, `--dir` selects the project, and project configuration supplies any minimum scope tier. Do
+not add OpenCode's unrelated `--auto` permission flag.
+
+```bash
+set -o pipefail
+opencode run --command specops-auto --dir "$PWD" --format json \
+  "apply the scheduled maintenance change" | tee specops.ndjson
+```
+
+OpenCode owns the process exit code. Exit `0` means the command session completed, not necessarily
+that every workflow gate passed; CI must also require persisted outcome category `completed`.
+Interruptions conventionally return `130`, while other nonzero exits cover host, installation,
+provider, or internal failures. Persisted outcomes distinguish policy blocks, validation failures,
+review failures, cancellation, and successful completion.
+
+Automatic and CLI runs cannot answer worker-raised questions. When a material choice cannot be
+resolved from repository evidence, SpecOps persists a resumable paused run instead of guessing.
+Resume it interactively without rerunning the original worker:
+
+```bash
+opencode run --command specops --dir /path/to/project "resume"
+```
+
+## Workflow
+
+Every run begins with a strict assessment and deterministic routing decision.
+
+```text
+assessment
+  → exploration
+  → Standard bundle OR Full requirements bundle
+  → independent design (Full only)
+  → task refinement (Full only; Standard tasks are bundled)
+  → specialist consultations selected during planning
+  → implementation
+  → registered verification
+  → independent judgments
+  → cross-cutting risk scan
+  → independent specialist reviews
+  → refutation ledger
+  → repair and re-verification when required
+  → completion receipt
+```
+
+Worker output does not directly mutate requirements or planning artifacts. Planner and designer
+responses are validated, then persisted atomically by the controller. Only implementer and
+repairer agents can modify repository code.
+
+At any worker boundary, a genuinely unresolved material decision may enter a bounded question
+loop. Interactive runs present validated options through OpenCode's native question UI. Answers
+are hashed into dispatch provenance, invalidate affected downstream artifacts, and cause a fresh
+dispatch for the interrupted phase. Dismissing a question leaves the run paused and resumable;
+question budgets prevent unbounded loops.
+
+See [Architecture](docs/architecture.md), [Workflows](docs/workflows.md), and
+[Artifacts and state](docs/artifacts-and-state.md).
+
+## Configuration
+
+Project policy lives at `.opencode/specops.json`. Start from
+[examples/specops.json](examples/specops.json); its schema is
+[examples/specops.schema.json](examples/specops.schema.json).
+
+Configuration is strict. Unknown fields, invalid thresholds, and incomplete escalation or question
+budget objects fail at startup instead of being ignored. See
+[Configuration](docs/configuration.md).
+
+## Agent models
+
+The generated manifest contains every final controller and worker. Edit only model, step, and
+provider options:
+
+```json
+{
+    "version": 1,
+    "agents": {
+        "<canonical-agent-id>": {
+            "model": "provider/model",
+            "steps": 48
+        }
+    }
+}
+```
+
+Run `/specops-doctor` after editing. The complete generated catalogue and role descriptions are in
+[Agents](docs/agents.md).
+
+## Development and verification
+
+```bash
+npm install
+npm run generate
+npm run format
+npm run check
+npm run smoke:opencode
+npm pack --dry-run
+```
+
+`npm run check` includes formatting, strict TypeScript and unused-symbol checks, unit/integration
+tests, installer tests, packed-output materialisation tests, generated-asset drift checks, and
+OpenSpec schema validation. `npm run smoke:opencode` additionally loads the packed plugin through
+a real isolated OpenCode installation and runs the documented CLI command until the first
+scheduler action or an external provider boundary is reached.
+
+See [Development](docs/development.md) for the exact validation matrix and provider boundary.
+
+## Troubleshooting
+
+If a command reports a missing controller:
+
+1. Run `/specops-doctor`.
+2. Inspect the manifest path reported by doctor.
+3. Rebuild/reinstall the package and restart OpenCode.
+4. Run `opencode debug config` and `opencode debug agent <controller-id>` if needed.
+
+SpecOps will replace an invalid or partial manifest on clean plugin load. It does not translate
+removed IDs. More diagnostics are in [Troubleshooting](docs/troubleshooting.md).
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
-- [How the architecture works](docs/architecture.md)
-- [Automatic and interactive workflows](docs/workflows.md)
-- [Agents and prompts](docs/agents.md)
+- [Architecture](docs/architecture.md)
+- [Workflows and scope tiers](docs/workflows.md)
+- [Agent catalogue](docs/agents.md)
+- [Commands](docs/commands.md)
 - [Configuration](docs/configuration.md)
-- [Security, permissions, and MCP](docs/security-and-integrations.md)
-- [Command reference](docs/commands.md)
-- [Development and validation](docs/development.md)
+- [Artifacts and persisted state](docs/artifacts-and-state.md)
+- [Security, evidence, and integrations](docs/security-and-integrations.md)
 - [Troubleshooting](docs/troubleshooting.md)
-
-## Status
-
-This repository is an initial working implementation intended for direct
-OpenCode testing. Model identifiers are deliberately centralized in the
-user-editable manifest at `~/.config/opencode/specops-manifest.json` so
-provider or model changes do not require editing the orchestrator.
-
-## Development
-
-```bash
-npm install
-npm run check     # sync:check, typecheck (src + tests), vitest, python tests, openspec validate
-npm run build     # emit dist/
-npm publish       # runs prepublishOnly → build, then publishes @jrpbuilds/specops
-```
-
-The plugin source lives in `src/` and is split into focused modules:
-
-- `index.ts` — plugin entry, manifest persistence, agent registration
-- `orchestrator.ts` — slimmed plugin with 13 tools
-- `automation.ts` — the 13-phase headless state machine
-- `runs.ts` — adaptive run prepare/escalate/finalize
-- `judgment.ts` — Judgment Day and review panel
-- `progress.ts` — `ProgressTracker` and worker observability
-- `runner.ts` — agent session lifecycle and transient retries
-- `git.ts` — Git helpers and footprint measurement
-- `openspec.ts` — bundled OpenSpec CLI and artifact persistence
-- `parsing.ts` — assessment parsing and prompt-injection defense
-- `prompts.ts` / `prompts-controller.ts` — inline worker prompts
-- `manifest.ts` — built-in default agent manifest
-- `core.ts` — config, tier routing, receipts
-- `commands.ts` / `doctor.ts` — command table and diagnostics
-
-Source `.md` prompt files live in `prompts/` for development reference; the
-runtime uses inline prompt strings generated by `src/prompts.ts`.
+- [Development and testing](docs/development.md)

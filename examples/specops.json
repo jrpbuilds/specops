@@ -1,28 +1,35 @@
 {
-  "$schema": "./specops.schema.json",
-  "openspec": {
-    "command": null,
-    "schema": "specops"
-  },
-  "workflow": {
-    "default_tier": "auto",
-    "onboarding": "if-missing",
-    "lean_max_files": 2,
-    "lean_max_modules": 1,
-    "full_min_files": 9,
-    "full_min_modules": 4
-  },
-  "automation": {
-    "max_fix_cycles": 3,
-    "require_clean_worktree": true,
-    "blocking_severities": ["BLOCKER", "HIGH"]
-  },
-  "review": {
-    "max_diff_bytes": 200000,
-    "transient_retries": 1,
-    "agent_timeout_seconds": 300
-  },
-  "integrations": {
-    "mcp": "inherit"
-  }
+    "$schema": "./specops.schema.json",
+    "version": 1,
+    "openspec": { "command": null },
+    "workflow": {
+        "defaultTier": "auto",
+        "onboarding": "if-missing",
+        "scopeThresholds": {
+            "leanMaxFiles": 2,
+            "leanMaxModules": 1,
+            "fullMinFiles": 9,
+            "fullMinModules": 4
+        }
+    },
+    "routing": { "forceFullForFacets": [] },
+    "automation": { "requireCleanWorktree": true },
+    "escalation": {
+        "budgets": {
+            "maxScopeEscalations": 2,
+            "maxSpecialistDispatches": 8,
+            "maxRepairCycles": 3,
+            "maxRepeatedFailureFingerprints": 2
+        }
+    },
+    "review": {
+        "blockingSeverities": ["BLOCKER", "HIGH"],
+        "maxDiffBytes": 200000,
+        "maxContextBytes": 50000,
+        "transientRetries": 1,
+        "agentTimeoutSeconds": 300,
+        "commandTimeoutSeconds": 300,
+        "commandOutputBytes": 32000
+    },
+    "integrations": { "mcp": "inherit" }
 }

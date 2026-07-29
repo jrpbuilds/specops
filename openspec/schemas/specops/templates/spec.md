@@ -12,4 +12,3 @@ The system SHALL provide the observable behavior described here.
 
 - **WHEN** the triggering condition occurs
 - **THEN** the observable result is produced
-

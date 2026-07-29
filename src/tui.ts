@@ -7,9 +7,17 @@
  */
 import type { TuiPluginModule } from "@opencode-ai/plugin/tui"
 
+/**
+ * SpecOps TUI plugin module registered with OpenCode's Plugins menu.
+ *
+ * `id` is the canonical plugin identifier shared with the server entry; `tui`
+ * is a no-op lifecycle hook because SpecOps does not own a TUI surface.
+ */
 const SpecOpsTuiPlugin = {
-  id: "specops",
-  tui: async () => {},
+    /** Canonical plugin identifier shared with the server entry point. */
+    id: "specops",
+    /** No-op TUI lifecycle hook; SpecOps owns no TUI surface. */
+    tui: async () => {},
 } satisfies TuiPluginModule
 
 export default SpecOpsTuiPlugin

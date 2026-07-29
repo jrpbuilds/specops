@@ -1,364 +1,233 @@
 /**
- * Bundled OpenSpec CLI access and artifact persistence.
+ * OpenSpec integration helpers: configuration, change lifecycle, schema
+ * onboarding, and artifact persistence.
  *
- * Resolves the bundled `@fission-ai/openspec` binary, runs read-only and
- * read/write OpenSpec commands, onboards projects, and writes worker-generated
- * artifacts into OpenSpec change directories with safe path enforcement.
+ * Every OpenSpec invocation is shell-free and runs through {@link runProcess}
+ * with a deliberately narrow environment.
  */
 
-import { createRequire } from "node:module"
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import type { SpecOpsConfig } from "./core.js"
-import type { AgentRunner } from "./progress.js"
+import { type SpecOpsConfig, DEFAULT_CONFIG, validateConfig } from "./config.js"
 import { runProcess } from "./git.js"
-import { stripFence, untrusted } from "./parsing.js"
-import { extractJson } from "./parsing.js"
+import { writeTextAtomic } from "./state/store.js"
 
-/** Directory of this compiled module (used to locate bundled assets relative to it). */
-const PLUGIN_DIRECTORY = path.dirname(fileURLToPath(import.meta.url))
+// `openspec.ts` is emitted directly into `dist`, so one parent reaches the package root in both
+// source and packed layouts. Keeping this package-relative avoids source-checkout path leakage.
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const require = createRequire(import.meta.url)
 
-/**
- * The project asset root: two levels up from the compiled plugin module.
- *
- * When published via npm, the plugin ships at `dist/index.js` and OpenSpec
- * assets ship at `openspec/`, so `PROJECT_ASSET_ROOT` resolves to the package
- * root. When loaded from a project's `.opencode/plugins/`, it resolves to the
- * project root. Both layouts keep `openspec/schemas/` reachable.
- */
-const PROJECT_ASSET_ROOT = path.resolve(PLUGIN_DIRECTORY, "..", "..")
-
-/**
- * OpenSpec CLI subcommands that are safe to expose read-only via the
- * `specops_openspec` tool. Anything outside this set is rejected to prevent
- * the controller from mutating OpenSpec state directly.
- */
+/** OpenSpec subcommands that do not create, modify, or archive project state. */
 export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
-  "status",
-  "instructions",
-  "schemas",
-  "schema",
-  "validate",
-  "list",
-  "show",
+    "status",
+    "instructions",
+    "schemas",
+    "schema",
+    "validate",
+    "list",
+    "show",
 ])
 
 /**
- * Resolve the absolute path to the bundled `openspec` CLI binary.
- *
- * Uses `require.resolve` to find `@fission-ai/openspec`'s entry point, then
- * locates the `bin/openspec.js` sibling. This keeps the plugin self-contained
- * without relying on a global OpenSpec install.
- */
-export function resolveBundledOpenSpec(): string {
-  const require = createRequire(import.meta.url)
-  const entry = require.resolve("@fission-ai/openspec")
-  return path.resolve(path.dirname(entry), "..", "bin", "openspec.js")
-}
-
-/**
- * Read and merge the project's `.opencode/specops.json` configuration.
- *
- * Returns a validated {@link SpecOpsConfig}. When the file is missing, returns
- * a fresh clone of `DEFAULT_CONFIG`. Invalid JSON or validation failures throw.
- *
- * @param directory - The project root directory.
+ * Read the strict final configuration or return an isolated copy of defaults.
+ * @param directory - Project root directory (`.opencode/specops.json` is
+ * read from here).
+ * @returns A validated {@link SpecOpsConfig}, or `structuredClone(DEFAULT_CONFIG)`
+ * when no config file exists.
+ * @throws If the file exists but fails schema validation or JSON parsing.
  */
 export async function readConfig(directory: string): Promise<SpecOpsConfig> {
-  const { DEFAULT_CONFIG, mergeConfig, validateConfig } = await import("./core.js")
-  const filename = path.join(directory, ".opencode", "specops.json")
-  try {
-    return validateConfig(mergeConfig(JSON.parse(await readFile(filename, "utf-8"))))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(DEFAULT_CONFIG)
-    throw new Error(`Invalid ${filename}: ${String(error)}`)
-  }
+    try {
+        return validateConfig(
+            JSON.parse(await readFile(path.join(directory, ".opencode", "specops.json"), "utf8")),
+        )
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return structuredClone(DEFAULT_CONFIG)
+        }
+        throw error
+    }
 }
 
 /**
- * Run the bundled OpenSpec CLI with the given arguments.
- *
- * Honors `config.openspec.command` when the user has overridden the binary.
- * Always appends `--no-color` for parseable output.
- *
- * @param directory - The project root (passed as `cwd` to the CLI).
- * @param config - The merged SpecOps configuration.
- * @param args - OpenSpec CLI arguments (without the `openspec` executable).
- * @param signal - Optional abort signal.
+ * Execute a bundled or explicitly configured OpenSpec binary with no shell.
+ * @param directory - Working directory for the OpenSpec process.
+ * @param config - Resolved config; `config.openspec.command` selects the binary.
+ * @param args - Arguments forwarded to the OpenSpec binary.
+ * @param signal - Optional `AbortSignal` to cancel the running process.
+ * @returns Captured stdout, stderr, and exit code.
  */
-export async function runOpenSpec(
-  directory: string,
-  config: SpecOpsConfig,
-  args: string[],
-  signal?: AbortSignal,
+async function runOpenSpec(
+    directory: string,
+    config: SpecOpsConfig,
+    args: string[],
+    signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const override = config.openspec.command
-  const command = override?.[0] ?? "node"
-  const prefix = override?.slice(1) ?? [resolveBundledOpenSpec()]
-  return runProcess(command, [...prefix, ...args, "--no-color"], directory, signal)
+    const command = config.openspec.command?.[0] ?? "node"
+    const prefix = config.openspec.command?.slice(1) ?? [openSpecBinary()]
+    const result = await runProcess(
+        command,
+        [...prefix, ...args, "--no-color"],
+        directory,
+        signal,
+        {
+            PATH: process.env.PATH ?? "",
+            NO_COLOR: "1",
+            OPENSPEC_TELEMETRY: "0",
+        },
+    )
+    return result
 }
 
 /**
- * Run the OpenSpec CLI and throw on non-zero exit. Returns stdout on success.
- *
- * @param directory - The project root.
- * @param config - The merged SpecOps configuration.
- * @param args - OpenSpec CLI arguments.
- * @param signal - Optional abort signal.
- * @throws {Error} when the CLI exits non-zero.
+ * Run OpenSpec and attach useful command output to a thrown failure.
+ * @param directory - Working directory for the OpenSpec process.
+ * @param config - Resolved config used to locate the binary.
+ * @param args - Arguments forwarded to the OpenSpec binary.
+ * @returns The command's stdout on success.
+ * @throws If the OpenSpec process exits with a non-zero code.
  */
 export async function openSpecOrThrow(
-  directory: string,
-  config: SpecOpsConfig,
-  args: string[],
-  signal?: AbortSignal,
+    directory: string,
+    config: SpecOpsConfig,
+    args: string[],
 ): Promise<string> {
-  const result = await runOpenSpec(directory, config, args, signal)
-  if (result.code !== 0) {
-    throw new Error(
-      `OpenSpec ${args.join(" ")} failed (${result.code}): ${result.stderr || result.stdout}`,
-    )
-  }
-  return result.stdout
-}
-
-/**
- * Fetch the OpenSpec instructions block for a specific artifact in a change.
- *
- * @param directory - The project root.
- * @param config - The merged SpecOps configuration.
- * @param change - The OpenSpec change slug.
- * @param artifact - The artifact name (e.g. `"exploration"`, `"specs"`).
- */
-export async function instructions(
-  directory: string,
-  config: SpecOpsConfig,
-  change: string,
-  artifact: string,
-): Promise<string> {
-  return openSpecOrThrow(directory, config, [
-    "instructions",
-    artifact,
-    "--change",
-    change,
-    "--json",
-  ])
-}
-
-/**
- * Recursively copy a source tree into a destination, skipping files that
- * already exist. Used by {@link onboard} to seed OpenSpec schema assets.
- *
- * @param source - Absolute source directory.
- * @param destination - Absolute destination directory.
- * @returns The number of files copied.
- */
-async function copyMissingTree(source: string, destination: string): Promise<number> {
-  const entries = await readdir(source, { withFileTypes: true })
-  let count = 0
-  for (const entry of entries) {
-    const from = path.join(source, entry.name)
-    const to = path.join(destination, entry.name)
-    if (entry.isDirectory()) {
-      await mkdir(to, { recursive: true })
-      count += await copyMissingTree(from, to)
-      continue
+    const result = await runOpenSpec(directory, config, args)
+    if (result.code) {
+        throw new Error(`OpenSpec ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
     }
+    return result.stdout
+}
+
+/**
+ * Install only missing final schema files into a project.
+ * Creates the `openspec/` directory tree, copies bundled schemas, and writes
+ * a default `config.yaml` when none exists.
+ * @param directory - Project root directory.
+ */
+export async function onboard(directory: string): Promise<void> {
+    const openSpecDirectory = path.join(directory, "openspec")
+    await mkdir(path.join(openSpecDirectory, "changes"), { recursive: true })
+    await mkdir(path.join(openSpecDirectory, "specs"), { recursive: true })
+    for (const schema of ["specops-lean", "specops-standard", "specops"]) {
+        const target = path.join(openSpecDirectory, "schemas", schema)
+        await mkdir(target, { recursive: true })
+        await copyMissing(path.join(PACKAGE_ROOT, "openspec", "schemas", schema), target)
+    }
+
     try {
-      await stat(to)
+        await stat(path.join(openSpecDirectory, "config.yaml"))
     } catch {
-      await copyFile(from, to)
-      count += 1
+        await writeFile(
+            path.join(openSpecDirectory, "config.yaml"),
+            "schema: specops\nrules:\n  verification:\n    - Record only registry-backed commands.\n",
+        )
     }
-  }
-  return count
 }
 
 /**
- * Onboard a project: create the `openspec/` skeleton and copy the three
- * SpecOps schema bundles (lean, standard, full) if missing. Existing files
- * and configuration are never overwritten.
- *
- * @param directory - The project root.
- * @returns A human-readable summary of what was created.
+ * Create an OpenSpec change using the schema selected by deterministic
+ * routing.
+ * @param directory - Project root directory.
+ * @param config - Resolved config used to locate the binary.
+ * @param change - Unique change identifier (filesystem-safe slug).
+ * @param goal - Human-readable change goal passed to `--goal`.
+ * @param tier - Scope tier that selects the schema (`lean` → `specops-lean`,
+ * `standard` → `specops-standard`, `full` → `specops`).
+ * @throws If the `openspec new change` invocation fails.
  */
-export async function onboard(directory: string): Promise<string> {
-  const openspec = path.join(directory, "openspec")
-  await mkdir(path.join(openspec, "specs"), { recursive: true })
-  await mkdir(path.join(openspec, "changes"), { recursive: true })
-
-  let copied = 0
-  for (const schema of ["specops", "specops-lean", "specops-standard"]) {
-    const schemaSource = path.join(PROJECT_ASSET_ROOT, "openspec", "schemas", schema)
-    const schemaDestination = path.join(openspec, "schemas", schema)
-    await mkdir(schemaDestination, { recursive: true })
-    try {
-      copied += await copyMissingTree(schemaSource, schemaDestination)
-    } catch (error) {
-      throw new Error(
-        `SpecOps schema assets are unavailable at ${schemaSource}. Install the complete plugin bundle. ${String(error)}`,
-      )
-    }
-  }
-
-  const configPath = path.join(openspec, "config.yaml")
-  try {
-    await stat(configPath)
-  } catch {
-    await writeFile(
-      configPath,
-      `schema: specops\ncontext: |\n  Add stable project architecture, conventions, constraints, and validation commands here.\nrules:\n  verification:\n    - Record only commands that were actually executed and their exit status.\n`,
-      "utf-8",
-    )
-    copied += 1
-  }
-  return `SpecOps onboarding complete. Created ${copied} missing file(s); existing OpenSpec configuration and schema defaults were preserved.`
+export async function createChange(
+    directory: string,
+    config: SpecOpsConfig,
+    change: string,
+    goal: string,
+    tier: "lean" | "standard" | "full",
+): Promise<void> {
+    const schema =
+        tier === "lean" ? "specops-lean" : tier === "standard" ? "specops-standard" : "specops"
+    await openSpecOrThrow(directory, config, [
+        "new",
+        "change",
+        change,
+        "--schema",
+        schema,
+        "--goal",
+        goal,
+        "--json",
+    ])
 }
 
 /**
- * Onboard and then run the `sdd-onboard` worker to produce durable project
- * memory at `openspec/onboarding.md`. Existing onboarding is passed as
- * context so the worker can preserve still-correct facts.
- *
- * @param directory - The project root.
- * @param runner - The agent runner.
- * @param context - Optional user-supplied context string.
- * @param parentID - The parent session ID for the worker.
- */
-export async function onboardWithContext(
-  directory: string,
-  runner: AgentRunner,
-  context: string,
-  parentID: string,
-): Promise<{ message: string; projectContext: string }> {
-  const message = await onboard(directory)
-  const onboardingPath = path.join(directory, "openspec", "onboarding.md")
-  const existing = await readFile(onboardingPath, "utf-8").catch(
-    () => "(no existing onboarding memory)",
-  )
-  const projectContext = await runner(
-    "sdd-onboard",
-    `Analyze this repository and return the complete durable onboarding Markdown to store at openspec/onboarding.md. Cover architecture, stack, conventions, validation commands, safety boundaries, and important unknowns. Preserve still-correct useful facts from existing memory, correct stale facts, and incorporate the user's context. Do not edit files and do not include a code fence.\n\n${untrusted("user-context", context || "(none provided)")}\n\n${untrusted("existing-onboarding-memory", existing)}`,
-    parentID,
-  )
-  await writeFile(onboardingPath, stripFence(projectContext), "utf-8")
-  return { message, projectContext }
-}
-
-/**
- * Write a worker-generated artifact into an OpenSpec change directory.
- *
- * Path safety is enforced: relative paths only, no `..` traversal, no leading
- * dot, and the resolved destination must stay inside the change root. Markdown
- * fences are stripped from the content.
- *
- * @param directory - The project root.
- * @param change - The OpenSpec change slug.
- * @param relative - The artifact's relative path within the change directory.
- * @param content - The artifact content (possibly fenced).
- * @throws {Error} when the path escapes the change directory.
+ * Persist a controller-owned artifact through the atomic state-store
+ * boundary.
+ * @param directory - Project root directory.
+ * @param change - Change identifier scoping the artifact.
+ * @param relative - Relative path within the change directory.
+ * @param content - String content to write atomically.
  */
 export async function writeArtifact(
-  directory: string,
-  change: string,
-  relative: string,
-  content: string,
+    directory: string,
+    change: string,
+    relative: string,
+    content: string,
 ): Promise<void> {
-  if (
-    path.isAbsolute(relative) ||
-    relative.split(/[\\/]/).includes("..") ||
-    relative.startsWith(".")
-  ) {
-    throw new Error(`Unsafe artifact path returned by agent: ${relative}`)
-  }
-  const changeRoot = path.join(directory, "openspec", "changes", change)
-  const destination = path.resolve(changeRoot, relative)
-  if (!destination.startsWith(changeRoot + path.sep)) throw new Error(`Artifact escaped change: ${relative}`)
-  await mkdir(path.dirname(destination), { recursive: true })
-  await writeFile(destination, stripFence(content), "utf-8")
-}
-
-/** Maps single-file artifact names to their on-disk filenames. */
-const ARTIFACT_FILENAMES: Record<string, string> = {
-  exploration: "exploration.md",
-  proposal: "proposal.md",
-  design: "design.md",
-  tasks: "tasks.md",
-  verification: "verification.md",
+    await writeTextAtomic(directory, change, relative, content)
 }
 
 /**
- * Generate a single OpenSpec artifact by running the appropriate worker.
- *
- * For the `specs` artifact, the worker returns JSON with a `files` map; each
- * file is validated and written separately. For all other artifacts, the
- * worker returns Markdown written to the canonical filename.
- *
- * @param runner - The agent runner.
- * @param directory - The project root.
- * @param config - The merged SpecOps configuration.
- * @param change - The OpenSpec change slug.
- * @param artifact - The artifact name (e.g. `"exploration"`, `"specs"`).
- * @param agent - The worker agent ID (e.g. `"sdd-explore"`).
- * @param parentID - The parent session ID.
- * @param additionalContext - Optional extra context appended to the prompt.
- */
-export async function generateArtifact(
-  runner: AgentRunner,
-  directory: string,
-  config: SpecOpsConfig,
-  change: string,
-  artifact: string,
-  agent: string,
-  parentID: string,
-  additionalContext?: string,
-): Promise<string> {
-  const guide = await instructions(directory, config, change, artifact)
-  const contextBlock = additionalContext
-    ? `\n\n${untrusted("specops-stage-context", additionalContext)}`
-    : ""
-  if (artifact === "specs") {
-    const output = await runner(
-      agent,
-      `Create the requested OpenSpec specification artifacts. Return ONLY valid JSON in this shape: {"files":{"specs/<capability>/spec.md":"complete markdown"}}. Do not use absolute paths or '..'.\n\n${untrusted("openspec-instructions", guide)}${contextBlock}`,
-      parentID,
-    )
-    const value = extractJson(output) as { files?: Record<string, unknown> }
-    if (!value.files || typeof value.files !== "object" || !Object.keys(value.files).length) {
-      throw new Error("sdd-spec returned no specification files")
-    }
-    for (const [relative, content] of Object.entries(value.files)) {
-      if (!/^specs\/[a-z0-9][a-z0-9-]*\/spec\.md$/.test(relative) || typeof content !== "string") {
-        throw new Error(`sdd-spec returned an invalid file entry: ${relative}`)
-      }
-      await writeArtifact(directory, change, relative, content)
-    }
-    return output
-  }
-  const output = await runner(
-    agent,
-    `Create the complete ${artifact} artifact from these current OpenSpec instructions. Return ONLY the Markdown file content; do not edit repository files.\n\n${untrusted("openspec-instructions", guide)}${contextBlock}`,
-    parentID,
-  )
-  await writeArtifact(directory, change, ARTIFACT_FILENAMES[artifact], output)
-  return output
-}
-
-/**
- * Generate a unique OpenSpec change slug from a goal. If the slug already
- * exists, appends a short timestamp suffix to avoid collisions.
- *
- * @param directory - The project root.
- * @param goal - The user's goal text.
+ * Derive a readable, filesystem-safe unique change identifier from a goal.
+ * Strips non-alphanumeric characters, truncates to 48 characters, and
+ * appends a base-36 timestamp suffix when the base name is already taken.
+ * @param directory - Project root directory.
+ * @param goal - Human-readable change description.
+ * @returns A unique, filesystem-safe slug for the change directory.
  */
 export async function uniqueChangeName(directory: string, goal: string): Promise<string> {
-  const { slugifyGoal } = await import("./core.js")
-  const base = slugifyGoal(goal)
-  try {
-    await stat(path.join(directory, "openspec", "changes", base))
-  } catch {
-    return base
-  }
-  return `${base.slice(0, 42).replace(/-+$/g, "")}-${Date.now().toString(36)}`
+    const base =
+        goal
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 48) || "specops-change"
+    try {
+        await stat(path.join(directory, "openspec", "changes", base))
+        return `${base}-${Date.now().toString(36)}`
+    } catch {
+        return base
+    }
+}
+
+/**
+ * Resolve the path to the bundled OpenSpec binary by following the
+ * `@fission-ai/openspec` package entry point to its sibling `bin` directory.
+ * @returns Absolute path to the bundled `openspec.js` launcher.
+ */
+function openSpecBinary(): string {
+    const entry = require.resolve("@fission-ai/openspec")
+    return path.resolve(path.dirname(entry), "..", "bin", "openspec.js")
+}
+
+/**
+ * Recursively copy a directory tree into a target, skipping files that already
+ * exist at the destination so prior user edits are preserved.
+ * @param source - Absolute path to the source directory.
+ * @param target - Absolute path to the target directory.
+ */
+async function copyMissing(source: string, target: string): Promise<void> {
+    for (const entry of await readdir(source, { withFileTypes: true })) {
+        const from = path.join(source, entry.name)
+        const to = path.join(target, entry.name)
+        if (entry.isDirectory()) {
+            await mkdir(to, { recursive: true })
+            await copyMissing(from, to)
+            continue
+        }
+        try {
+            await stat(to)
+        } catch {
+            await copyFile(from, to)
+        }
+    }
 }

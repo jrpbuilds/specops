@@ -11,7 +11,8 @@
 # Environment:
 #   OPENCODE_CONFIG  Path to the opencode.json to edit. Defaults to:
 #                    - ./opencode.json in the current directory if it exists
-#                    - otherwise ~/.config/opencode/opencode.json
+#                    - otherwise $XDG_CONFIG_HOME/opencode/opencode.json
+#                      (or ~/.config/opencode/opencode.json)
 #   OPENCODE_TUI_CONFIG Path to the TUI tui.json to edit. Defaults to
 #                    ~/.config/opencode/tui.json.
 #
@@ -20,6 +21,8 @@
 set -euo pipefail
 
 PLUGIN="@jrpbuilds/specops"
+CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+OPENCODE_CONFIG_DIR="${CONFIG_HOME}/opencode"
 
 # Resolve the target config file.
 if [ -n "${OPENCODE_CONFIG:-}" ]; then
@@ -27,10 +30,10 @@ if [ -n "${OPENCODE_CONFIG:-}" ]; then
 elif [ -f "opencode.json" ]; then
   CONFIG="opencode.json"
 else
-  CONFIG="${HOME}/.config/opencode/opencode.json"
+  CONFIG="${OPENCODE_CONFIG_DIR}/opencode.json"
 fi
 
-TUI_CONFIG="${OPENCODE_TUI_CONFIG:-${HOME}/.config/opencode/tui.json}"
+TUI_CONFIG="${OPENCODE_TUI_CONFIG:-${OPENCODE_CONFIG_DIR}/tui.json}"
 
 mkdir -p "$(dirname "$CONFIG")"
 mkdir -p "$(dirname "$TUI_CONFIG")"
@@ -66,7 +69,7 @@ node -e '
 
 # Create the directory for the user-editable manifest so the plugin can write
 # the default on first load without a race.
-mkdir -p "${HOME}/.config/opencode"
+mkdir -p "${OPENCODE_CONFIG_DIR}"
 
 cat <<EOF
 
@@ -77,8 +80,9 @@ SpecOps plugin registered in:
 Next steps:
   1. Launch opencode in any project directory.
   2. On first load, the plugin writes the default agent manifest to:
-     ~/.config/opencode/specops-manifest.json
-     Edit this file to customize agent models and permissions. It persists
+     ${OPENCODE_CONFIG_DIR}/specops-manifest.json
+     Edit this file to customize agent models and provider options. Authority
+     and permissions always come from the packaged capability registry. It persists
      across plugin updates.
   3. Try it with: /specops-doctor
      Then: /specops-auto add a focused health endpoint with tests and documentation

@@ -14,4 +14,3 @@
 
 - [ ] 3.1 Run focused and regression checks
 - [ ] 3.2 Update durable documentation and verify the final diff
-

@@ -1,71 +1,176 @@
 # Troubleshooting
 
-## Automatic mode says the worktree is dirty
+Start with `/specops-doctor`. It performs read-only checks against the installed package,
+OpenCode command registration, the materialised agent manifest, canonical agent catalogue,
+generated prompts, and bundled OpenSpec schemas. Every failure includes a repair action.
 
-This is intentional. `git status --short` identifies the pre-existing work.
-Commit, stash, or remove it yourself. SpecOps will not decide how to preserve
-user work.
+## A command reports a missing controller
 
-## Git has no baseline commit
+`/specops` must resolve to `specops-interactive-controller`, and `/specops-auto` must resolve to
+`specops-auto-controller`. Both are primary OpenCode agents registered by the same plugin hook
+that registers the commands.
 
-Create the initial commit before automatic mode. Receipts bind to `HEAD`, so an
-unborn branch cannot provide auditable evidence.
+1. Restart OpenCode so it reloads the installed plugin.
+2. Run `/specops-doctor` and note the reported manifest path.
+3. Run `opencode debug config` and confirm the plugin and both command mappings are present.
+4. Run:
 
-## A configured model is unavailable
+    ```bash
+    opencode debug agent specops-interactive-controller
+    opencode debug agent specops-auto-controller
+    ```
 
-Run `opencode models` and replace that agent's model in
-`.opencode/sdd-manifest.json`, then run the sync script. The orchestrator does
-not silently substitute a model because agent diversity is part of the review
-contract.
+5. If the package was installed from this checkout, rebuild and reinstall it:
 
-## OpenSpec cannot be resolved
+    ```bash
+    npm install
+    npm run check
+    bash scripts/install.sh
+    ```
 
-Run `npm install` at the repository root and `/specops-doctor`. The default
-runtime requires `node` on `PATH` and resolves the pinned
-`@fission-ai/openspec` package. Use `openspec.command` only for a deliberate
-local override.
+Agent registration is deliberately all-or-nothing. Before registration, the plugin materialises
+the exact canonical manifest. A missing, malformed, partial, or wrong-catalogue manifest is
+atomically replaced; removed pre-release IDs are not translated or preserved.
 
-## OpenSpec schema is missing
+## The manifest is missing or invalid
 
-Run `/sdd-onboard`. It restores only missing schema files and preserves existing
-OpenSpec configuration and templates.
+The default path is:
 
-## A change does not archive
+```text
+$XDG_CONFIG_HOME/opencode/specops-manifest.json
+```
 
-Read the retained active change. Common reasons are:
+When `XDG_CONFIG_HOME` is unset, it is
+`~/.config/opencode/specops-manifest.json`. The installer reports the exact path used.
 
-- strict spec validation failed;
-- a judge required by the selected tier did not emit standalone `[PASS]`;
-- a BLOCKER or HIGH finding survived the refuter;
-- the repair bound was reached;
-- code or artifacts changed after review; or
-- a child agent created a commit, changing the bound baseline.
+The manifest may customise only the model, maximum reasoning steps, and provider-specific
+options for every canonical agent. Do not add or remove agent IDs. Restart OpenCode after
+editing, then run `/specops-doctor`.
 
-Fix the underlying issue and rerun the dependent stages. Do not edit the receipt
-to force freshness.
+If the file cannot be parsed or its agent catalogue is incomplete, restart OpenCode. Plugin load
+will replace it with the generated default using a temporary file and atomic rename. If that
+fails, check directory ownership and write permissions for the reported configuration directory.
 
-## A run selected a larger tier than expected
+## OpenSpec schemas are unavailable
 
-Read `routing.md` and `specops-run.json` in the active change. Tier flags and
-configuration are minimums, while security, breaking contracts, migrations,
-dependencies, infrastructure, concurrency, destructive work, architecture,
-critical unknowns, and configured size thresholds impose higher floors.
-Escalation history records which worker discovered the additional scope.
+Run:
 
-## OpenCode shows two plugin origins
+```text
+/specops-onboard
+```
 
-Only `sdd-orchestrator.ts` should be inside `.opencode/plugins/`. Move helper
-source into `.opencode/lib/`, then restart OpenCode.
+This installs the final Lean, Standard, and Full schemas in the current project. Verify them from
+a source checkout with:
 
-## MCP is absent or failing
+```bash
+npm run validate:openspec
+```
 
-SpecOps does not require MCP. Set `integrations.mcp` to `disabled` if an
-unreliable configured server is distracting child sessions. Fixing or removing
-the user's server remains outside SpecOps onboarding.
-## Provider rate limits
+SpecOps does not install obsolete schemas or migrate old run formats.
 
-Free OpenCode Zen models can return transient HTTP 429 or streaming errors.
-SpecOps treats these as capacity signals rather than workflow or escalation
-evidence. It keeps the same phase, agent, model, prompt, and change ID, waits
-with capped exponential backoff, and polls until the provider succeeds or the
-user interrupts.
+## A run is blocked
+
+`/specops-status` reports the current scheduler phase and the blocking gate. Common causes are:
+
+- a required planning artifact failed validation;
+- registered command evidence is missing, stale, timed out, or failed;
+- an independent judgment or selected specialist review is incomplete;
+- a sustained review finding still requires repair;
+- a configured repair or dispatch budget is exhausted.
+- a worker raised a question requiring user input (resumable).
+
+### Pending question (resumable)
+
+When `pauseReason` is `pending-question`, the run is paused with a pending question from a worker.
+The persisted state is `status: "paused"`, `resumable: true`. Resume interactively:
+
+```bash
+opencode run --command specops --dir /path/to/project "resume"
+```
+
+The controller loads the paused state and immediately presents the pending question without
+rerunning the original worker.
+
+### Budget exhaustion, policy rejection, validation failure (non-resumable)
+
+When `blockReason` is `budget-exhausted`, `policy-rejected`, or `validation-failed`, the run is
+terminal. Do not edit machine state to bypass the gate. Correct the underlying artifact, command
+registration, implementation, or configuration and start a fresh run.
+
+### CLI pending-question output
+
+When automatic/CLI execution encounters a pending question, the process returns a stable
+machine-readable result:
+
+```json
+{
+    "version": 1,
+    "change": "<change>",
+    "status": "paused",
+    "reason": "pending-question",
+    "resumable": true,
+    "question": {
+        "id": "<uuid>",
+        "prompt": "Which boundary?",
+        "options": [
+            { "id": "session", "label": "Existing session model" },
+            { "id": "token", "label": "Token-based model" }
+        ],
+        "allowOther": true,
+        "impact": "requirements",
+        "bindingHash": "<sha256>"
+    }
+}
+```
+
+This is a stable DTO for CI inspection. The exit code is non-zero for a paused outcome.
+
+Do not edit machine state or completion receipts to bypass a gate. Correct the underlying
+artifact, command registration, implementation, or configuration and resume through the
+scheduler. Dependency provenance determines which downstream evidence must be invalidated.
+
+## A verification command is rejected
+
+Command evidence is not a shell script. Register an executable plus an argument array. The
+executable may be any legitimate project tool; it is not restricted to a hardcoded allowlist.
+The controller still enforces:
+
+- direct, no-shell process execution;
+- a working directory confined to the project;
+- explicit timeout and bounded output;
+- controlled environment additions and removals;
+- no unreviewed inheritance of dangerous environment variables.
+
+If a command needs shell expansion, pipelines, redirection, or command substitution, replace it
+with a project script that implements the operation and register that script as the executable.
+
+## CLI automatic execution
+
+Use OpenCode's supported non-interactive command:
+
+```bash
+opencode run --command specops-auto --dir /path/to/project "workflow goal"
+```
+
+This resolves the same automatic controller as `/specops-auto` without opening the TUI. Run
+`opencode run --help` if doctor reports that `--command`, `--dir`, or `--format` is unavailable.
+
+For CI, add `--format json` and inspect the final persisted outcome. Exit `0` only proves the
+OpenCode command session completed; success additionally requires outcome category `completed`.
+If results differ from the visible command, compare project configuration, goal, repository
+revision, provider manifest, and registered evidence commands.
+
+## Collecting a useful diagnostic report
+
+Include the following when reporting an issue:
+
+- SpecOps package version and OpenCode version;
+- `/specops-doctor` output;
+- the manifest path and agent count, with provider secrets removed;
+- `opencode debug config`;
+- `opencode debug agent` output for the relevant controller;
+- the project configuration with secrets removed;
+- the failing scheduler phase and evidence status from `/specops-status`.
+
+Never include API keys, tokens, full environment dumps, or unredacted command output containing
+credentials.

@@ -1,142 +1,86 @@
 # Configuration
 
-## OpenCode plugin registration
+Project policy is read from `.opencode/specops.json`. Copy
+`examples/specops.json` and keep its `$schema` reference for editor validation.
 
-The installer registers `@jrpbuilds/specops` in both OpenCode configuration
-surfaces: `opencode.json` loads its server commands, tools, and agents, while
-global `~/.config/opencode/tui.json` registers its TUI companion for the
-Plugins menu. Both registrations use the published npm package; a local
-`file://` entry is only appropriate while developing this repository.
+Configuration version 1 is strict and camelCase. Unknown or missing fields fail startup.
 
-## Agent manifest
+## OpenSpec
 
-The agent manifest lives at `~/.config/opencode/specops-manifest.json`. The
-plugin creates it on first load from the built-in default and never overwrites
-it afterwards — your edits persist across plugin updates.
-
-Edit it directly to change agent models, `steps`, tools, permissions, or
-provider/model options such as `reasoningEffort`:
+`openspec.command` is either `null` for the bundled OpenSpec executable or a non-empty executable
+and argument array, for example:
 
 ```json
 {
-  "agents": {
-    "sdd-apply": {
-      "model": "opencode/north-mini-code-free",
-      "steps": 96,
-      "tools": { "question": false, "todowrite": false },
-      "permission": { "bash": "allow", "edit": "allow", "task": "deny" }
-    },
-    "sdd-propose": {
-      "model": "opencode/nemotron-3-ultra-free",
-      "steps": 32,
-      "tools": {},
-      "permission": { "bash": "deny", "edit": "deny", "task": "deny" },
-      "reasoningEffort": "high"
+    "openspec": {
+        "command": ["node", "./tools/openspec.js"]
     }
-  }
 }
 ```
 
-Extra fields beyond the four known keys (`model`, `steps`, `tools`, `permission`)
-pass through to the generated OpenCode agent as provider/model options.
-`reasoningEffort` is the documented OpenCode spelling for reasoning levels.
+No shell interpolation is performed.
 
-The plugin reads this file on every load and registers all 19 workers
-programmatically via its `config()` hook. No `opencode.json` mutation is
-required.
+## Workflow routing
 
-### Power-user file-based config
+| Field                            | Meaning                                                         |
+| -------------------------------- | --------------------------------------------------------------- |
+| `workflow.defaultTier`           | Minimum configured tier: `auto`, `lean`, `standard`, or `full`. |
+| `workflow.onboarding`            | Onboarding policy: `if-missing` or `always`.                    |
+| `scopeThresholds.leanMaxFiles`   | Maximum expected files eligible for Lean.                       |
+| `scopeThresholds.leanMaxModules` | Maximum expected modules eligible for Lean.                     |
+| `scopeThresholds.fullMinFiles`   | File count that forces Full.                                    |
+| `scopeThresholds.fullMinModules` | Module count that forces Full.                                  |
+| `routing.forceFullForFacets`     | Risk facets that impose a Full floor for this project.          |
 
-If you prefer to materialize agent definitions into your project's
-`opencode.json` (e.g. for version control or editor autocompletion), run:
+Threshold relationships are validated: Full limits must exceed Lean limits.
 
-```bash
-python3 scripts/sync-opencode-manifest.py
-```
+## Automation
 
-This reads the manifest from `~/.config/opencode/specops-manifest.json` and
-writes the agent entries into the project's `opencode.json`. Existing agents
-and unrelated config are preserved. Use `--check` in CI to detect drift.
+`automation.requireCleanWorktree` prevents a run from starting when implementation files already
+contain changes. Controller-owned OpenSpec metadata is excluded from that check.
 
-Model access is provider-specific. If an `opencode/*` model is unavailable,
-replace only its manifest mapping with a compatible configured provider/model.
+## Escalation budgets
 
-## Runtime policy
+| Field                            | Bound                                                           |
+| -------------------------------- | --------------------------------------------------------------- |
+| `maxScopeEscalations`            | Monotonic tier raises accepted during one run.                  |
+| `maxSpecialistDispatches`        | Additional specialist capabilities accepted through escalation. |
+| `maxRepairCycles`                | Blocking remediation cycles.                                    |
+| `maxRepeatedFailureFingerprints` | Repetition of the same escalation/failure fingerprint.          |
 
-`.opencode/specops.json` (per-project) controls orchestration. Copy the
-template from `examples/specops.json`:
+Budgets are run-state requirements, not advisory prompt text.
 
-```bash
-mkdir -p .opencode
-cp examples/specops.json .opencode/specops.json
-```
+## Review and execution limits
 
-```json
-{
-  "openspec": {
-    "command": null,
-    "schema": "specops"
-  },
-  "workflow": {
-    "default_tier": "auto",
-    "onboarding": "if-missing",
-    "lean_max_files": 2,
-    "lean_max_modules": 1,
-    "full_min_files": 9,
-    "full_min_modules": 4
-  },
-  "automation": {
-    "max_fix_cycles": 3,
-    "require_clean_worktree": true,
-    "blocking_severities": ["BLOCKER", "HIGH"]
-  },
-  "review": {
-    "max_diff_bytes": 200000,
-    "transient_retries": 1,
-    "agent_timeout_seconds": 300
-  },
-  "integrations": {
-    "mcp": "inherit"
-  }
-}
-```
+| Field                   | Purpose                                            |
+| ----------------------- | -------------------------------------------------- |
+| `blockingSeverities`    | Finding severities treated as completion blockers. |
+| `maxDiffBytes`          | Maximum implementation diff admitted to review.    |
+| `maxContextBytes`       | Maximum controller context returned to a worker.   |
+| `transientRetries`      | Provider retries for transient failures.           |
+| `agentTimeoutSeconds`   | Worker response deadline.                          |
+| `commandTimeoutSeconds` | Registered validation command deadline.            |
+| `commandOutputBytes`    | Combined bounded stdout/stderr capture.            |
 
-When `.opencode/specops.json` is missing, SpecOps uses safe defaults from
-`DEFAULT_CONFIG` in `src/core.ts`.
+## Command evidence
 
-`openspec.command: null` uses the pinned bundled OpenSpec dependency through the
-system `node` executable. An array overrides the executable and prefix arguments
-without shell parsing, for example `["/usr/local/bin/openspec"]`.
+The assessment registers arbitrary legitimate project executables, argument arrays, and optional
+project-relative working directories. Execution enforces:
 
-Keep the repair bound small. A larger value increases cost and can conceal a
-bad specification; it does not expand agent permissions.
+- direct process spawning with `shell: false`;
+- exact executable and arguments from run requirements;
+- a working directory confined to the project root;
+- a deliberately narrow environment;
+- configured timeout;
+- bounded output and immutable hashes.
 
-`workflow.default_tier` is a minimum. `auto` lets the assessor choose; an
-explicit tier cannot override a higher safety floor. File/module thresholds
-bound Lean and trigger Full for large changes. Semantic Full floors include
-security, breaking contracts, migrations, dependencies, infrastructure,
-concurrency, destructive operations, architecture, and critical unknowns.
+This is not a command allowlist. It is a run-specific evidence registry.
 
-`workflow.onboarding: "if-missing"` avoids spending an onboarding worker on
-every small run. Use `"always"` to refresh project memory for every change.
+## MCP integration
 
-`blocking_severities` determines which refuted review findings trigger repair.
-Lean requires Judge A; Standard and Full require both independent passes.
+`integrations.mcp` is `inherit` or `disabled`. Disabled mode adds an explicit instruction to
+automatic and interactive workers; it does not alter deterministic scheduler state.
 
-`max_diff_bytes` is a completeness safeguard. SpecOps fails on an oversized
-snapshot rather than silently reviewing a truncation.
-
-`agent_timeout_seconds` limits each worker attempt. The default is five minutes.
-`transient_retries` controls fresh-session retries for non-capacity failures.
-Provider capacity failures (HTTP 429, temporary availability, timeout, and
-transient streaming errors) keep polling with capped exponential backoff until
-the worker succeeds or the user interrupts. Retries preserve the configured
-agent and model. Agent-specific `steps` values live in the manifest and
-force a text-only result after a bounded number of tool iterations.
-
-## Existing OpenSpec projects
-
-Onboarding copies only missing `specops-lean`, `specops-standard`, and
-`specops` schema assets. It never
-replaces an existing `openspec/config.yaml` or changes that project's default
-schema. Each change records its selected schema and may only move upward.
+The non-interactive CLI adapter uses this same project configuration. Set
+`workflow.defaultTier` when CI requires a minimum tier; there is deliberately no separate CLI tier
+flag or second configuration source.
