@@ -30,6 +30,7 @@ const SURFACES = new Set<TouchedSurface>([
     "configuration",
     "build",
     "deployment",
+    "documentation",
 ])
 /** The complete set of valid {@link ConfidenceLevel} values for validation. */
 const CONFIDENCE = new Set<ConfidenceLevel>(["low", "medium", "high"])
@@ -262,7 +263,7 @@ function boolean(value: unknown, field: string): boolean {
  * @throws {Error} If the value is not an integer or is less than 1.
  */
 function positiveInteger(value: unknown, field: string): number {
-    if (!Number.isInteger(value) || Number(value) < 1) {
+    if (!Number.isInteger(value) || Number(value) < 0) {
         throw new Error(`invalid assessment.${field}`)
     }
     return Number(value)

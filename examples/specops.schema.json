@@ -127,6 +127,31 @@
                 "maxHighDispatchesPerRun": { "type": "integer", "minimum": 0 }
             }
         },
+        "questions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "budgets": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "maxQuestionsPerRun",
+                        "maxQuestionsPerDispatch",
+                        "maxRepeatedQuestionFingerprints"
+                    ],
+                    "properties": {
+                        "maxQuestionsPerRun": { "type": "integer", "minimum": 0 },
+                        "maxQuestionsPerDispatch": { "type": "integer", "minimum": 0 },
+                        "maxRepeatedQuestionFingerprints": { "type": "integer", "minimum": 0 }
+                    }
+                },
+                "maxPromptLength": { "type": "integer", "minimum": 1 },
+                "maxOptionIdLength": { "type": "integer", "minimum": 1 },
+                "maxOptionLabelLength": { "type": "integer", "minimum": 1 },
+                "maxOtherTextLength": { "type": "integer", "minimum": 1 },
+                "maxMarkerBytes": { "type": "integer", "minimum": 1 }
+            }
+        },
         "review": {
             "type": "object",
             "additionalProperties": false,

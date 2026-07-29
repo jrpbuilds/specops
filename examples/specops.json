@@ -28,6 +28,18 @@
         "maxDispatchesPerRun": 3,
         "maxHighDispatchesPerRun": 1
     },
+    "questions": {
+        "budgets": {
+            "maxQuestionsPerRun": 4,
+            "maxQuestionsPerDispatch": 1,
+            "maxRepeatedQuestionFingerprints": 1
+        },
+        "maxPromptLength": 500,
+        "maxOptionIdLength": 40,
+        "maxOptionLabelLength": 120,
+        "maxOtherTextLength": 1000,
+        "maxMarkerBytes": 8000
+    },
     "review": {
         "blockingSeverities": ["BLOCKER", "HIGH"],
         "maxDiffBytes": 200000,

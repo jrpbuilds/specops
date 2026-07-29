@@ -48,6 +48,7 @@ export type TouchedSurface =
     | "configuration"
     | "build"
     | "deployment"
+    | "documentation"
 
 /**
  * Per-concern uncertainty profile recorded by the assessor and reused by

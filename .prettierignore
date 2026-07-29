@@ -2,4 +2,6 @@ dist
 node_modules
 .codegraph
 openspec/changes
+openspec/specs
+openspec/schemas
 package-lock.json

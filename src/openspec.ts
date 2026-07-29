@@ -114,7 +114,7 @@ export async function onboard(directory: string): Promise<void> {
     for (const schema of ["specops-lean", "specops-standard", "specops"]) {
         const target = path.join(openSpecDirectory, "schemas", schema)
         await mkdir(target, { recursive: true })
-        await copyMissing(path.join(PACKAGE_ROOT, "openspec", "schemas", schema), target)
+        await copyMissing(path.join(PACKAGE_ROOT, "schemas", schema), target)
     }
 
     try {
