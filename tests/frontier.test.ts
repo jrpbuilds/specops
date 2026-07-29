@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { agentForCapability } from "../src/capabilities/registry.js"
 import { DEFAULT_CONFIG, validateConfig } from "../src/config.js"
-import { migrateLegacyFrontierManifest, DEFAULT_MANIFEST } from "../src/manifest.js"
 import { requirementsFor } from "../src/routing/policy.js"
 import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type {
@@ -101,22 +100,6 @@ describe("adaptive frontier escalation", () => {
                 },
             }),
         ).toThrow("frontier")
-    })
-
-    it("preserves legacy manifest choices while adding frontier agents", () => {
-        const legacy = structuredClone(DEFAULT_MANIFEST)
-        delete (legacy.agents as Partial<typeof legacy.agents>)[AGENT_IDS.review.frontierLow]
-        delete (legacy.agents as Partial<typeof legacy.agents>)[AGENT_IDS.review.frontierHigh]
-        legacy.agents[AGENT_IDS.core.planner].model = "custom/planner"
-        legacy.agents[AGENT_IDS.core.planner].steps = 77
-        legacy.agents[AGENT_IDS.core.planner].reasoningEffort = "high"
-
-        const migrated = migrateLegacyFrontierManifest(legacy)
-        expect(migrated?.agents[AGENT_IDS.core.planner].model).toBe("custom/planner")
-        expect(migrated?.agents[AGENT_IDS.core.planner].steps).toBe(77)
-        expect(migrated?.agents[AGENT_IDS.core.planner].reasoningEffort).toBe("high")
-        expect(migrated?.agents[AGENT_IDS.review.frontierLow].model).toBeTruthy()
-        expect(migrated?.agents[AGENT_IDS.review.frontierHigh].model).toBeTruthy()
     })
 
     it("replays a stuck implementation and promotes one recurrence to high", async () => {

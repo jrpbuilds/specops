@@ -1,160 +1,92 @@
 import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
-import { AGENT_IDS } from "./capabilities/ids.js"
 import { AGENT_REGISTRY } from "./capabilities/registry.js"
 import { promptText } from "./prompts.generated.js"
 
-/**
- * User-tunable provider options for one canonically registered agent.
- *
- * `model` and `steps` are required; any additional keys are forwarded
- * verbatim as provider options to the underlying model backend.
- */
-export type ManifestEntry = { model: string; steps: number; [providerOption: string]: unknown }
+/** User-selectable OpenCode model settings for one registered agent. */
+export type ManifestEntry = { model: string; variant?: string }
 
 /**
- * Persisted model/provider choices for precisely the final agent catalogue.
+ * Persisted model choices for precisely the current agent catalogue.
  *
- * `version` pins the manifest schema; `agents` maps each {@link AgentId} to its
- * {@link ManifestEntry}. A manifest is valid only when its agent set matches
- * the current installation's {@link ALL_AGENT_IDS} exactly.
+ * Workflow policy remains registry-owned; the manifest deliberately accepts
+ * only a model and an optional OpenCode model variant.
  */
-export type SpecOpsManifest = { version: 1; agents: Record<AgentId, ManifestEntry> }
+export type SpecOpsManifest = { version: 2; agents: Record<AgentId, ManifestEntry> }
 
-/**
- * Generate the clean-install manifest directly from the capability registry.
- *
- * Built once at module load from {@link AGENT_REGISTRY} so the default
- * manifest always reflects the canonical agent IDs, models, and step counts.
- */
+/** Generate clean-install model settings from the capability registry. */
 export const DEFAULT_MANIFEST: SpecOpsManifest = {
-    version: 1,
+    version: 2,
     agents: Object.fromEntries(
-        Object.values(AGENT_REGISTRY).map(agent => [
-            agent.id,
-            { model: agent.model, steps: agent.steps },
-        ]),
+        Object.values(AGENT_REGISTRY).map(agent => [agent.id, { model: agent.model }]),
     ) as SpecOpsManifest["agents"],
 }
 
 /**
- * Reject partial, stale, or otherwise invalid manifest catalogues.
+ * Reject partial, stale, empty, or extensible manifest catalogues.
  *
- * Verifies the manifest is an object with `version === 1`, a non-array
- * `agents` object whose keys match {@link ALL_AGENT_IDS} exactly, and that
- * each entry has a string `model` and number `steps`.
- *
- * @param value - Raw, untyped manifest value.
- * @returns The validated {@link SpecOpsManifest}.
- * @throws {Error} If the manifest is missing, malformed, or its agent set does
- * not match the installation.
+ * The top level must contain exactly `version` and `agents`; every agent entry
+ * must contain exactly `model` and, optionally, `variant`.
  */
 export function validateManifest(value: unknown): SpecOpsManifest {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (!isRecord(value) || !hasExactKeys(value, ["agents", "version"]) || value.version !== 2) {
         throw new Error("invalid SpecOps manifest")
     }
-    const source = value as Record<string, unknown>
-    if (
-        source.version !== 1 ||
-        !source.agents ||
-        typeof source.agents !== "object" ||
-        Array.isArray(source.agents)
-    ) {
-        throw new Error("invalid SpecOps manifest")
-    }
+    if (!isRecord(value.agents)) throw new Error("invalid SpecOps manifest")
 
-    const entries = source.agents as Record<string, unknown>
     const expected = [...ALL_AGENT_IDS].sort()
-    if (Object.keys(entries).sort().join("|") !== expected.join("|")) {
+    if (Object.keys(value.agents).sort().join("|") !== expected.join("|")) {
         throw new Error("manifest agent catalogue does not match this SpecOps installation")
     }
     for (const id of expected) {
-        const item = entries[id]
+        const item = value.agents[id]
         if (
-            !item ||
-            typeof item !== "object" ||
-            Array.isArray(item) ||
-            typeof (item as ManifestEntry).model !== "string" ||
-            typeof (item as ManifestEntry).steps !== "number"
+            !isRecord(item) ||
+            !hasOnlyKeys(item, ["model", "variant"]) ||
+            typeof item.model !== "string" ||
+            !item.model.trim() ||
+            ("variant" in item && (typeof item.variant !== "string" || !item.variant.trim()))
         ) {
             throw new Error(`invalid manifest agent: ${id}`)
         }
     }
-    return source as SpecOpsManifest
+    return value as SpecOpsManifest
+}
+
+/** Return whether a parsed value is recognisably a legacy v1 manifest. */
+export function isLegacyManifest(value: unknown): value is {
+    version: 1
+    agents: Record<string, unknown>
+} {
+    return isRecord(value) && value.version === 1 && isRecord(value.agents)
 }
 
 /**
- * Upgrade only the exact pre-frontier manifest catalogue.
- *
- * Existing model/provider choices are retained verbatim and the two new
- * frontier entries are appended from current defaults. Other partial or stale
- * catalogues are deliberately not merged.
- *
- * @param value - Parsed manifest candidate.
- * @returns An upgraded manifest, or `undefined` when it is not the exact
- * legacy catalogue.
- */
-export function migrateLegacyFrontierManifest(value: unknown): SpecOpsManifest | undefined {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-    const source = value as Record<string, unknown>
-    if (
-        source.version !== 1 ||
-        !source.agents ||
-        typeof source.agents !== "object" ||
-        Array.isArray(source.agents)
-    ) {
-        return undefined
-    }
-    const entries = source.agents as Record<string, unknown>
-    const frontierIds = new Set<string>([
-        AGENT_IDS.review.frontierLow,
-        AGENT_IDS.review.frontierHigh,
-    ])
-    const legacyIds = ALL_AGENT_IDS.filter(id => !frontierIds.has(id)).sort()
-    if (Object.keys(entries).sort().join("|") !== legacyIds.join("|")) return undefined
-    for (const id of legacyIds) {
-        const item = entries[id]
-        if (
-            !item ||
-            typeof item !== "object" ||
-            Array.isArray(item) ||
-            typeof (item as ManifestEntry).model !== "string" ||
-            typeof (item as ManifestEntry).steps !== "number"
-        ) {
-            return undefined
-        }
-    }
-    return validateManifest({
-        version: 1,
-        agents: {
-            ...entries,
-            [AGENT_IDS.review.frontierLow]: DEFAULT_MANIFEST.agents[AGENT_IDS.review.frontierLow],
-            [AGENT_IDS.review.frontierHigh]: DEFAULT_MANIFEST.agents[AGENT_IDS.review.frontierHigh],
-        },
-    })
-}
-
-/**
- * Merge a user manifest entry with registry-controlled authority and prompts.
- *
- * Extracts `model` and `steps` from the entry, spreads remaining keys as
- * provider options, and overlays the registry's `mode`, `tools`, and
- * `permission` values together with the generated prompt.
- *
- * @param id - The canonical {@link AgentId}.
- * @param entry - The user's {@link ManifestEntry} for this agent.
- * @returns A complete agent configuration object ready for OpenCode's
- * `config.agent` map.
+ * Combine user-selected model settings with registry-owned workflow policy.
  */
 export function manifestAgentConfig(id: AgentId, entry: ManifestEntry) {
     const policy = AGENT_REGISTRY[id]
-    const { model, steps, ...providerOptions } = entry
     return {
-        ...providerOptions,
-        model,
-        maxSteps: steps,
+        model: entry.model,
+        ...(entry.variant ? { variant: entry.variant } : {}),
+        maxSteps: policy.steps,
         mode: policy.mode,
         prompt: promptText(id),
         tools: policy.tools,
         permission: policy.permission,
     }
+}
+
+/** Narrow an unknown value to a plain JSON object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/** Check that every object key is in the allowed list. */
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+    return Object.keys(value).every(key => allowed.includes(key))
+}
+
+/** Check that an object's keys exactly equal the expected list. */
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+    return Object.keys(value).sort().join("|") === [...expected].sort().join("|")
 }

@@ -1,23 +1,325 @@
 /**
- * OpenCode TUI companion for SpecOps.
- *
- * The server entry point owns SpecOps commands, tools, and agents. This small
- * companion registers the package with OpenCode's Plugins menu so users can
- * discover and manage its TUI lifecycle alongside other installed plugins.
+ * Native OpenCode TUI editor for SpecOps agent model and variant mappings.
  */
-import type { TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
+import { inspectAgentManifest, ManifestConflictError, saveAgentManifest } from "./installation.js"
+import {
+    agentSettingsCategory,
+    configuredModels,
+    createManifestDraft,
+    selectConfiguredModel,
+    validateManifestSelections,
+    type ConfiguredModel,
+} from "./model-settings.js"
+import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./manifest.js"
+
+const COMMAND_NAME = "specops.models.configure"
+const BACK = Symbol("specops-back")
 
 /**
- * SpecOps TUI plugin module registered with OpenCode's Plugins menu.
- *
- * `id` is the canonical plugin identifier shared with the server entry; `tui`
- * is a no-op lifecycle hook because SpecOps does not own a TUI surface.
+ * Register the command-palette entry and one-per-launch legacy upgrade prompt.
  */
+export function registerModelSettings(api: TuiPluginApi): void {
+    let editorOpen = false
+
+    const openEditor = async (): Promise<void> => {
+        if (editorOpen) return
+        editorOpen = true
+        try {
+            await showModelEditor(api, () => {
+                editorOpen = false
+            })
+        } catch (error) {
+            editorOpen = false
+            api.ui.toast({
+                variant: "error",
+                title: "SpecOps model settings",
+                message: error instanceof Error ? error.message : String(error),
+            })
+        }
+    }
+
+    const unregisterCommand = api.keymap.registerLayer({
+        commands: [
+            {
+                namespace: "palette",
+                name: COMMAND_NAME,
+                title: "SpecOps: Configure agent models",
+                desc: "Choose a configured OpenCode model and variant for each agent",
+                category: "SpecOps",
+                run: openEditor,
+            },
+        ],
+    })
+
+    let checkedLegacyManifest = false
+    const unsubscribeConnected = api.event.on("server.connected", () => {
+        if (checkedLegacyManifest) return
+        checkedLegacyManifest = true
+        return (async () => {
+            const inspection = await inspectAgentManifest()
+            if (inspection.status === "upgrade-required") {
+                api.ui.toast({
+                    variant: "warning",
+                    title: "SpecOps model settings need updating",
+                    message:
+                        "The legacy v1 manifest is preserved. Complete the model mapping to upgrade it.",
+                })
+                return openEditor()
+            }
+        })()
+    })
+    api.lifecycle.onDispose(unregisterCommand)
+    api.lifecycle.onDispose(unsubscribeConnected)
+}
+
+/**
+ * Open a staged, callback-driven dropdown editor and save only after review.
+ */
+async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<void> {
+    const inspection = await inspectAgentManifest()
+    const models = configuredModels(api.state.provider)
+    if (!models.length) {
+        onClose()
+        api.ui.toast({
+            variant: "error",
+            title: "SpecOps model settings",
+            message: "OpenCode has no configured models to select.",
+        })
+        return
+    }
+
+    const source =
+        inspection.status === "ready"
+            ? inspection.manifest
+            : inspection.status === "upgrade-required"
+              ? inspection.legacy
+              : DEFAULT_MANIFEST
+    const expectedContentHash = inspection.contentHash
+    const draft = createManifestDraft(source, models)
+    const initial = structuredClone(draft.manifest)
+    let staged = structuredClone(draft.manifest)
+
+    let closed = false
+    const finish = (): void => {
+        if (closed) return
+        closed = true
+        onClose()
+    }
+    const close = (): void => {
+        api.ui.dialog.clear()
+        finish()
+    }
+
+    const showIssues = (issues: readonly string[]): void => {
+        api.ui.dialog.replace(() =>
+            api.ui.DialogAlert({
+                title: "Complete the model mapping",
+                message: issues.join("\n"),
+                onConfirm: showAgents,
+            }),
+        )
+    }
+
+    const save = async (): Promise<void> => {
+        const issues = validateManifestSelections(staged, models)
+        if (issues.length) {
+            showIssues(issues)
+            return
+        }
+        try {
+            await saveAgentManifest(staged, expectedContentHash)
+            close()
+            api.ui.toast({
+                variant: "success",
+                title: "SpecOps model settings saved",
+                message: "Restart or reload OpenCode to apply the new agent mappings.",
+            })
+        } catch (error) {
+            if (error instanceof ManifestConflictError) {
+                api.ui.dialog.replace(() =>
+                    api.ui.DialogAlert({
+                        title: "Settings changed on disk",
+                        message:
+                            "SpecOps did not overwrite the newer manifest. Reopen the editor to review it.",
+                        onConfirm: close,
+                    }),
+                )
+                return
+            }
+            throw error
+        }
+    }
+
+    const showReview = (): void => {
+        const issues = validateManifestSelections(staged, models)
+        if (issues.length) {
+            showIssues(issues)
+            return
+        }
+        const changed = changedAgentIds(initial, staged).length
+        api.ui.dialog.replace(() =>
+            api.ui.DialogConfirm({
+                title: "Save SpecOps model mappings?",
+                message: [
+                    `Schema v2 will contain all ${ALL_AGENT_IDS.length} agents.`,
+                    ...(source.version === 1
+                        ? ["The legacy schema-v1 manifest will be upgraded."]
+                        : []),
+                    `${changed} agent selection${changed === 1 ? "" : "s"} changed.`,
+                    "Workflow steps, prompts, tools, and permissions remain managed by SpecOps.",
+                ].join("\n"),
+                onConfirm: save,
+                onCancel: showAgents,
+            }),
+        )
+    }
+
+    const showVariant = (id: AgentId, model: ConfiguredModel): void => {
+        const variants = ["", ...model.variants]
+        api.ui.dialog.replace(() =>
+            api.ui.DialogSelect<string | typeof BACK>({
+                title: `${id}: variant`,
+                placeholder: "Search variants",
+                current: staged.agents[id].variant ?? "",
+                options: [
+                    ...variants.map(variant => ({
+                        title: variant || "Default",
+                        value: variant,
+                        description: variant
+                            ? `OpenCode variant ${variant}`
+                            : "Use the model's default variant",
+                    })),
+                    {
+                        title: "Back to models",
+                        value: BACK,
+                        description: "Choose a different model for this agent",
+                    },
+                ],
+                onSelect: option => {
+                    if (option.value === BACK) {
+                        showModels(id)
+                        return
+                    }
+                    staged.agents[id] = {
+                        model: staged.agents[id].model,
+                        ...(option.value ? { variant: option.value } : {}),
+                    }
+                    showAgents()
+                },
+            }),
+        )
+    }
+
+    const showModels = (id: AgentId): void => {
+        api.ui.dialog.replace(() =>
+            api.ui.DialogSelect<string | typeof BACK>({
+                title: `${id}: model`,
+                placeholder: "Search configured models",
+                current: staged.agents[id].model,
+                options: [
+                    ...models.map(model => ({
+                        title: model.name,
+                        value: model.id,
+                        category: model.providerName,
+                        description: model.id,
+                    })),
+                    {
+                        title: "Back to agents",
+                        value: BACK,
+                        description: "Return without changing this agent",
+                    },
+                ],
+                onSelect: option => {
+                    if (option.value === BACK) {
+                        showAgents()
+                        return
+                    }
+                    const selected = models.find(model => model.id === option.value)
+                    if (!selected) return
+                    staged.agents[id] = selectConfiguredModel(staged.agents[id], selected)
+                    showVariant(id, selected)
+                },
+            }),
+        )
+    }
+
+    const showAgents = (): void => {
+        api.ui.dialog.setSize("xlarge")
+        const unresolved = new Set(
+            validateManifestSelections(staged, models).map(issue => issue.split(":")[0]),
+        )
+        const changed = new Set(changedAgentIds(initial, staged))
+        const agentOptions = ALL_AGENT_IDS.map(id => ({
+            title: `${unresolved.has(id) ? "⚠ " : ""}${changed.has(id) ? "✓ " : ""}${id}`,
+            value: id,
+            category: agentSettingsCategory(id),
+            footer: describeSelection(staged, id, models),
+        }))
+        api.ui.dialog.replace(
+            () =>
+                api.ui.DialogSelect({
+                    title: "SpecOps agent model mappings",
+                    placeholder: "Search agent IDs",
+                    options: [
+                        ...agentOptions,
+                        {
+                            title: "Review and save",
+                            value: "__save__",
+                            category: "Actions",
+                            description: "Validate all mappings and write schema v2 once",
+                            footer: `${changed.size} changed`,
+                        },
+                        {
+                            title: "Cancel",
+                            value: "__cancel__",
+                            category: "Actions",
+                            description: "Discard staged changes",
+                        },
+                    ],
+                    onSelect: option => {
+                        if (option.value === "__save__") {
+                            showReview()
+                        } else if (option.value === "__cancel__") {
+                            close()
+                        } else {
+                            showModels(option.value as AgentId)
+                        }
+                    },
+                }),
+            finish,
+        )
+    }
+
+    showAgents()
+}
+
+/** Describe one staged model mapping compactly in the agent list. */
+function describeSelection(
+    manifest: SpecOpsManifest,
+    id: AgentId,
+    models: readonly ConfiguredModel[],
+): string {
+    const entry = manifest.agents[id]
+    const name = models.find(model => model.id === entry.model)?.name ?? entry.model
+    const compactName = name.length > 28 ? `${name.slice(0, 27)}…` : name
+    return `${compactName} · ${entry.variant ?? "Default"}`
+}
+
+/** Return agents whose staged model or variant differs from the opened draft. */
+function changedAgentIds(initial: SpecOpsManifest, staged: SpecOpsManifest): readonly AgentId[] {
+    return ALL_AGENT_IDS.filter(
+        id => JSON.stringify(initial.agents[id]) !== JSON.stringify(staged.agents[id]),
+    )
+}
+
+/** SpecOps TUI plugin module registered with OpenCode's plugin manager. */
 const SpecOpsTuiPlugin = {
-    /** Canonical plugin identifier shared with the server entry point. */
     id: "specops",
-    /** No-op TUI lifecycle hook; SpecOps owns no TUI surface. */
-    tui: async () => {},
+    tui: async api => {
+        registerModelSettings(api)
+    },
 } satisfies TuiPluginModule
 
 export default SpecOpsTuiPlugin

@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -5,47 +6,45 @@ import type { Config } from "@opencode-ai/plugin"
 import { ALL_AGENT_IDS } from "./capabilities/ids.js"
 import {
     DEFAULT_MANIFEST,
+    isLegacyManifest,
     manifestAgentConfig,
-    migrateLegacyFrontierManifest,
     validateManifest,
     type SpecOpsManifest,
 } from "./manifest.js"
 
-/**
- * Result of loading or cleanly materialising the final agent manifest.
- *
- * `replacedInvalidFile` is `true` when an existing file was found but was
- * invalid and was replaced with the default manifest.
- */
+/** Result of loading or materialising the agent model manifest. */
 export type ManifestMaterialisation = {
+    status: "ready" | "upgrade-required"
     manifest: SpecOpsManifest
     path: string
     replacedInvalidFile: boolean
 }
 
-/**
- * Read-only manifest inspection result used by doctor and smoke tests.
- *
- * Discriminated by `valid`: when `true`, the full parsed manifest is
- * available; when `false`, `reason` explains why inspection failed.
- */
+/** Read-only manifest state used by diagnostics and the TUI editor. */
 export type ManifestInspection =
-    | { valid: true; manifest: SpecOpsManifest; path: string }
-    | { valid: false; path: string; reason: string }
+    | {
+          status: "ready"
+          manifest: SpecOpsManifest
+          path: string
+          contentHash: string
+      }
+    | {
+          status: "upgrade-required"
+          legacy: { version: 1; agents: Record<string, unknown> }
+          path: string
+          contentHash: string
+      }
+    | { status: "invalid"; path: string; reason: string; contentHash?: string }
 
-/**
- * Resolve OpenCode's configuration directory using the same XDG convention as
- * OpenCode itself. An explicit path makes tests and development installs
- * hermetic without touching a user's real configuration.
- *
- * When `XDG_CONFIG_HOME` is set the directory is
- * `$XDG_CONFIG_HOME/opencode`; otherwise it falls back to
- * `~/.config/opencode`.
- *
- * @param environment - Process environment (defaults to `process.env`).
- * @param homeDirectory - User home directory (defaults to `os.homedir()`).
- * @returns Absolute path to the OpenCode configuration directory.
- */
+/** Error raised when a settings editor would overwrite a newer file. */
+export class ManifestConflictError extends Error {
+    constructor() {
+        super("the SpecOps manifest changed after the editor was opened")
+        this.name = "ManifestConflictError"
+    }
+}
+
+/** Resolve OpenCode's configuration directory using its XDG convention. */
 function resolveOpenCodeConfigDirectory(
     environment: NodeJS.ProcessEnv = process.env,
     homeDirectory: string = os.homedir(),
@@ -55,15 +54,7 @@ function resolveOpenCodeConfigDirectory(
         : path.join(homeDirectory, ".config", "opencode")
 }
 
-/**
- * Resolve the user-editable final manifest path.
- *
- * The manifest file lives at `<opencode-config>/specops-manifest.json`.
- *
- * @param environment - Process environment (defaults to `process.env`).
- * @param homeDirectory - User home directory (defaults to `os.homedir()`).
- * @returns Absolute path to the manifest JSON file.
- */
+/** Resolve the global user-editable SpecOps manifest path. */
 export function resolveManifestPath(
     environment: NodeJS.ProcessEnv = process.env,
     homeDirectory: string = os.homedir(),
@@ -75,40 +66,45 @@ export function resolveManifestPath(
 }
 
 /**
- * Load an exact final manifest, upgrade the immediately preceding catalogue,
- * or atomically replace another invalid/partial file.
+ * Load a v2 manifest, preserve a legacy v1 file, or repair other invalid data.
  *
- * The exact pre-frontier catalogue receives a targeted additive upgrade that
- * preserves its existing model and provider settings while adding the two
- * frontier agents. No removed ID is translated or retained. If the file is
- * missing it is created from {@link DEFAULT_MANIFEST}; any other invalid file
- * is overwritten and `replacedInvalidFile` is set in the result.
- *
- * @param destination - Absolute path to the manifest file; defaults to
- * {@link resolveManifestPath}.
- * @returns The materialised manifest and its path, with `replacedInvalidFile`
- * indicating whether an existing invalid file was overwritten.
+ * A legacy file is never rewritten here. The current session safely receives
+ * packaged v2 defaults and the TUI is responsible for a deliberate upgrade.
  */
 export async function materializeAgentManifest(
     destination: string = resolveManifestPath(),
 ): Promise<ManifestMaterialisation> {
     try {
         const parsed = JSON.parse(await readFile(destination, "utf8")) as unknown
-        try {
-            const manifest = validateManifest(parsed)
-            return { manifest, path: destination, replacedInvalidFile: false }
-        } catch {
-            const migrated = migrateLegacyFrontierManifest(parsed)
-            if (migrated) {
-                await writeManifestAtomically(destination, migrated)
-                return { manifest: migrated, path: destination, replacedInvalidFile: false }
+        if (isLegacyManifest(parsed)) {
+            return {
+                status: "upgrade-required",
+                manifest: structuredClone(DEFAULT_MANIFEST),
+                path: destination,
+                replacedInvalidFile: false,
             }
-            throw new Error("invalid SpecOps manifest")
+        }
+        try {
+            return {
+                status: "ready",
+                manifest: validateManifest(parsed),
+                path: destination,
+                replacedInvalidFile: false,
+            }
+        } catch {
+            await writeManifestAtomically(destination, DEFAULT_MANIFEST)
+            return {
+                status: "ready",
+                manifest: structuredClone(DEFAULT_MANIFEST),
+                path: destination,
+                replacedInvalidFile: true,
+            }
         }
     } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT"
         await writeManifestAtomically(destination, DEFAULT_MANIFEST)
         return {
+            status: "ready",
             manifest: structuredClone(DEFAULT_MANIFEST),
             path: destination,
             replacedInvalidFile: !missing,
@@ -116,26 +112,40 @@ export async function materializeAgentManifest(
     }
 }
 
-/**
- * Inspect the persisted manifest without repairing or rewriting it.
- *
- * Reads and validates the manifest, returning a discriminated result: on
- * success the parsed manifest is included; on failure (missing file or
- * validation error) a `reason` explains why.
- *
- * @param destination - Absolute path to the manifest file; defaults to
- * {@link resolveManifestPath}.
- * @returns A {@link ManifestInspection} indicating success or failure.
- */
+/** Inspect the persisted manifest without repairing or rewriting it. */
 export async function inspectAgentManifest(
     destination: string = resolveManifestPath(),
 ): Promise<ManifestInspection> {
     try {
-        const manifest = validateManifest(JSON.parse(await readFile(destination, "utf8")))
-        return { valid: true, manifest, path: destination }
+        const raw = await readFile(destination, "utf8")
+        const contentHash = hashContent(raw)
+        const parsed = JSON.parse(raw) as unknown
+        if (isLegacyManifest(parsed)) {
+            return {
+                status: "upgrade-required",
+                legacy: parsed,
+                path: destination,
+                contentHash,
+            }
+        }
+        try {
+            return {
+                status: "ready",
+                manifest: validateManifest(parsed),
+                path: destination,
+                contentHash,
+            }
+        } catch (error) {
+            return {
+                status: "invalid",
+                path: destination,
+                contentHash,
+                reason: error instanceof Error ? error.message : String(error),
+            }
+        }
     } catch (error) {
         return {
-            valid: false,
+            status: "invalid",
             path: destination,
             reason:
                 (error as NodeJS.ErrnoException).code === "ENOENT"
@@ -148,16 +158,26 @@ export async function inspectAgentManifest(
 }
 
 /**
- * Register every final agent in the configuration object OpenCode resolves.
- *
- * Iterates {@link ALL_AGENT_IDS} and assigns each a configuration built by
- * {@link manifestAgentConfig}, leaving any pre-existing user-provided
- * entry (`??=`) untouched so external registrations win.
- *
- * @param config - OpenCode configuration object whose `agent` map is updated
- * in place.
- * @param manifest - Materialised manifest supplying per-agent entries.
+ * Validate and atomically save settings if the file is still the inspected
+ * revision.
  */
+export async function saveAgentManifest(
+    manifest: SpecOpsManifest,
+    expectedContentHash: string | undefined,
+    destination: string = resolveManifestPath(),
+): Promise<void> {
+    validateManifest(manifest)
+    let currentHash: string | undefined
+    try {
+        currentHash = hashContent(await readFile(destination, "utf8"))
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+    if (currentHash !== expectedContentHash) throw new ManifestConflictError()
+    await writeManifestAtomically(destination, manifest)
+}
+
+/** Register every canonical agent while preserving external registrations. */
 export function registerManifestAgents(config: Config, manifest: SpecOpsManifest): void {
     config.agent ??= {}
     for (const id of ALL_AGENT_IDS) {
@@ -165,19 +185,18 @@ export function registerManifestAgents(config: Config, manifest: SpecOpsManifest
     }
 }
 
-/**
- * Write the manifest to `destination` atomically by writing a temp file and
- * renaming it, so a crash mid-write cannot leave a partial manifest.
- *
- * @param destination - Absolute path to the final manifest file.
- * @param manifest - Manifest to persist.
- */
+/** Hash exact on-disk content for optimistic concurrency control. */
+function hashContent(content: string): string {
+    return createHash("sha256").update(content).digest("hex")
+}
+
+/** Persist a validated manifest through a same-directory atomic rename. */
 async function writeManifestAtomically(
     destination: string,
     manifest: SpecOpsManifest,
 ): Promise<void> {
     await mkdir(path.dirname(destination), { recursive: true })
-    const temporary = `${destination}.${process.pid}.tmp`
+    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
     await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
     await rename(temporary, destination)
 }

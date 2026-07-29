@@ -43,13 +43,19 @@ $XDG_CONFIG_HOME/opencode/specops-manifest.json
 When `XDG_CONFIG_HOME` is unset, it is
 `~/.config/opencode/specops-manifest.json`. The installer reports the exact path used.
 
-The manifest may customise only the model, maximum reasoning steps, and provider-specific
-options for every canonical agent. Do not add or remove agent IDs. Restart OpenCode after
-editing, then run `/specops-doctor`.
+The schema-v2 manifest may customise only `model` and optional OpenCode `variant` for every
+canonical agent. Use `SpecOps: Configure agent models` in the command palette so choices are
+validated against OpenCode's current configured-model catalogue. Restart or reload OpenCode after
+saving, then run `/specops-doctor`.
 
 If the file cannot be parsed or its agent catalogue is incomplete, restart OpenCode. Plugin load
 will replace it with the generated default using a temporary file and atomic rename. If that
 fails, check directory ownership and write permissions for the reported configuration directory.
+
+A schema-v1 file is handled differently: SpecOps preserves it byte-for-byte, uses packaged
+defaults for the current session, and opens the mapping screen once per launch. Dismissing the
+screen leaves the file untouched, so it is offered again next launch. If the editor reports that
+settings changed on disk, reopen it; SpecOps intentionally refuses to overwrite a concurrent edit.
 
 ## OpenSpec schemas are unavailable
 

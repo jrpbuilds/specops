@@ -55,11 +55,15 @@ $XDG_CONFIG_HOME/opencode/specops-manifest.json
 When `XDG_CONFIG_HOME` is unset, the path is
 `~/.config/opencode/specops-manifest.json`. No manual agent-file copying is required.
 
-The manifest controls models, step limits, and provider-specific options. Agent IDs, modes,
-prompts, tools, and permissions remain controlled by the packaged capability registry. The exact
-pre-frontier catalogue is upgraded additively; an empty, partial, malformed, or other
-wrong-catalogue manifest is atomically replaced with the final catalogue. Removed IDs are never
-merged or preserved.
+Open `SpecOps: Configure agent models` from OpenCode's command palette to choose a configured
+model and optional model variant for every controller and worker. The manifest controls only those
+two fields; step limits, modes, prompts, tools, and permissions remain controlled by the packaged
+capability registry.
+
+Legacy schema-v1 manifests are preserved byte-for-byte and trigger the mapping screen once per
+OpenCode launch until the user reviews and saves schema v2. During that session, SpecOps uses its
+packaged defaults. Other malformed or wrong-catalogue manifests are atomically replaced with the
+current defaults.
 
 After installation:
 
@@ -171,23 +175,26 @@ budget objects fail at startup instead of being ignored. See
 
 ## Agent models
 
-The generated manifest contains every final controller and worker. Edit only model, step, and
-provider options:
+The generated manifest contains every final controller and worker. Prefer the
+`SpecOps: Configure agent models` command. Its dropdowns list only models already configured in
+OpenCode and the variants each model actually exposes:
 
 ```json
 {
-    "version": 1,
+    "version": 2,
     "agents": {
         "<canonical-agent-id>": {
             "model": "provider/model",
-            "steps": 48
+            "variant": "high"
         }
     }
 }
 ```
 
-Run `/specops-doctor` after editing. The complete generated catalogue and role descriptions are in
-[Agents](docs/agents.md).
+`variant` is optional; selecting **Default** omits it. All canonical agent IDs must be present.
+Unknown fields, empty values, partial catalogues, and unsupported variants are rejected. Restart
+or reload OpenCode after saving, then run `/specops-doctor`. The complete generated catalogue and
+role descriptions are in [Agents](docs/agents.md).
 
 ## Development and verification
 
@@ -217,9 +224,9 @@ If a command reports a missing controller:
 3. Rebuild/reinstall the package and restart OpenCode.
 4. Run `opencode debug config` and `opencode debug agent <controller-id>` if needed.
 
-SpecOps will add the frontier entries to the exact pre-frontier manifest, preserving its model
-settings. It replaces any other invalid or partial manifest on clean plugin load and never
-translates removed IDs. More diagnostics are in [Troubleshooting](docs/troubleshooting.md).
+Schema-v1 manifests are preserved until their mappings are reviewed in the command-palette editor.
+Other invalid or partial manifests are replaced with current defaults on plugin load; removed IDs
+are never translated. More diagnostics are in [Troubleshooting](docs/troubleshooting.md).
 
 ## Documentation
 

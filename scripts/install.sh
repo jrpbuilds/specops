@@ -81,10 +81,10 @@ Next steps:
   1. Launch opencode in any project directory.
   2. On first load, the plugin writes the default agent manifest to:
      ${OPENCODE_CONFIG_DIR}/specops-manifest.json
-     Edit this file to customize agent models and provider options. Authority
-     and permissions always come from the packaged capability registry. It persists
-     across plugin updates.
-  3. Try it with: /specops-doctor
+     Use "SpecOps: Configure agent models" in the OpenCode command palette to
+     choose configured models and variants. Workflow policy always comes from
+     the packaged registry. The mapping persists across plugin updates.
+  3. Restart or reload OpenCode after saving, then try: /specops-doctor
      Then: /specops-auto add a focused health endpoint with tests and documentation
 
 To update SpecOps later, just re-run this script (no-op if already installed)

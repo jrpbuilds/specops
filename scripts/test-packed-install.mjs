@@ -39,7 +39,7 @@ await symlink(
 
 const manifestPath = path.join(isolatedConfigHome, "opencode", "specops-manifest.json")
 await mkdir(path.dirname(manifestPath), { recursive: true })
-await writeFile(manifestPath, `${JSON.stringify({ version: 1, agents: {} }, null, 2)}\n`)
+await writeFile(manifestPath, `${JSON.stringify({ version: 2, agents: {} }, null, 2)}\n`)
 
 process.env.XDG_CONFIG_HOME = isolatedConfigHome
 process.env.HOME = path.join(temporaryRoot, "home")
@@ -55,12 +55,41 @@ const protocolModule = await import(
 const manifestModule = await import(
     `${pathToFileURL(path.join(packageDirectory, "dist", "manifest.js")).href}?${randomUUID()}`
 )
+const tuiModule = await import(
+    `${pathToFileURL(path.join(packageDirectory, "dist", "tui.js")).href}?${randomUUID()}`
+)
 
 const hooks = await pluginModule.default.server(fakePluginInput(packageDirectory))
 const config = {}
 await hooks.config(config)
 
 const { AGENT_IDS, ALL_AGENT_IDS } = idsModule
+const tuiLayers = []
+await tuiModule.default.tui(
+    {
+        keymap: {
+            registerLayer: layer => {
+                tuiLayers.push(layer)
+                return () => {}
+            },
+        },
+        event: { on: () => () => {} },
+        lifecycle: { onDispose() {} },
+    },
+    undefined,
+    {},
+)
+assert(
+    tuiLayers.some(layer =>
+        layer.commands?.some(
+            command =>
+                command.name === "specops.models.configure" &&
+                command.namespace === "palette" &&
+                command.title === "SpecOps: Configure agent models",
+        ),
+    ),
+    "packed TUI did not register the model settings command",
+)
 assert(
     config.command.specops.agent === AGENT_IDS.controller.interactive,
     "interactive command drift",

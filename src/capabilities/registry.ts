@@ -14,8 +14,8 @@ type AgentPermission = {
  *
  * Every agent in the system has exactly one policy that fixes its id, role,
  * model, step budget, execution mode (primary or subagent), tool availability,
- * and permissions. Manifests may tune provider options but cannot change the
- * fields defined here.
+ * and permissions. Manifests may select a model and variant but cannot change
+ * the workflow-policy fields defined here.
  */
 export type AgentPolicy = {
     id: AgentId

@@ -84,10 +84,17 @@ $XDG_CONFIG_HOME/opencode/specops-manifest.json
 
 or `~/.config/opencode/specops-manifest.json` when XDG configuration is unset.
 
-Change `model`, `steps`, or provider-specific options only. Do not add or remove agent IDs.
-Permissions and modes are intentionally ignored from the user manifest.
+Open `SpecOps: Configure agent models` from OpenCode's command palette. Select an agent, one of
+OpenCode's configured provider/model entries, and either **Default** or a variant exposed by that
+model. Review the complete mapping and save it once.
 
-Restart OpenCode and run `/specops-doctor` after editing.
+The schema-v2 manifest accepts exactly `model` and optional `variant` for every canonical agent.
+Workflow steps, prompts, tools, permissions, and modes remain registry-owned. Restart or reload
+OpenCode and run `/specops-doctor` after saving.
+
+If an existing schema-v1 manifest is detected, the mapping screen opens once per launch. SpecOps
+preserves the old file until you save and uses packaged defaults for that session. Available legacy
+model choices are carried forward; unavailable choices visibly require a replacement.
 
 ## Development installation
 

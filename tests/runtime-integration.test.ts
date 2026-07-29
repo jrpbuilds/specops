@@ -57,7 +57,7 @@ describe.sequential("installed runtime contract", () => {
 
         // A partial file must be cleanly replaced, never merged with obsolete IDs.
         await mkdir(path.dirname(manifestPath), { recursive: true })
-        await writeFile(manifestPath, `${JSON.stringify({ version: 1, agents: {} }, null, 2)}\n`)
+        await writeFile(manifestPath, `${JSON.stringify({ version: 2, agents: {} }, null, 2)}\n`)
 
         const hooks = await SpecOpsPluginWithManifest(fakePluginInput())
         const config: Config = {}
