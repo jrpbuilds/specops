@@ -31,13 +31,13 @@ export type AgentPermission = {
 
 /**
  * One agent entry in the manifest. The `model` is a `provider/model` string.
- * `maxSteps` bounds the agent's tool-call budget. `tools` and `permission`
+ * `steps` bounds the agent's tool-call budget. `tools` and `permission`
  * enforce least-privilege per role. Additional fields are passed through to
  * OpenCode as provider/model options, such as `reasoningEffort`.
  */
 export type AgentDefinition = {
   model: string
-  maxSteps: number
+  steps: number
   tools: AgentTools
   permission: AgentPermission
   [option: string]: unknown
@@ -58,8 +58,9 @@ export function manifestAgentConfig(agentId: string, definition: AgentDefinition
  mode: "subagent"
  prompt: string
 } {
+  const { maxSteps: _deprecatedMaxSteps, ...config } = definition
   return {
-    ...definition,
+    ...config,
     mode: "subagent" as const,
     prompt: promptText(agentId),
   }
@@ -75,115 +76,115 @@ export const DEFAULT_MANIFEST: SpecOpsManifest = {
   agents: {
     "sdd-assess": {
       model: "opencode/deepseek-v4-flash-free",
-      maxSteps: 6,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-init": {
       model: "opencode/deepseek-v4-flash-free",
-      maxSteps: 6,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-explore": {
       model: "opencode/ling-3.0-flash-free",
-      maxSteps: 8,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-propose": {
       model: "opencode/nemotron-3-ultra-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-spec": {
       model: "opencode/nemotron-3-ultra-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-design": {
       model: "opencode/nemotron-3-ultra-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-tasks": {
       model: "opencode/laguna-s-2.1-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-apply": {
       model: "opencode/north-mini-code-free",
-      maxSteps: 16,
+      steps: 96,
       tools: { question: false, todowrite: false },
       permission: { bash: "allow", edit: "allow", task: "deny" },
     },
     "sdd-verify": {
       model: "opencode/mimo-v2.5-free",
-      maxSteps: 10,
+      steps: 64,
       tools: { question: false, todowrite: false },
       permission: { bash: "allow", edit: "deny", task: "deny" },
     },
     "sdd-archive": {
       model: "opencode/deepseek-v4-flash-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "sdd-onboard": {
       model: "opencode/deepseek-v4-flash-free",
-      maxSteps: 8,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "jd-judge-a": {
       model: "opencode/nemotron-3-ultra-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "jd-judge-b": {
       model: "opencode/mimo-v2.5-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "jd-fix-agent": {
       model: "opencode/north-mini-code-free",
-      maxSteps: 12,
+      steps: 64,
       tools: { question: false, todowrite: false },
       permission: { bash: "allow", edit: "allow", task: "deny" },
     },
     "review-risk": {
       model: "opencode/mimo-v2.5-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "review-readability": {
       model: "opencode/laguna-s-2.1-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "review-reliability": {
       model: "opencode/mimo-v2.5-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "review-resilience": {
       model: "opencode/ling-3.0-flash-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },
     "review-refuter": {
       model: "opencode/nemotron-3-ultra-free",
-      maxSteps: 4,
+      steps: 32,
       tools: { question: false, todowrite: false },
       permission: { bash: "deny", edit: "deny", task: "deny" },
     },

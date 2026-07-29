@@ -15,7 +15,8 @@ import {
 } from "../src/parsing.js"
 import { footprintEscalation, moduleKey } from "../src/git.js"
 import { isTransientProviderError } from "../src/runner.js"
-import { manifestAgentConfig } from "../src/manifest.js"
+import { DEFAULT_MANIFEST, manifestAgentConfig } from "../src/manifest.js"
+import SpecOpsTuiPlugin from "../src/tui.js"
 import {
   judgmentDayWithRunner,
   reviewPanelWithRunner,
@@ -25,7 +26,7 @@ describe("visible automatic controller", () => {
   it("preserves OpenCode provider options from the manifest", () => {
     const config = manifestAgentConfig("sdd-apply", {
       model: "provider/model",
-      maxSteps: 16,
+      steps: 96,
       tools: { question: false },
       permission: { bash: "allow", edit: "allow", task: "deny" },
       reasoningEffort: "high",
@@ -34,12 +35,42 @@ describe("visible automatic controller", () => {
 
     expect(config.reasoningEffort).toBe("high")
     expect(config.textVerbosity).toBe("low")
+    expect(config.steps).toBe(96)
+    expect(config).not.toHaveProperty("maxSteps")
     expect(config.mode).toBe("subagent")
     expect(config.prompt).toContain("sdd-apply")
   })
 
+  it("discards deprecated maxSteps without supplying a replacement budget", () => {
+    const config = manifestAgentConfig("sdd-apply", {
+      model: "provider/model",
+      maxSteps: 16,
+      tools: { question: false },
+      permission: { bash: "allow", edit: "allow", task: "deny" },
+    } as unknown as Parameters<typeof manifestAgentConfig>[1])
+
+    expect(config).not.toHaveProperty("maxSteps")
+    expect(config).not.toHaveProperty("steps")
+  })
+
+  it("ships high role-based default step budgets", () => {
+    for (const [agentId, agent] of Object.entries(DEFAULT_MANIFEST.agents)) {
+      const expected = agentId === "sdd-apply"
+        ? 96
+        : agentId === "sdd-verify" || agentId === "jd-fix-agent"
+          ? 64
+          : 32
+      expect(agent.steps).toBe(expected)
+    }
+  })
+
+  it("exports a stable OpenCode TUI plugin companion", async () => {
+    expect(SpecOpsTuiPlugin.id).toBe("specops")
+    await expect(SpecOpsTuiPlugin.tui()).resolves.toBeUndefined()
+  })
+
   it("routes automatic mode through native task workers", () => {
-    expect(COMMANDS["specops-auto"]?.agent).toBe("specops-controller")
+    expect(COMMANDS["specops-auto"]?.agent).toBe("specops-auto")
     expect(COMMANDS["specops-auto"]?.subtask).toBe(false)
     expect(COMMANDS["specops-auto"]?.template).toContain("built-in task tool")
     expect(COMMANDS["specops-auto-headless"]).toBeDefined()
@@ -49,7 +80,7 @@ describe("visible automatic controller", () => {
     expect(SPECOPS_CONTROLLER_PROMPT).toContain("sdd-assess")
     expect(SPECOPS_CONTROLLER_PROMPT).toContain("specops_wait_for_provider")
     expect(SPECOPS_CONTROLLER_PROMPT).not.toContain("\\`")
-    expect(COMMANDS.specops?.agent).toBe("specops-interactive-controller")
+    expect(COMMANDS.specops?.agent).toBe("specops")
     expect(SPECOPS_INTERACTIVE_PROMPT).toContain("Do not ask the user to select a workflow tier")
   })
 

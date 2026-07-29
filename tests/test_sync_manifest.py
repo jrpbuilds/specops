@@ -84,6 +84,21 @@ class SyncManifestTests(unittest.TestCase):
         self.assertEqual(config["agent"]["user-agent"]["model"], "user/model")
         self.assertEqual(config["agent"]["managed"]["model"], "provider/model")
 
+    def test_discards_deprecated_max_steps(self) -> None:
+        self.write_manifest(
+            {
+                "managed": {
+                    "model": "provider/model",
+                    "maxSteps": 16,
+                }
+            }
+        )
+
+        config, _ = sync.desired_state(self.root)
+
+        self.assertNotIn("maxSteps", config["agent"]["managed"])
+        self.assertNotIn("steps", config["agent"]["managed"])
+
     def test_existing_prompt_is_never_overwritten(self) -> None:
         self.write_manifest({"managed": "provider/model"})
         prompt_dir = self.root / ".opencode" / "prompts"

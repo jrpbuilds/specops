@@ -1,8 +1,8 @@
 /**
  * Inline controller prompts for the SpecOps automatic and interactive workflows.
  *
- * These two prompts drive the `specops-controller` and
- * `specops-interactive-controller` primary agents. They are embedded directly
+ * These two prompts drive the `specops-auto` and `specops` primary agents. They
+ * agents. They are embedded directly
  * in the plugin (not loaded from disk) so the npm package is self-contained.
  */
 

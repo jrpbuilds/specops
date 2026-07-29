@@ -68,6 +68,7 @@ def agent_entry(agent_id: str, value: Any) -> dict[str, Any]:
     model = source.pop("model", None)
     if not isinstance(model, str) or "/" not in model:
         raise SystemExit(f"agent {agent_id!r}: model must be a provider/model string")
+    source.pop("maxSteps", None)
     # Manifest-controlled fields intentionally win for managed agents.
     return {
         "mode": "subagent",

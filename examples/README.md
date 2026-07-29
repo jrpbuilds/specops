@@ -25,6 +25,6 @@ cp examples/specops.schema.json .opencode/specops.schema.json
 ```
 
 These are project-level files; they are not part of the npm package and are
-not required to use SpecOps. The agent manifest (models, maxSteps, permissions)
+not required to use SpecOps. The agent manifest (models, steps, permissions)
 lives separately at `~/.config/opencode/specops-manifest.json` and is managed
 by the plugin on first load.
