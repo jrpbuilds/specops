@@ -52,9 +52,12 @@ const AGENT_ROLES: Record<AgentId, string> = {
     [AGENT_IDS.core.implementer]: "Mutates repository code from approved artifacts.",
     [AGENT_IDS.core.verifier]: "Builds traceability from registered command evidence.",
     [AGENT_IDS.core.repairer]: "Mutates code during bounded remediation cycles.",
-    [AGENT_IDS.review.risk]: "Detects cross-cutting risk facets without replacing specialists.",
-    [AGENT_IDS.review.correctnessJudge]: "Independently judges implementation correctness.",
-    [AGENT_IDS.review.complianceJudge]: "Independently judges specification compliance.",
+    [AGENT_IDS.review.risk]:
+        "Detects cross-cutting risk facets without replacing specialists; may run verification commands.",
+    [AGENT_IDS.review.correctnessJudge]:
+        "Independently judges implementation correctness; may run verification commands against the repository.",
+    [AGENT_IDS.review.complianceJudge]:
+        "Independently judges specification compliance; may run verification commands against the repository.",
     [AGENT_IDS.review.refuter]: "Deduplicates and challenges unsupported review findings.",
     [AGENT_IDS.specialist.security]:
         "Reviews authentication, authorization, secrecy, and abuse risk.",
@@ -101,7 +104,7 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     ),
     [AGENT_IDS.core.implementer]: writer(AGENT_IDS.core.implementer, 96),
     [AGENT_IDS.core.verifier]: verifier(AGENT_IDS.core.verifier, "opencode/mimo-v2.5-free", 64),
-    [AGENT_IDS.review.risk]: readOnly(AGENT_IDS.review.risk, "opencode/mimo-v2.5-free", 32),
+    [AGENT_IDS.review.risk]: reviewer(AGENT_IDS.review.risk, "opencode/mimo-v2.5-free", 32),
     [AGENT_IDS.specialist.security]: readOnly(
         AGENT_IDS.specialist.security,
         "opencode/mimo-v2.5-free",
@@ -147,12 +150,12 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
         "opencode/laguna-s-2.1-free",
         40,
     ),
-    [AGENT_IDS.review.correctnessJudge]: readOnly(
+    [AGENT_IDS.review.correctnessJudge]: reviewer(
         AGENT_IDS.review.correctnessJudge,
         "opencode/nemotron-3-ultra-free",
         40,
     ),
-    [AGENT_IDS.review.complianceJudge]: readOnly(
+    [AGENT_IDS.review.complianceJudge]: reviewer(
         AGENT_IDS.review.complianceJudge,
         "opencode/mimo-v2.5-free",
         40,
@@ -333,6 +336,32 @@ function writer(id: AgentId, steps: number): AgentPolicy {
  * disabled.
  */
 function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
+    return {
+        id,
+        role: AGENT_ROLES[id],
+        model,
+        steps,
+        mode: "subagent",
+        tools: { task: false },
+        permission: VERIFIER,
+    }
+}
+
+/**
+ * Build a reviewer sub-agent policy (bash allowed, edit denied).
+ *
+ * Reviewers such as the correctness and compliance judges need shell access
+ * to run targeted verification commands against the repository, but must not
+ * modify files directly. This is the same authority preset as the verifier
+ * agent, exposed as a named constructor for clarity in the registry.
+ *
+ * @param id - The sub-agent id.
+ * @param model - The model identifier string.
+ * @param steps - Max agent steps before forced termination.
+ * @returns A fully populated reviewer {@link AgentPolicy} with `task` tool
+ * disabled.
+ */
+function reviewer(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
         id,
         role: AGENT_ROLES[id],
