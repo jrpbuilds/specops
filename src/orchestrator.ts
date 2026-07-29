@@ -8,6 +8,7 @@ import { doctor } from "./doctor.js"
 import { executeValidation } from "./evidence/commands.js"
 import { READ_ONLY_OPENSPEC_COMMANDS, openSpecOrThrow, onboard, readConfig } from "./openspec.js"
 import { publishProgress, type MetadataContext } from "./progress.js"
+import { summarize } from "./summary.js"
 import { TOOL_IDS } from "./protocol.js"
 import { changeRoot, readMachine, readRun, writeMachine } from "./state/store.js"
 import {
@@ -68,16 +69,21 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             async execute(args, context) {
                 const config = await readConfig(context.directory)
                 await onboard(context.directory)
-                return JSON.stringify(
-                    await startRun(context.directory, config, {
+                try {
+                    const started = await startRun(context.directory, config, {
                         goal: args.goal,
                         assessmentOutput: args.assessment,
                         requestedTier: args.requestedTier,
                         mode: args.mode,
-                    }),
-                    null,
-                    2,
-                )
+                    })
+                    return summarize(started.state, started.change, "Run started")
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    if (/ResourceExhausted|rate.limit|429|too many requests/i.test(message)) {
+                        return "SpecOps could not start the run: the upstream LLM provider returned a rate-limit error. Wait a moment and retry with the same specops_start_run call; no run state was persisted."
+                    }
+                    throw error
+                }
             },
         }),
         [TOOL_IDS.nextAction]: tool({
@@ -117,7 +123,11 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     state,
                 )
-                return JSON.stringify(state, null, 2)
+                const dispatch = state.dispatches.find(d => d.id === args.dispatchId)
+                const label = dispatch
+                    ? `${dispatch.capability}${dispatch.purpose === "judgment" ? " judgment" : ""} completed`
+                    : "Action completed"
+                return summarize(state, args.change, label)
             },
         }),
         [TOOL_IDS.answerQuestion]: tool({
@@ -146,7 +156,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     state,
                 )
-                return JSON.stringify(state, null, 2)
+                return summarize(state, args.change, "Question answered")
             },
         }),
         [TOOL_IDS.dismissQuestion]: tool({
@@ -167,7 +177,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     state,
                 )
-                return JSON.stringify(state, null, 2)
+                return summarize(state, args.change, "Question dismissed")
             },
         }),
         [TOOL_IDS.requestContext]: tool({
@@ -270,11 +280,8 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 reason: tool.schema.string().min(1).optional(),
             },
             async execute(args, context) {
-                return JSON.stringify(
-                    await cancelRun(context.directory, args.change, args.reason),
-                    null,
-                    2,
-                )
+                const state = await cancelRun(context.directory, args.change, args.reason)
+                return summarize(state, args.change, "Run cancelled")
             },
         }),
         [TOOL_IDS.finalize]: tool({
@@ -296,7 +303,8 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     state,
                 )
-                return JSON.stringify(state, null, 2)
+                const label = state.status === "passed" ? "Run passed" : "Run finalized"
+                return summarize(state, args.change, label)
             },
         }),
         [TOOL_IDS.onboard]: tool({

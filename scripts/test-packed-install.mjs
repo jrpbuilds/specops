@@ -186,25 +186,26 @@ const assessment = JSON.stringify({
     facts: ["Clean packed smoke project."],
     inferences: [],
 })
-const started = JSON.parse(
-    await hooks.tool[protocolModule.TOOL_IDS.startRun].execute(
-        {
-            goal: "Confirm packed scheduler lifecycle",
-            assessment,
-            requestedTier: "auto",
-            mode: "automatic",
-        },
-        smokeContext,
-    ),
+const startSummary = await hooks.tool[protocolModule.TOOL_IDS.startRun].execute(
+    {
+        goal: "Confirm packed scheduler lifecycle",
+        assessment,
+        requestedTier: "auto",
+        mode: "automatic",
+    },
+    smokeContext,
 )
-assert(started.change, "packed start-run did not create a change")
-assert(started.state?.version === 2, "packed start-run did not persist final state")
+const changeMatch = startSummary.match(/confirm-packed-scheduler-lifecycle[^\s]*/)
+assert(changeMatch, "packed start-run did not return a change name in its summary")
+const change = changeMatch[0]
+
+const state = JSON.parse(
+    await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute({ change }, smokeContext),
+)
+assert(state.version === 2, "packed start-run did not persist final state")
 
 const directive = JSON.parse(
-    await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute(
-        { change: started.change },
-        smokeContext,
-    ),
+    await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),
 )
 assert(
     directive.type === "dispatch" && directive.action?.id,
@@ -212,10 +213,7 @@ assert(
 )
 const firstAction = directive.action
 const status = JSON.parse(
-    await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute(
-        { change: started.change },
-        smokeContext,
-    ),
+    await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute({ change }, smokeContext),
 )
 assert(
     status.dispatches?.some(
