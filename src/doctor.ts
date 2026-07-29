@@ -5,11 +5,14 @@
  * `PASS`/`FAIL`/`INFO`. Diagnostics never mutate state.
  */
 
-import { stat } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import type { SpecOpsConfig } from "./core.js"
 import { openSpecOrThrow } from "./openspec.js"
 import { runProcess } from "./git.js"
+
+const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
 /**
  * Run all SpecOps readiness checks for a project.
@@ -44,6 +47,12 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
     } catch {
       checks.push(`FAIL schema: ${schema} missing; run /sdd-onboard`)
     }
+  }
+  try {
+    const pkg = JSON.parse(await readFile(path.join(PLUGIN_ROOT, "package.json"), "utf-8"))
+    checks.push(`PASS SpecOps plugin: v${pkg.version}`)
+  } catch {
+    checks.push(`FAIL SpecOps plugin: could not read version`)
   }
   checks.push(
     `${config.integrations.mcp === "inherit" ? "INFO" : "PASS"} MCP: ${config.integrations.mcp} (never required by SpecOps)`,
