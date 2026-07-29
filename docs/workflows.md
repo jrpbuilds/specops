@@ -78,7 +78,7 @@ The order of native task rows shows the current phase. Durable artifacts beneath
 summarizes active changes and evidence.
 
 User interruption propagates through OpenCode's native task execution. Each
-agent has a role-appropriate `maxSteps` bound.
+agent has a role-appropriate `steps` bound.
 
 Transient provider capacity failures do not change routing. For HTTP 429,
 temporary availability, timeout, or streaming failures, the controller retains

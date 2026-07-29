@@ -68,7 +68,7 @@ export const SpecOpsPlugin: Plugin = async (input) => {
       openCodeConfig.agent["specops-controller"] ??= {
         mode: "primary",
         model: "opencode/deepseek-v4-flash-free",
-        maxSteps: 1000,
+        steps: 1000,
         prompt: SPECOPS_CONTROLLER_PROMPT,
         tools: {
           question: false,
@@ -79,7 +79,7 @@ export const SpecOpsPlugin: Plugin = async (input) => {
       openCodeConfig.agent["specops-interactive-controller"] ??= {
         mode: "primary",
         model: "opencode/deepseek-v4-flash-free",
-        maxSteps: 1000,
+        steps: 1000,
         prompt: SPECOPS_INTERACTIVE_PROMPT,
         tools: {
           question: true,

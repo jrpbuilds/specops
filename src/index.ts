@@ -43,7 +43,7 @@ export const MANIFEST_PATH = path.join(
  * {@link DEFAULT_MANIFEST} on first run.
  *
  * The manifest has no `$schema` field (kept minimal). Users edit it directly
- * to customize agent models, maxSteps, tools, permissions, and provider options; those edits
+ * to customize agent models, steps, tools, permissions, and provider options; those edits
  * persist across plugin updates because the plugin never overwrites an
  * existing file.
  *

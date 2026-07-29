@@ -6,20 +6,32 @@ The agent manifest lives at `~/.config/opencode/specops-manifest.json`. The
 plugin creates it on first load from the built-in default and never overwrites
 it afterwards — your edits persist across plugin updates.
 
-Edit it directly to change agent models, `maxSteps`, tools, or permissions:
+Edit it directly to change agent models, `steps`, tools, permissions, or
+provider/model options such as `reasoningEffort`:
 
 ```json
 {
   "agents": {
     "sdd-apply": {
       "model": "opencode/north-mini-code-free",
-      "maxSteps": 16,
+      "steps": 96,
       "tools": { "question": false, "todowrite": false },
       "permission": { "bash": "allow", "edit": "allow", "task": "deny" }
+    },
+    "sdd-propose": {
+      "model": "opencode/nemotron-3-ultra-free",
+      "steps": 32,
+      "tools": {},
+      "permission": { "bash": "deny", "edit": "deny", "task": "deny" },
+      "reasoningEffort": "high"
     }
   }
 }
 ```
+
+Extra fields beyond the four known keys (`model`, `steps`, `tools`, `permission`)
+pass through to the generated OpenCode agent as provider/model options.
+`reasoningEffort` is the documented OpenCode spelling for reasoning levels.
 
 The plugin reads this file on every load and registers all 19 workers
 programmatically via its `config()` hook. No `opencode.json` mutation is
@@ -111,7 +123,7 @@ snapshot rather than silently reviewing a truncation.
 Provider capacity failures (HTTP 429, temporary availability, timeout, and
 transient streaming errors) keep polling with capped exponential backoff until
 the worker succeeds or the user interrupts. Retries preserve the configured
-agent and model. Agent-specific `maxSteps` values live in the manifest and
+agent and model. Agent-specific `steps` values live in the manifest and
 force a text-only result after a bounded number of tool iterations.
 
 ## Existing OpenSpec projects
