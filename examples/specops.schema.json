@@ -111,6 +111,22 @@
                 }
             }
         },
+        "frontier": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mode",
+                "maxEscalationsPerRun",
+                "maxDispatchesPerRun",
+                "maxHighDispatchesPerRun"
+            ],
+            "properties": {
+                "mode": { "enum": ["disabled", "adaptive"] },
+                "maxEscalationsPerRun": { "type": "integer", "minimum": 0 },
+                "maxDispatchesPerRun": { "type": "integer", "minimum": 0 },
+                "maxHighDispatchesPerRun": { "type": "integer", "minimum": 0 }
+            }
+        },
         "review": {
             "type": "object",
             "additionalProperties": false,

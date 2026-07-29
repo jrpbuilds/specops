@@ -47,6 +47,7 @@ export async function publishProgress(
                 riskFacets: state.riskFacets,
                 dispatches: state.dispatches.length,
                 budgetUsage: state.budgetUsage,
+                frontierUsage: state.frontierUsage,
             },
         },
     })

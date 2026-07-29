@@ -22,6 +22,12 @@
             "maxRepeatedFailureFingerprints": 2
         }
     },
+    "frontier": {
+        "mode": "disabled",
+        "maxEscalationsPerRun": 2,
+        "maxDispatchesPerRun": 3,
+        "maxHighDispatchesPerRun": 1
+    },
     "review": {
         "blockingSeverities": ["BLOCKER", "HIGH"],
         "maxDiffBytes": 200000,

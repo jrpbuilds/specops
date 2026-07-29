@@ -1,8 +1,8 @@
 # Workflows and scope tiers
 
-The visible `/specops-auto` command and non-interactive
-`opencode run --command specops-auto` invocation are adapters for this same automatic workflow.
-They do not define separate routing, persistence, repair, or completion behavior.
+Interactive, visible automatic, and non-interactive CLI entrypoints use the
+same scheduler. Execution mode changes only how unresolved questions are
+presented or paused; it does not change routing, stages, or assurance.
 
 Scope tier, risk facets, and uncertainty are separate dimensions. A small security-sensitive change
 may require a specialist while remaining Standard; a large low-risk refactor may require Full
@@ -10,12 +10,24 @@ because of size and design uncertainty.
 
 ## Lean
 
-Lean is for small, restorative work with no requirement change, public-contract change, or
-identified risk facet. It persists routing and exploration, then moves directly to implementation,
-verification, correctness judgment, review, and receipt.
+Lean is the default for small, bounded work with no requirement change,
+public-contract change, or identified risk facet. Its successful normal path
+uses four total subagent calls:
 
-Lean is not a shortcut around evidence. It still requires current implementation hashes,
-verification, independent correctness judgment, and the final review ledger.
+1. the assessor inspects and routes the change;
+2. the planner returns a compact task plan;
+3. the implementer applies it;
+4. the verifier returns one validated bundle containing verification,
+   correctness judgment, and the final review ledger.
+
+The controller renders `exploration.md` deterministically from the assessor's
+evidence. Bundling Lean assurance reduces model calls without removing its
+artifacts, hashes, blocking findings, repair policy, or receipt gates.
+
+Known risk applies the Standard/Full floor immediately. Newly discovered risk
+or an actual diff above configured file/module limits upgrades the run,
+invalidates downstream Lean work, and continues through the complete higher
+tier workflow.
 
 ## Standard
 
@@ -88,6 +100,28 @@ The refuter returns a structured ledger. A blocking finding selects one repair m
 Specification/design repair is reasoned about by planner or designer and persisted by the
 controller. Code repair is performed only by implementer or repairer. Downstream evidence is then
 invalidated and regenerated against the new diff.
+
+## Adaptive frontier escalation
+
+When enabled, a worker that remains materially blocked after repository
+inspection and a concrete attempt may emit one `specops-frontier` marker. The
+marker names the blocked task, suggested low/high tier, workflow impact,
+evidence, and prior attempts. It is mutually exclusive with question and
+requirements-escalation markers.
+
+The controller normally routes accepted requests to the low-tier frontier
+subagent. High-tier routing is limited to critical security, data/migration,
+breaking-contract, irreversible-design, or repeated-blocker evidence. Advice
+does not mutate the repository: the originating planner, designer,
+implementer, verifier, or repairer is freshly dispatched with the advice bound
+into its provenance.
+
+If the same blocker recurs after low-tier advice, the controller may promote
+that episode to the high tier once. Further repeats follow the existing
+bounded blocked/failure outcome. Failed judgments and blocking review-ledger
+findings may enter the same adjudication path before repair. A frontier
+reviewer cannot uphold or dismiss a blocker without concrete repository or
+recorded command evidence.
 
 ## Worker questions
 

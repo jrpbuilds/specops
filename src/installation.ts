@@ -6,6 +6,7 @@ import { ALL_AGENT_IDS } from "./capabilities/ids.js"
 import {
     DEFAULT_MANIFEST,
     manifestAgentConfig,
+    migrateLegacyFrontierManifest,
     validateManifest,
     type SpecOpsManifest,
 } from "./manifest.js"
@@ -74,12 +75,14 @@ export function resolveManifestPath(
 }
 
 /**
- * Load an exact final manifest or atomically replace an invalid/partial file.
+ * Load an exact final manifest, upgrade the immediately preceding catalogue,
+ * or atomically replace another invalid/partial file.
  *
- * Replacement is clean materialisation, not migration: no removed ID is read,
- * mapped, merged, or retained. If the file is missing it is created from
- * {@link DEFAULT_MANIFEST}; if it exists but is invalid it is overwritten and
- * `replacedInvalidFile` is set in the result.
+ * The exact pre-frontier catalogue receives a targeted additive upgrade that
+ * preserves its existing model and provider settings while adding the two
+ * frontier agents. No removed ID is translated or retained. If the file is
+ * missing it is created from {@link DEFAULT_MANIFEST}; any other invalid file
+ * is overwritten and `replacedInvalidFile` is set in the result.
  *
  * @param destination - Absolute path to the manifest file; defaults to
  * {@link resolveManifestPath}.
@@ -90,8 +93,18 @@ export async function materializeAgentManifest(
     destination: string = resolveManifestPath(),
 ): Promise<ManifestMaterialisation> {
     try {
-        const manifest = validateManifest(JSON.parse(await readFile(destination, "utf8")))
-        return { manifest, path: destination, replacedInvalidFile: false }
+        const parsed = JSON.parse(await readFile(destination, "utf8")) as unknown
+        try {
+            const manifest = validateManifest(parsed)
+            return { manifest, path: destination, replacedInvalidFile: false }
+        } catch {
+            const migrated = migrateLegacyFrontierManifest(parsed)
+            if (migrated) {
+                await writeManifestAtomically(destination, migrated)
+                return { manifest: migrated, path: destination, replacedInvalidFile: false }
+            }
+            throw new Error("invalid SpecOps manifest")
+        }
     } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT"
         await writeManifestAtomically(destination, DEFAULT_MANIFEST)

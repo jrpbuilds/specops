@@ -23,6 +23,8 @@ and permissions remain registry-controlled.
 | `specops-correctness-judge`          | subagent | Independently judges implementation correctness; may run verification commands against the repository. | Command execution   | `opencode/nemotron-3-ultra-free`  |
 | `specops-compliance-judge`           | subagent | Independently judges specification compliance; may run verification commands against the repository.   | Command execution   | `opencode/mimo-v2.5-free`         |
 | `specops-review-refuter`             | subagent | Deduplicates and challenges unsupported review findings.                                               | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
+| `specops-frontier-low`               | subagent | Provides bounded low-tier frontier advice for evidence-backed workflow blockers.                       | Read-only reasoning | `openai/gpt-5.6-luna`             |
+| `specops-frontier-high`              | subagent | Provides bounded high-tier frontier adjudication for critical workflow blockers.                       | Read-only reasoning | `openai/gpt-5.6-sol`              |
 | `specops-security-specialist`        | subagent | Reviews authentication, authorization, secrecy, and abuse risk.                                        | Read-only reasoning | `opencode/mimo-v2.5-free`         |
 | `specops-data-migration-specialist`  | subagent | Reviews persistent data and migration safety.                                                          | Read-only reasoning | `opencode/nemotron-3-ultra-free`  |
 | `specops-contract-specialist`        | subagent | Reviews public API and compatibility contracts.                                                        | Read-only reasoning | `opencode/mimo-v2.5-free`         |

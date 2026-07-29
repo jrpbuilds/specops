@@ -1,4 +1,5 @@
 import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
+import { AGENT_IDS } from "./capabilities/ids.js"
 import { AGENT_REGISTRY } from "./capabilities/registry.js"
 import { promptText } from "./prompts.generated.js"
 
@@ -79,6 +80,57 @@ export function validateManifest(value: unknown): SpecOpsManifest {
         }
     }
     return source as SpecOpsManifest
+}
+
+/**
+ * Upgrade only the exact pre-frontier manifest catalogue.
+ *
+ * Existing model/provider choices are retained verbatim and the two new
+ * frontier entries are appended from current defaults. Other partial or stale
+ * catalogues are deliberately not merged.
+ *
+ * @param value - Parsed manifest candidate.
+ * @returns An upgraded manifest, or `undefined` when it is not the exact
+ * legacy catalogue.
+ */
+export function migrateLegacyFrontierManifest(value: unknown): SpecOpsManifest | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+    const source = value as Record<string, unknown>
+    if (
+        source.version !== 1 ||
+        !source.agents ||
+        typeof source.agents !== "object" ||
+        Array.isArray(source.agents)
+    ) {
+        return undefined
+    }
+    const entries = source.agents as Record<string, unknown>
+    const frontierIds = new Set<string>([
+        AGENT_IDS.review.frontierLow,
+        AGENT_IDS.review.frontierHigh,
+    ])
+    const legacyIds = ALL_AGENT_IDS.filter(id => !frontierIds.has(id)).sort()
+    if (Object.keys(entries).sort().join("|") !== legacyIds.join("|")) return undefined
+    for (const id of legacyIds) {
+        const item = entries[id]
+        if (
+            !item ||
+            typeof item !== "object" ||
+            Array.isArray(item) ||
+            typeof (item as ManifestEntry).model !== "string" ||
+            typeof (item as ManifestEntry).steps !== "number"
+        ) {
+            return undefined
+        }
+    }
+    return validateManifest({
+        version: 1,
+        agents: {
+            ...entries,
+            [AGENT_IDS.review.frontierLow]: DEFAULT_MANIFEST.agents[AGENT_IDS.review.frontierLow],
+            [AGENT_IDS.review.frontierHigh]: DEFAULT_MANIFEST.agents[AGENT_IDS.review.frontierHigh],
+        },
+    })
 }
 
 /**

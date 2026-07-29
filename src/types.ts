@@ -97,13 +97,19 @@ export type CapabilityId =
     | "correctness-judgment"
     | "compliance-judgment"
     | "refutation"
+    | "frontier"
 
 /**
  * Explains why an agent was dispatched. This provenance prevents a planning
  * consultation from being counted as an independent post-change review.
  */
 export type DispatchPurpose =
-    "consultation" | "independent-review" | "judgment" | "repair" | "workflow"
+    | "consultation"
+    | "independent-review"
+    | "judgment"
+    | "repair"
+    | "workflow"
+    | "frontier-escalation"
 
 /**
  * A registered validation requirement. Discriminated by `kind`:
@@ -209,7 +215,7 @@ export type Assessment = {
  * repository location, command, dependency, contract, or an explicitly
  * unresolved unknown.
  */
-type EvidenceRef =
+export type EvidenceRef =
     | { kind: "changed-path"; path: string }
     | { kind: "repository-path"; path: string }
     | { kind: "symbol"; path: string; symbol: string }
@@ -315,6 +321,88 @@ export type RepairMode =
     | "review-finding"
     | "design-revision"
 
+/** Cost/quality tier selected for an adaptive frontier escalation. */
+export type FrontierTier = "low" | "high"
+
+/** Persisted, per-run frontier policy copied from project configuration. */
+type FrontierPolicy = {
+    mode: "disabled" | "adaptive"
+    maxEscalationsPerRun: number
+    maxDispatchesPerRun: number
+    maxHighDispatchesPerRun: number
+}
+
+/** Evidence-backed request raised by a worker for frontier assistance. */
+export type FrontierRequest = {
+    tier: FrontierTier
+    task: string
+    whyNormalPathIsInsufficient: string
+    impact: QuestionImpact
+    evidence: EvidenceRef[]
+    attempts: string[]
+}
+
+/** Strict response returned by a low- or high-tier frontier worker. */
+export type FrontierResponse = {
+    disposition:
+        "ADVISE" | "UPHOLD_BLOCKER" | "DISMISS_BLOCKER" | "INSUFFICIENT_EVIDENCE" | "PROMOTE"
+    summary: string
+    instruction?: string
+    repairMode?: RepairMode
+    evidence: EvidenceRef[]
+}
+
+/** Compact audit record for one logical frontier escalation episode. */
+export type FrontierEpisode = {
+    id: string
+    trigger: "worker-request" | "review-blocker" | "repeated-blocker"
+    fingerprint: string
+    phase: ArtifactId
+    capability: CapabilityId
+    requestedTier: FrontierTier
+    selectedTier: FrontierTier
+    dispatches: number
+    status: "pending" | "advised" | "promoted" | "upheld" | "dismissed" | "insufficient"
+    requestHash: string
+    responseHash?: string
+    at: string
+}
+
+/** Explicit frontier budget counters. */
+type FrontierUsage = {
+    escalations: number
+    dispatches: number
+    highDispatches: number
+}
+
+/** Controller-owned frontier work waiting for a low/high worker response. */
+export type PendingFrontier = {
+    episodeId: string
+    request: FrontierRequest
+    trigger: FrontierEpisode["trigger"]
+    fingerprint: string
+    phase: ArtifactId
+    capability: CapabilityId
+    purpose: DispatchPurpose
+    action: string
+    originalDispatchId: string
+    selectedTier: FrontierTier
+    reviewFailure?: { mode: RepairMode; summary: string }
+}
+
+/** Stable target used to replay the originating phase with frontier advice. */
+type FrontierResumeTarget = {
+    episodeId: string
+    originalDispatchId: string
+    phase: ArtifactId
+    capability: CapabilityId
+    purpose: DispatchPurpose
+    action: string
+    advice: string
+    adviceHash: string
+    consumed?: boolean
+}
+
 export type PauseReason = "pending-question" | "question-dismissed"
 
 /** Detailed reason for a non-resumable blocked outcome. */
@@ -358,6 +446,16 @@ export type DispatchRecord = {
         answerHash: string
         phase: ArtifactId
         capability: CapabilityId
+    }
+    /** Resume metadata when frontier advice replays the originating phase. */
+    frontierResume?: {
+        episodeId: string
+        originalDispatchId: string
+        adviceHash: string
+        phase: ArtifactId
+        capability: CapabilityId
+        purpose: DispatchPurpose
+        action: string
     }
 }
 
@@ -511,7 +609,17 @@ export type RunState = {
     invalidations: Array<{ artifacts: ArtifactId[]; reason: string; at: string }>
     repairs: Array<{ mode: RepairMode; at: string; summary: string }>
     /** A repair selected by the controller from a validated review ledger. */
-    pendingRepair?: { mode: RepairMode; summary: string }
+    pendingRepair?: { mode: RepairMode; summary: string; instruction?: string }
+    /** Frontier policy snapshotted when the run starts. */
+    frontierPolicy?: FrontierPolicy
+    /** Frontier call accounting. */
+    frontierUsage?: FrontierUsage
+    /** Immutable compact frontier escalation history. */
+    frontierHistory?: FrontierEpisode[]
+    /** Frontier dispatch currently awaiting completion. */
+    pendingFrontier?: PendingFrontier
+    /** Originating phase to replay with validated frontier advice. */
+    frontierResume?: FrontierResumeTarget
     /** A live, unanswered worker-raised question. */
     pendingQuestion?: PendingQuestion
     /** Immutable history of answered, cancelled, or dismissed questions. */

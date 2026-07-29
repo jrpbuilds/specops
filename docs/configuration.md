@@ -33,6 +33,10 @@ No shell interpolation is performed.
 | `routing.forceFullForFacets`     | Risk facets that impose a Full floor for this project.          |
 
 Threshold relationships are validated: Full limits must exceed Lean limits.
+`defaultTier: "auto"` uses Lean unless the initial assessment establishes a
+Standard or Full safety floor. After implementation, the controller applies
+the same thresholds to actual changed paths and upgrades oversized runs before
+final assurance. Interactive and automatic modes share this routing policy.
 
 ## Automation
 
@@ -49,6 +53,24 @@ contain changes. Controller-owned OpenSpec metadata is excluded from that check.
 | `maxRepeatedFailureFingerprints` | Repetition of the same escalation/failure fingerprint.          |
 
 Budgets are run-state requirements, not advisory prompt text.
+
+## Adaptive frontier escalation
+
+The optional `frontier` section enables evidence-backed assistance without
+adding a mandatory model pass to every run. `mode` is `disabled` or `adaptive`;
+missing configuration remains disabled.
+
+| Field                     | Purpose                                                  |
+| ------------------------- | -------------------------------------------------------- |
+| `maxEscalationsPerRun`    | Distinct blocked problems admitted during one run.       |
+| `maxDispatchesPerRun`     | Combined Luna/Sol subagent dispatches.                   |
+| `maxHighDispatchesPerRun` | Sol-class dispatches allowed within the combined budget. |
+
+The manifest entries `specops-frontier-low` and `specops-frontier-high`
+select the actual Luna- and Sol-class models. Workers may suggest a tier, but
+the controller validates critical-impact evidence and may downgrade high to
+low. Frontier workers are read-only; validated advice is hashed into a fresh
+dispatch of the original phase.
 
 ## Review and execution limits
 

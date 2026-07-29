@@ -8,8 +8,9 @@ owns routing, scheduling, persistence, invalidation, command evidence, review in
 budgets, and completion gates.
 
 The project is intentionally clean-slate. It supports one run-state format (version 2) and one
-canonical agent catalogue. There are no aliases, migrations, or fallback pipelines for earlier
-pre-release designs.
+canonical agent catalogue. There are no aliases or fallback pipelines for earlier pre-release
+designs. The installer only provides a targeted additive upgrade from the immediately preceding
+agent catalogue so existing model choices survive the addition of the two frontier routes.
 
 ## What SpecOps provides
 
@@ -23,6 +24,7 @@ pre-release designs.
 - Durable artifact provenance and dependency-based invalidation.
 - Bounded worker-raised questions for material decisions that repository inspection cannot resolve,
   with answer-bound provenance and deterministic invalidation.
+- Optional adaptive Luna/Sol frontier escalation for evidence-backed workflow blockers.
 - Independent correctness and specification-compliance judgments.
 - A refuted review ledger and bounded repair cycles.
 - A strict, user-editable model manifest generated from the canonical capability registry.
@@ -54,9 +56,10 @@ When `XDG_CONFIG_HOME` is unset, the path is
 `~/.config/opencode/specops-manifest.json`. No manual agent-file copying is required.
 
 The manifest controls models, step limits, and provider-specific options. Agent IDs, modes,
-prompts, tools, and permissions remain controlled by the packaged capability registry. An empty,
-partial, malformed, or wrong-catalogue manifest is atomically replaced with the final catalogue;
-removed IDs are never merged or preserved.
+prompts, tools, and permissions remain controlled by the packaged capability registry. The exact
+pre-frontier catalogue is upgraded additively; an empty, partial, malformed, or other
+wrong-catalogue manifest is atomically replaced with the final catalogue. Removed IDs are never
+merged or preserved.
 
 After installation:
 
@@ -122,8 +125,8 @@ Every run begins with a strict assessment and deterministic routing decision.
 
 ```text
 assessment
-  → exploration
-  → Standard bundle OR Full requirements bundle
+  → Lean: compact plan → implementation → bundled verification and assurance
+  → Standard/Full: exploration → planning bundle
   → independent design (Full only)
   → task refinement (Full only; Standard tasks are bundled)
   → specialist consultations selected during planning
@@ -133,9 +136,15 @@ assessment
   → cross-cutting risk scan
   → independent specialist reviews
   → refutation ledger
+  → adaptive frontier adjudication only when a validated blocker requires it
   → repair and re-verification when required
   → completion receipt
 ```
+
+Interactive and automatic entrypoints share this scheduler. A successful Lean
+run therefore uses four total subagent calls, including assessment. Known risk
+routes directly to Standard/Full; newly discovered risk or actual diff overflow
+upgrades the run before completion.
 
 Worker output does not directly mutate requirements or planning artifacts. Planner and designer
 responses are validated, then persisted atomically by the controller. Only implementer and
@@ -208,8 +217,9 @@ If a command reports a missing controller:
 3. Rebuild/reinstall the package and restart OpenCode.
 4. Run `opencode debug config` and `opencode debug agent <controller-id>` if needed.
 
-SpecOps will replace an invalid or partial manifest on clean plugin load. It does not translate
-removed IDs. More diagnostics are in [Troubleshooting](docs/troubleshooting.md).
+SpecOps will add the frontier entries to the exact pre-frontier manifest, preserving its model
+settings. It replaces any other invalid or partial manifest on clean plugin load and never
+translates removed IDs. More diagnostics are in [Troubleshooting](docs/troubleshooting.md).
 
 ## Documentation
 

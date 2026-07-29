@@ -1,8 +1,9 @@
 /**
  * Unified worker-output parsing.
  *
- * Worker output is a single text blob that may contain two control markers:
- * `<!-- specops-escalation: ... -->` and `<!-- specops-question: ... -->`.
+ * Worker output is a single text blob that may contain three control markers:
+ * `<!-- specops-escalation: ... -->`, `<!-- specops-question: ... -->`, and
+ * `<!-- specops-frontier: ... -->`.
  * This module parses the output once, validates the markers, strips them from
  * the prose, and rejects combinations that are not allowed by policy.
  */
@@ -12,6 +13,8 @@ import type {
     ArtifactId,
     CapabilityId,
     EscalationClaim,
+    EvidenceRef,
+    FrontierRequest,
     QuestionImpact,
     WorkerQuestion,
     WorkerQuestionOption,
@@ -28,11 +31,12 @@ export type ParsedWorkerOutput = {
     prose: string
     escalation?: EscalationClaim
     question?: WorkerQuestion
+    frontier?: FrontierRequest
 }
 
 /** Marker metadata used during a single combined scan. */
 type MarkerMatch = {
-    kind: "escalation" | "question"
+    kind: "escalation" | "question" | "frontier"
     start: number
     end: number
     payload: string
@@ -41,7 +45,7 @@ type MarkerMatch = {
 /** Allowed top-level keys in a question marker payload. */
 const QUESTION_KEYS = new Set(["prompt", "options", "allowOther", "impact"])
 
-/** Allowed top-level keys in an escalation marker payload (validated elsewhere). */
+/** Allowed top-level keys in a strictly validated escalation marker payload. */
 const ESCALATION_KEYS = new Set([
     "category",
     "confidence",
@@ -52,10 +56,84 @@ const ESCALATION_KEYS = new Set([
     "requestedPatch",
 ])
 
+/** Allowed fields in the additive patch carried by an escalation marker. */
+const ESCALATION_PATCH_KEYS = new Set([
+    "raiseScopeTier",
+    "addCapabilities",
+    "addReviewFacets",
+    "addValidations",
+    "invalidate",
+])
+
+/** Closed escalation taxonomies used to reject invented controller inputs. */
+const ESCALATION_CATEGORIES = new Set([
+    "scope-overflow",
+    "requirements-changed",
+    "architecture-discovery",
+    "risk-discovery",
+    "validation-gap",
+    "verification-uncertainty",
+    "blocked",
+])
+const CONFIDENCE_LEVELS = new Set(["low", "medium", "high"])
+const SCOPE_TIERS = new Set(["lean", "standard", "full"])
+const RISK_FACETS = new Set([
+    "security",
+    "data",
+    "public-contract",
+    "concurrency",
+    "resilience",
+    "performance",
+    "infrastructure",
+    "migration",
+    "usability",
+    "maintainability",
+])
+const CAPABILITIES = new Set([
+    "assessment",
+    "exploration",
+    "planning",
+    "design",
+    "implementation",
+    "verification",
+    "repair",
+    "general-risk",
+    ...RISK_FACETS,
+    "correctness-judgment",
+    "compliance-judgment",
+    "refutation",
+    "frontier",
+])
+const ARTIFACTS = new Set([
+    "routing",
+    "exploration",
+    "proposal",
+    "specs",
+    "design",
+    "tasks",
+    "implementation",
+    "verification",
+    "correctness-judgment",
+    "compliance-judgment",
+    "review-ledger",
+    "receipt",
+])
+
+/** Allowed top-level keys in a frontier escalation marker. */
+const FRONTIER_KEYS = new Set([
+    "tier",
+    "task",
+    "whyNormalPathIsInsufficient",
+    "impact",
+    "evidence",
+    "attempts",
+])
+
 /** Marker regexes. Each regex captures the inner JSON for one marker kind. */
 const MARKER_RE = {
     escalation: /<!--\s*specops-escalation:\s*([\s\S]*?)\s*-->/gi,
     question: /<!--\s*specops-question:\s*([\s\S]*?)\s*-->/gi,
+    frontier: /<!--\s*specops-frontier:\s*([\s\S]*?)\s*-->/gi,
 } as const
 
 /**
@@ -92,6 +170,7 @@ export function parseWorkerOutput(
 
     const escalationMarkers = markers.filter(m => m.kind === "escalation")
     const questionMarkers = markers.filter(m => m.kind === "question")
+    const frontierMarkers = markers.filter(m => m.kind === "frontier")
 
     if (escalationMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple escalation markers")
@@ -99,10 +178,21 @@ export function parseWorkerOutput(
     if (questionMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple question markers")
     }
-    if (escalationMarkers.length && questionMarkers.length) {
+    if (frontierMarkers.length > 1) {
+        throw new Error("SpecOps worker output contains multiple frontier markers")
+    }
+    if (escalationMarkers.length && questionMarkers.length && !frontierMarkers.length) {
         throw new Error(
             "SpecOps worker output contains both an escalation and a question marker; choose one",
         )
+    }
+    if (
+        Number(escalationMarkers.length > 0) +
+            Number(questionMarkers.length > 0) +
+            Number(frontierMarkers.length > 0) >
+        1
+    ) {
+        throw new Error("SpecOps worker output contains incompatible control markers; choose one")
     }
 
     const markerPayloadSize = markers.reduce((sum, m) => sum + Buffer.byteLength(m.payload), 0)
@@ -116,8 +206,11 @@ export function parseWorkerOutput(
     const question = questionMarkers[0]
         ? parseQuestionPayload(questionMarkers[0].payload, config.questions, phase, capability)
         : undefined
+    const frontier = frontierMarkers[0]
+        ? parseFrontierPayload(frontierMarkers[0].payload, phase, capability)
+        : undefined
 
-    return { prose: prose.trim(), escalation, question }
+    return { prose: prose.trim(), escalation, question, frontier }
 }
 
 /**
@@ -162,7 +255,7 @@ export function questionBindingHash(inputs: {
 function collectMarkers(output: string): MarkerMatch[] {
     const markers: MarkerMatch[] = []
     for (const [kind, regex] of Object.entries(MARKER_RE) as Array<
-        ["escalation" | "question", RegExp]
+        ["escalation" | "question" | "frontier", RegExp]
     >) {
         let match: RegExpExecArray | null
         // Reset regex because we may scan twice conceptually, but we only call once per kind.
@@ -186,6 +279,127 @@ function collectMarkers(output: string): MarkerMatch[] {
         }
     }
     return markers.sort((a, b) => a.start - b.start)
+}
+
+/**
+ * Parse a strict, evidence-backed frontier escalation request.
+ *
+ * @param payload - Inner JSON marker payload.
+ * @param phase - Artifact phase that raised the request.
+ * @param capability - Capability executing the phase.
+ * @returns A validated frontier request.
+ */
+function parseFrontierPayload(
+    payload: string,
+    phase: ArtifactId,
+    capability: CapabilityId,
+): FrontierRequest {
+    const value = parseObject(payload, "frontier marker")
+    assertKeys(value, FRONTIER_KEYS, "frontier marker")
+    if (value.tier !== "low" && value.tier !== "high") {
+        throw new Error("SpecOps frontier tier must be low or high")
+    }
+    if (typeof value.task !== "string" || !value.task.trim() || value.task.length > 1_000) {
+        throw new Error("SpecOps frontier task must be a bounded non-empty string")
+    }
+    if (
+        typeof value.whyNormalPathIsInsufficient !== "string" ||
+        !value.whyNormalPathIsInsufficient.trim() ||
+        value.whyNormalPathIsInsufficient.length > 2_000
+    ) {
+        throw new Error("SpecOps frontier request must explain why normal routing is insufficient")
+    }
+    if (!isValidImpact(String(value.impact))) {
+        throw new Error("SpecOps frontier impact is invalid")
+    }
+    const impact = String(value.impact) as QuestionImpact
+    if (!isImpactAllowed(impact, phase, capability)) {
+        throw new Error(`SpecOps frontier impact '${impact}' is not valid for phase '${phase}'`)
+    }
+    if (
+        !Array.isArray(value.evidence) ||
+        value.evidence.length === 0 ||
+        value.evidence.length > 20
+    ) {
+        throw new Error("SpecOps frontier request must contain 1 to 20 evidence references")
+    }
+    const evidence = value.evidence.map(parseEvidenceRef)
+    if (
+        !Array.isArray(value.attempts) ||
+        value.attempts.length === 0 ||
+        value.attempts.length > 5 ||
+        value.attempts.some(
+            attempt => typeof attempt !== "string" || !attempt.trim() || attempt.length > 1_000,
+        )
+    ) {
+        throw new Error("SpecOps frontier request must contain 1 to 5 bounded attempts")
+    }
+    return {
+        tier: value.tier,
+        task: value.task,
+        whyNormalPathIsInsufficient: value.whyNormalPathIsInsufficient,
+        impact,
+        evidence,
+        attempts: value.attempts as string[],
+    }
+}
+
+/**
+ * Validate the discriminated evidence shapes accepted by control markers.
+ *
+ * @param value - Raw evidence value.
+ * @returns A structurally valid evidence reference.
+ */
+export function parseEvidenceRef(value: unknown): EvidenceRef {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("SpecOps evidence must be an object")
+    }
+    const item = value as Record<string, unknown>
+    const kind = item.kind
+    const nonEmpty = (field: string): boolean =>
+        typeof item[field] === "string" && Boolean((item[field] as string).trim())
+    switch (kind) {
+        case "changed-path":
+        case "repository-path":
+            if (Object.keys(item).length !== 2 || !nonEmpty("path")) break
+            return item as EvidenceRef
+        case "symbol":
+            if (Object.keys(item).length !== 3 || !nonEmpty("path") || !nonEmpty("symbol")) break
+            return item as EvidenceRef
+        case "command":
+            if (
+                Object.keys(item).length !== 3 ||
+                !nonEmpty("commandId") ||
+                !Number.isInteger(item.exitCode)
+            )
+                break
+            return item as EvidenceRef
+        case "test-failure":
+            if (Object.keys(item).length !== 3 || !nonEmpty("commandId") || !nonEmpty("test")) break
+            return item as EvidenceRef
+        case "dependency":
+            if (
+                Object.keys(item).length !== 3 ||
+                !nonEmpty("package") ||
+                !["added", "updated", "removed"].includes(String(item.change))
+            )
+                break
+            return item as EvidenceRef
+        case "contract":
+            if (Object.keys(item).length !== 3 || !nonEmpty("path") || !nonEmpty("surface")) break
+            return item as EvidenceRef
+        case "unresolved-unknown":
+            if (
+                Object.keys(item).length !== 3 ||
+                !nonEmpty("question") ||
+                !Array.isArray(item.inspectionsPerformed) ||
+                item.inspectionsPerformed.length === 0 ||
+                item.inspectionsPerformed.some(entry => typeof entry !== "string" || !entry.trim())
+            )
+                break
+            return item as EvidenceRef
+    }
+    throw new Error("SpecOps evidence contains an invalid reference")
 }
 
 /**
@@ -267,20 +481,166 @@ function stripMarkers(output: string, markers: MarkerMatch[]): string {
 }
 
 /**
- * Parse and lightly validate an escalation payload.
+ * Parse and strictly validate an escalation payload.
  *
- * Full structural validation is performed by the existing escalation policy.
- * This function only ensures the payload is valid JSON, an object, and uses
- * only the known top-level keys.
+ * The parser closes every enum and nested patch shape before model-controlled
+ * data reaches escalation policy. Semantic admission, narrowing, and budgets
+ * remain controller policy concerns.
  *
  * @param payload - Inner JSON text of the escalation marker.
  * @returns The parsed escalation claim.
- * @throws {Error} If JSON is invalid or contains unknown fields.
+ * @throws {Error} If any claim, evidence, patch, or validation field is malformed.
  */
 function parseEscalationPayload(payload: string): EscalationClaim {
     const value = parseObject(payload, "escalation claim")
     assertKeys(value, ESCALATION_KEYS, "escalation claim")
-    return value as EscalationClaim
+    if (!ESCALATION_CATEGORIES.has(String(value.category))) {
+        throw new Error("SpecOps escalation claim category is invalid")
+    }
+    if (!CONFIDENCE_LEVELS.has(String(value.confidence))) {
+        throw new Error("SpecOps escalation claim confidence is invalid")
+    }
+    for (const field of ["summary", "boundaryCrossed", "whyCurrentRequirementsAreInsufficient"]) {
+        if (typeof value[field] !== "string" || !value[field].trim()) {
+            throw new Error(`SpecOps escalation claim ${field} must be a non-empty string`)
+        }
+    }
+    if (!Array.isArray(value.evidence)) {
+        throw new Error("SpecOps escalation claim evidence must be an array")
+    }
+    const evidence = value.evidence.map(parseEvidenceRef)
+    const requestedPatch = parseEscalationPatch(value.requestedPatch)
+    return {
+        category: value.category as EscalationClaim["category"],
+        confidence: value.confidence as EscalationClaim["confidence"],
+        summary: value.summary as string,
+        evidence,
+        boundaryCrossed: value.boundaryCrossed as string,
+        whyCurrentRequirementsAreInsufficient:
+            value.whyCurrentRequirementsAreInsufficient as string,
+        requestedPatch,
+    }
+}
+
+/**
+ * Validate the bounded additive patch inside an escalation claim.
+ *
+ * @param value - Raw `requestedPatch` marker value.
+ * @returns A structurally valid escalation patch.
+ * @throws {Error} If a field is unknown, mistyped, or outside its closed taxonomy.
+ */
+function parseEscalationPatch(value: unknown): EscalationClaim["requestedPatch"] {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("SpecOps escalation requestedPatch must be an object")
+    }
+    const patch = value as Record<string, unknown>
+    assertKeys(patch, ESCALATION_PATCH_KEYS, "escalation requestedPatch")
+    if (patch.raiseScopeTier !== undefined && !SCOPE_TIERS.has(String(patch.raiseScopeTier))) {
+        throw new Error("SpecOps escalation raiseScopeTier is invalid")
+    }
+    const addCapabilities = optionalEnumArray(
+        patch.addCapabilities,
+        CAPABILITIES,
+        "addCapabilities",
+    )
+    const addReviewFacets = optionalEnumArray(patch.addReviewFacets, RISK_FACETS, "addReviewFacets")
+    const invalidate = optionalEnumArray(patch.invalidate, ARTIFACTS, "invalidate")
+    const addValidations =
+        patch.addValidations === undefined
+            ? undefined
+            : parseEscalationValidations(patch.addValidations)
+    return {
+        raiseScopeTier: patch.raiseScopeTier as
+            EscalationClaim["requestedPatch"]["raiseScopeTier"] | undefined,
+        addCapabilities: addCapabilities as
+            EscalationClaim["requestedPatch"]["addCapabilities"] | undefined,
+        addReviewFacets: addReviewFacets as
+            EscalationClaim["requestedPatch"]["addReviewFacets"] | undefined,
+        addValidations,
+        invalidate: invalidate as EscalationClaim["requestedPatch"]["invalidate"] | undefined,
+    }
+}
+
+/**
+ * Validate an optional array against a closed string taxonomy.
+ *
+ * @param value - Raw optional array value.
+ * @param allowed - Accepted string values.
+ * @param label - Patch field name used in diagnostics.
+ * @returns The validated array, or `undefined` when omitted.
+ */
+function optionalEnumArray(
+    value: unknown,
+    allowed: Set<string>,
+    label: string,
+): string[] | undefined {
+    if (value === undefined) return undefined
+    if (
+        !Array.isArray(value) ||
+        value.some(item => typeof item !== "string" || !allowed.has(item))
+    ) {
+        throw new Error(`SpecOps escalation ${label} must contain only supported values`)
+    }
+    return [...new Set(value)]
+}
+
+/**
+ * Validate command, traceability, and OpenSpec validation requirements.
+ *
+ * @param value - Raw `addValidations` patch value.
+ * @returns Structurally valid workflow validation requirements.
+ */
+function parseEscalationValidations(
+    value: unknown,
+): NonNullable<EscalationClaim["requestedPatch"]["addValidations"]> {
+    if (!Array.isArray(value)) {
+        throw new Error("SpecOps escalation addValidations must be an array")
+    }
+    return value.map(raw => {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error("SpecOps escalation validation must be an object")
+        }
+        const item = raw as Record<string, unknown>
+        if (typeof item.id !== "string" || !item.id.trim()) {
+            throw new Error("SpecOps escalation validation id must be a non-empty string")
+        }
+        if (item.kind === "openspec-strict" || item.kind === "traceability") {
+            assertKeys(item, new Set(["id", "kind"]), "escalation validation")
+            return { id: item.id, kind: item.kind }
+        }
+        if (item.kind !== "command") {
+            throw new Error("SpecOps escalation validation kind is invalid")
+        }
+        assertKeys(
+            item,
+            new Set(["id", "kind", "executable", "args", "cwd", "purpose", "requirements"]),
+            "escalation validation",
+        )
+        if (
+            typeof item.executable !== "string" ||
+            !item.executable.trim() ||
+            !Array.isArray(item.args) ||
+            item.args.some(argument => typeof argument !== "string") ||
+            (item.cwd !== undefined && typeof item.cwd !== "string") ||
+            typeof item.purpose !== "string" ||
+            !item.purpose.trim() ||
+            !Array.isArray(item.requirements) ||
+            item.requirements.some(
+                requirement => typeof requirement !== "string" || !requirement.trim(),
+            )
+        ) {
+            throw new Error("SpecOps escalation command validation is invalid")
+        }
+        return {
+            id: item.id,
+            kind: "command" as const,
+            executable: item.executable,
+            args: item.args as string[],
+            cwd: item.cwd as string | undefined,
+            purpose: item.purpose,
+            requirements: item.requirements as string[],
+        }
+    })
 }
 
 /**

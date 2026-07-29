@@ -12,19 +12,23 @@ const COMMON_RULES = [
 /** Capability-specific instructions that remain independent of user model settings. */
 const ROLE_INSTRUCTIONS: Partial<Record<AgentId, string>> = {
     [AGENT_IDS.core.assessor]:
-        "Return only strict assessment JSON with facts, inferences, risk facets, touched surfaces, uncertainty, inspected paths, and likely validations. Do not edit files.",
+        "Inspect the repository thoroughly enough to route the complete change. Return only strict assessment JSON with facts, inferences, risk facets, touched surfaces, uncertainty, inspected paths, and likely validations. For Lean runs this inspection is the authoritative source of exploration evidence. Do not edit files.",
     [AGENT_IDS.core.explorer]: "Return evidence-backed exploration Markdown. Do not edit files.",
     [AGENT_IDS.core.planner]:
-        "Return only the requested JSON bundle or Markdown artifact. Do not edit files.",
+        "Return only the requested JSON bundle or Markdown artifact. When asked for a Lean plan, produce concise actionable tasks without proposal or specification boilerplate. Do not edit files.",
     [AGENT_IDS.core.designer]: "Return independent technical design Markdown. Do not edit files.",
     [AGENT_IDS.core.implementer]:
         "Edit only repository code and tests within approved scope. Never edit OpenSpec artifacts. Run validation through the SpecOps registry when requested.",
     [AGENT_IDS.core.verifier]:
-        "Return verification Markdown grounded only in registered command evidence. Do not edit files.",
+        "Return the requested verification Markdown or strict Lean assurance bundle grounded only in repository and registered command evidence. Do not edit files.",
     [AGENT_IDS.review.risk]:
         "Perform a narrow cross-cutting risk scan and facet detection. It cannot replace specialist review. Return structured findings only.",
     [AGENT_IDS.review.refuter]:
         "Refute unsupported or duplicate findings and return a structured ledger. Do not introduce unrelated findings.",
+    [AGENT_IDS.review.frontierLow]:
+        "Provide bounded low-tier frontier advice. Return only strict JSON with disposition, summary, instruction, repairMode, and evidence. UPHOLD_BLOCKER and DISMISS_BLOCKER require concrete repository or command evidence. You may request PROMOTE only for a critical unresolved blocker. Never edit files or emit control markers.",
+    [AGENT_IDS.review.frontierHigh]:
+        "Provide bounded high-tier frontier adjudication for a critical blocker. Return only strict JSON with disposition, summary, instruction, repairMode, and evidence. UPHOLD_BLOCKER and DISMISS_BLOCKER require concrete repository or command evidence. Never edit files, delegate, request promotion, or emit control markers.",
     [AGENT_IDS.core.repairer]:
         "Repair only the assigned implementation defect or review finding. Never edit OpenSpec artifacts or Git history.",
 }
@@ -39,6 +43,15 @@ const QUESTION_POLICY = [
     "NEVER raise a question for naming, formatting, minor implementation preferences, progress updates, permission to continue, ordinary uncertainty, or anything resolvable from repository conventions.",
     "Use the typed escalation marker for requirement changes that do not require a human decision.",
     "Never emit both an escalation marker and a question marker in the same output.",
+].join(" ")
+
+/** Strict policy for evidence-backed frontier escalation requests. */
+const FRONTIER_POLICY = [
+    "When adaptive frontier escalation is enabled, you may emit exactly one `<!-- specops-frontier: {tier, task, whyNormalPathIsInsufficient, impact, evidence, attempts} -->` marker.",
+    "Use it only after repository inspection and at least one concrete failed attempt leave a material phase blocker.",
+    "Provide a complete best-effort normal result outside the marker.",
+    "Suggest high tier only for security, data-loss/migration, breaking-contract, irreversible-design, or repeated blocker risk.",
+    "Never combine it with a question or requirements-escalation marker.",
 ].join(" ")
 
 /** Return the canonical prompt for an agent registered in the final catalogue. */
@@ -85,6 +98,7 @@ export function promptText(id: AgentId): string {
     const instruction =
         ROLE_INSTRUCTIONS[id] ??
         "Perform the assigned SpecOps capability and return the required structured result. Do not edit files."
+    const isFrontier = id === AGENT_IDS.review.frontierLow || id === AGENT_IDS.review.frontierHigh
     return [
         `# ${id}`,
         "",
@@ -93,6 +107,6 @@ export function promptText(id: AgentId): string {
         instruction,
         "",
         "Escalate only with typed, evidence-backed JSON when current requirements are insufficient.",
-        QUESTION_POLICY,
+        ...(isFrontier ? [] : [QUESTION_POLICY, FRONTIER_POLICY]),
     ].join("\n")
 }

@@ -23,6 +23,8 @@ export const AGENT_IDS = {
         correctnessJudge: "specops-correctness-judge",
         complianceJudge: "specops-compliance-judge",
         refuter: "specops-review-refuter",
+        frontierLow: "specops-frontier-low",
+        frontierHigh: "specops-frontier-high",
     },
     specialist: {
         security: "specops-security-specialist",

@@ -1,9 +1,10 @@
 import type { SpecOpsConfig } from "../config.js"
+import { AGENT_IDS } from "../capabilities/ids.js"
 import { applyEscalation, decideEscalation } from "../escalation/policy.js"
-import { assertCleanWorktree, baseCommit, collectDiff } from "../git.js"
+import { assertCleanWorktree, baseCommit, collectChangedPaths, collectDiff } from "../git.js"
 import { createChange, openSpecOrThrow, uniqueChangeName, writeArtifact } from "../openspec.js"
 import { parseAssessment } from "../routing/assessment.js"
-import { requirementsFor } from "../routing/policy.js"
+import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
 import { readMachine, readRun, writeMachine, writeRun } from "../state/store.js"
 import type {
     ArtifactId,
@@ -11,6 +12,7 @@ import type {
     CommandEvidence,
     DispatchRecord,
     EscalationClaim,
+    FrontierResponse,
     RepairMode,
     RunState,
     WorkflowOutcome,
@@ -26,6 +28,15 @@ import {
     registerPendingQuestion,
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
+import {
+    canPromotePending,
+    completeFrontierEpisode,
+    parseFrontierResponse,
+    queueReviewFrontier,
+    queueWorkerFrontier,
+    recordFrontierDispatch,
+    verifyFrontierEvidence,
+} from "../frontier/policy.js"
 
 /**
  * Final-format deterministic workflow engine.
@@ -125,6 +136,9 @@ export async function startRun(
         artifacts: {},
         invalidations: [],
         repairs: [],
+        frontierPolicy: structuredClone(config.frontier),
+        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+        frontierHistory: [],
         questionHistory: [],
         questionBudgetUsage: {
             questionsRaised: 0,
@@ -147,6 +161,17 @@ export async function startRun(
         routingMarkdown(state),
         "workflow",
     )
+    if (state.scopeTier === "lean") {
+        await persistArtifact(
+            directory,
+            change,
+            state,
+            "exploration",
+            AGENT_IDS.core.assessor,
+            assessmentExplorationMarkdown(state),
+            "workflow",
+        )
+    }
     await writeRun(directory, change, state)
     await writeMachine(directory, change, "specops-context.json", {
         version: 1,
@@ -181,7 +206,7 @@ export async function startRun(
 export async function issueDirective(
     directory: string,
     change: string,
-    config: Pick<SpecOpsConfig, "review">,
+    config: Pick<SpecOpsConfig, "review" | "frontier">,
 ): Promise<ControllerDirective> {
     const state = await readRun(directory, change)
 
@@ -217,7 +242,28 @@ export async function issueDirective(
                 capability: resume.capability,
             }
         }
+        if (
+            state.frontierResume &&
+            !state.frontierResume.consumed &&
+            directive.action.capability === state.frontierResume.capability &&
+            directive.action.purpose === state.frontierResume.purpose &&
+            (directive.action.mode ?? directive.action.capability) === state.frontierResume.action
+        ) {
+            record.frontierResume = {
+                episodeId: state.frontierResume.episodeId,
+                originalDispatchId: state.frontierResume.originalDispatchId,
+                adviceHash: state.frontierResume.adviceHash,
+                phase: state.frontierResume.phase,
+                capability: state.frontierResume.capability,
+                purpose: state.frontierResume.purpose,
+                action: state.frontierResume.action,
+            }
+            state.frontierResume.consumed = true
+        }
         state.dispatches.push(record)
+        if (directive.action.capability === "frontier") {
+            recordFrontierDispatch(state)
+        }
     }
 
     await writeRun(directory, change, state)
@@ -249,7 +295,7 @@ export async function completeAction(
     change: string,
     dispatchId: string,
     output: string,
-    config: Pick<SpecOpsConfig, "questions" | "review">,
+    config: Pick<SpecOpsConfig, "questions" | "review" | "frontier" | "routing" | "workflow">,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
     const dispatch = state.dispatches.find(record => record.id === dispatchId)
@@ -263,7 +309,8 @@ export async function completeAction(
     try {
         const parsed = parseWorkerOutput(output, config, phase, dispatch.capability)
 
-        applyClaim(state, parsed.escalation)
+        const scopeBeforeCompletion = state.scopeTier
+        applyClaim(state, parsed.escalation, config)
 
         if (parsed.question) {
             // A required question takes precedence over phase completion.
@@ -272,17 +319,90 @@ export async function completeAction(
             dispatch.outputHash = hash(parsed.prose)
             registerPendingQuestion(state, dispatch, parsed.question, config)
             dispatch.status = "completed"
+        } else if (parsed.frontier) {
+            if (state.frontierPolicy?.mode !== "adaptive") {
+                await persistActionResult(directory, change, state, action, parsed.prose, config)
+            } else {
+                const evidenceRegistry = await readMachine<{
+                    version: 1
+                    commands: CommandEvidence[]
+                }>(directory, change, "specops-evidence.json", { version: 1, commands: [] })
+                if (
+                    !(await verifyFrontierEvidence(
+                        directory,
+                        parsed.frontier.evidence,
+                        evidenceRegistry.commands,
+                    ))
+                ) {
+                    setOutcome(
+                        state,
+                        "blocked",
+                        "policy-blocked",
+                        "Frontier escalation evidence could not be verified.",
+                        "policy-rejected",
+                    )
+                } else {
+                    const decision = queueWorkerFrontier(state, dispatch, phase, parsed.frontier)
+                    if (decision.disposition === "continue") {
+                        await persistActionResult(
+                            directory,
+                            change,
+                            state,
+                            action,
+                            parsed.prose,
+                            config,
+                        )
+                    } else if (decision.disposition === "blocked") {
+                        setOutcome(
+                            state,
+                            "blocked",
+                            "policy-blocked",
+                            decision.reason,
+                            "budget-exhausted",
+                        )
+                    }
+                }
+            }
+            dispatch.outputHash = hash(parsed.prose)
+            dispatch.status = "completed"
         } else {
             await persistActionResult(directory, change, state, action, parsed.prose, config)
             dispatch.outputHash = hash(parsed.prose)
             dispatch.status = "completed"
         }
+        if (state.scopeTier !== scopeBeforeCompletion) {
+            invalidate(
+                state,
+                ["proposal"],
+                `scope raised from ${scopeBeforeCompletion} to ${state.scopeTier}`,
+            )
+        }
     } catch (error) {
         dispatch.status = "failed"
+        if (action.capability === "frontier") {
+            fallbackFromFrontierFailure(state, String(error))
+        }
         await writeRun(directory, change, state)
         throw error
     }
 
+    if (state.frontierHistory?.length) {
+        await writeArtifact(
+            directory,
+            change,
+            "specops-frontier.json",
+            JSON.stringify(
+                {
+                    version: 1,
+                    policy: state.frontierPolicy,
+                    usage: state.frontierUsage,
+                    episodes: state.frontierHistory,
+                },
+                null,
+                2,
+            ),
+        )
+    }
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
     return state
@@ -363,6 +483,8 @@ export async function cancelRun(
             dispatch.status = "failed"
         }
     }
+    state.pendingFrontier = undefined
+    state.frontierResume = undefined
     flushPendingQuestionOnCancel(state)
     setOutcome(state, "cancelled", "cancelled", reason)
     await writeRun(directory, change, state)
@@ -430,7 +552,23 @@ export async function finalizeRun(
     }
 
     try {
-        await openSpecOrThrow(directory, config, ["validate", "--type", "change", change])
+        await openSpecOrThrow(directory, config, ["status", "--change", change, "--json"])
+        if (state.scopeTier === "lean") {
+            // Lean intentionally has no specification deltas, so the classic
+            // change validator rejects a valid compact run. Validate its
+            // custom artifact schema instead; controller gates above already
+            // enforce the concrete change artifacts and command evidence.
+            await openSpecOrThrow(directory, config, ["schema", "validate", "specops-lean"])
+        } else {
+            await openSpecOrThrow(directory, config, [
+                "validate",
+                change,
+                "--type",
+                "change",
+                "--strict",
+                "--no-interactive",
+            ])
+        }
     } catch (error) {
         setOutcome(state, "failed", "validation-failed", String(error))
         await writeRun(directory, change, state)
@@ -455,6 +593,8 @@ export async function finalizeRun(
         repairs: state.repairs,
         decisions: state.decisions,
         questionHistory: state.questionHistory,
+        frontierUsage: state.frontierUsage,
+        frontierHistory: state.frontierHistory,
     }
     const serialized = `${JSON.stringify(receipt, null, 2)}\n`
     await writeArtifact(directory, change, "specops-receipt.json", serialized)
@@ -539,7 +679,7 @@ async function persistActionResult(
     state: RunState,
     action: WorkflowAction,
     output: string,
-    config: Pick<SpecOpsConfig, "review">,
+    config: Pick<SpecOpsConfig, "review" | "frontier" | "routing" | "workflow">,
 ): Promise<void> {
     switch (action.capability) {
         case "exploration":
@@ -554,7 +694,7 @@ async function persistActionResult(
             )
             return
         case "planning":
-            if (action.mode === "task-refinement") {
+            if (action.mode === "task-refinement" || action.mode === "lean-plan") {
                 await persistArtifact(
                     directory,
                     change,
@@ -564,6 +704,7 @@ async function persistActionResult(
                     output,
                     action.purpose,
                 )
+                state.pendingRepair = undefined
             } else {
                 await savePlanningBundle(directory, change, state, action, output)
             }
@@ -603,9 +744,14 @@ async function persistActionResult(
                 state.implementationDiffHash,
                 action.purpose,
             )
+            applyActualDiffFloor(state, await collectChangedPaths(directory), config)
             state.pendingRepair = undefined
             return
         case "verification":
+            if (action.mode === "lean-assurance-bundle") {
+                await saveLeanAssuranceBundle(directory, change, state, action, output, config)
+                return
+            }
             await persistArtifact(
                 directory,
                 change,
@@ -627,22 +773,144 @@ async function persistActionResult(
             await writeArtifact(directory, change, file, output)
             recordArtifact(state, artifact, action.agent, output, action.purpose)
             if (judgment.verdict === "FAIL") {
-                scheduleRepairOrOutcome(
-                    state,
-                    artifact === "correctness-judgment" ? "implementation-defect" : "spec-mismatch",
-                    judgment.summary,
-                )
+                const mode =
+                    artifact === "correctness-judgment" ? "implementation-defect" : "spec-mismatch"
+                const dispatch = state.dispatches.find(item => item.id === action.id)
+                if (
+                    !dispatch ||
+                    !queueReviewFrontier(state, dispatch, artifact, mode, judgment.summary)
+                ) {
+                    scheduleRepairOrOutcome(state, mode, judgment.summary)
+                }
             }
             return
         }
         case "refutation":
-            await saveReviewLedger(directory, change, state, action, output)
+            await saveReviewLedger(directory, change, state, action, output, config)
+            return
+        case "frontier":
+            {
+                const response = parseFrontierResponse(output)
+                const registry = await readMachine<{ version: 1; commands: CommandEvidence[] }>(
+                    directory,
+                    change,
+                    "specops-evidence.json",
+                    { version: 1, commands: [] },
+                )
+                if (
+                    !(await verifyFrontierEvidence(directory, response.evidence, registry.commands))
+                ) {
+                    throw new Error("frontier response evidence could not be verified")
+                }
+                applyFrontierResponse(state, response, output)
+            }
             return
         default:
             // Consultation and independent-review prose is captured in dispatch
             // provenance. Only the refuter is allowed to turn it into a repair.
             return
     }
+}
+
+/**
+ * Validate and persist the consolidated assurance response used by Lean runs.
+ *
+ * All three members are parsed before any file is written. A correctness
+ * failure takes precedence over a ledger finding so only one bounded repair or
+ * frontier adjudication is queued for a bundle.
+ *
+ * @param directory - Repository root directory.
+ * @param change - OpenSpec change id.
+ * @param state - Mutable run state.
+ * @param action - Issued Lean verification action.
+ * @param output - Strict assurance bundle JSON.
+ * @param config - Review and frontier policy.
+ */
+async function saveLeanAssuranceBundle(
+    directory: string,
+    change: string,
+    state: RunState,
+    action: WorkflowAction,
+    output: string,
+    config: Pick<SpecOpsConfig, "review" | "frontier">,
+): Promise<void> {
+    const bundle = parseObject(output, "Lean assurance bundle")
+    const verification = requireString(bundle.verification, "Lean assurance verification")
+    const judgmentOutput = requireSerializedObject(
+        bundle.correctnessJudgment,
+        "Lean assurance correctnessJudgment",
+    )
+    const ledgerOutput = requireSerializedObject(bundle.reviewLedger, "Lean assurance reviewLedger")
+    const judgment = parseJudgment(judgmentOutput)
+    const ledger = parseReviewLedger(ledgerOutput)
+
+    await persistArtifact(
+        directory,
+        change,
+        state,
+        "verification",
+        action.agent,
+        verification,
+        action.purpose,
+    )
+    await writeArtifact(directory, change, "judgment-correctness.json", judgmentOutput)
+    recordArtifact(state, "correctness-judgment", action.agent, judgmentOutput, action.purpose)
+    await persistArtifact(
+        directory,
+        change,
+        state,
+        "review-ledger",
+        action.agent,
+        ledgerOutput,
+        action.purpose,
+    )
+
+    const dispatch = state.dispatches.find(item => item.id === action.id)
+    if (judgment.verdict === "FAIL") {
+        if (
+            !dispatch ||
+            !queueReviewFrontier(
+                state,
+                dispatch,
+                "correctness-judgment",
+                "implementation-defect",
+                judgment.summary,
+            )
+        ) {
+            scheduleRepairOrOutcome(state, "implementation-defect", judgment.summary)
+        }
+        return
+    }
+
+    const finding = ledger.findings.find(item =>
+        config.review.blockingSeverities.includes(item.severity),
+    )
+    if (!finding) return
+    const mode = finding.mode ?? "review-finding"
+    if (
+        !dispatch ||
+        !queueReviewFrontier(state, dispatch, "review-ledger", mode, finding.summary)
+    ) {
+        if (finding.mode) {
+            scheduleRepairOrOutcome(state, finding.mode, finding.summary)
+        } else {
+            setOutcome(state, "failed", "review-failed", finding.summary)
+        }
+    }
+}
+
+/**
+ * Serialize a required JSON object field from a compound worker response.
+ *
+ * @param value - Candidate bundle member.
+ * @param label - Human-readable validation label.
+ * @returns Stable JSON text for existing artifact parsers.
+ */
+function requireSerializedObject(value: unknown, label: string): string {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`)
+    }
+    return JSON.stringify(value)
 }
 
 /**
@@ -727,6 +995,7 @@ async function saveReviewLedger(
     state: RunState,
     action: WorkflowAction,
     output: string,
+    config: Pick<SpecOpsConfig, "review" | "frontier">,
 ): Promise<void> {
     const ledger = parseReviewLedger(output)
     await persistArtifact(
@@ -738,15 +1007,128 @@ async function saveReviewLedger(
         output,
         action.purpose,
     )
-    const finding = ledger.findings.find(item => ["BLOCKER", "HIGH"].includes(item.severity))
+    const finding = ledger.findings.find(item =>
+        config.review.blockingSeverities.includes(item.severity),
+    )
     if (!finding) {
         return
     }
     if (!finding.mode) {
-        setOutcome(state, "failed", "review-failed", finding.summary)
+        const dispatch = state.dispatches.find(item => item.id === action.id)
+        if (
+            !dispatch ||
+            !queueReviewFrontier(
+                state,
+                dispatch,
+                "review-ledger",
+                "review-finding",
+                finding.summary,
+            )
+        ) {
+            setOutcome(state, "failed", "review-failed", finding.summary)
+        }
         return
     }
-    scheduleRepairOrOutcome(state, finding.mode, finding.summary)
+    const dispatch = state.dispatches.find(item => item.id === action.id)
+    if (
+        !dispatch ||
+        !queueReviewFrontier(state, dispatch, "review-ledger", finding.mode, finding.summary)
+    ) {
+        scheduleRepairOrOutcome(state, finding.mode, finding.summary)
+    }
+}
+
+/**
+ * Apply one validated frontier response to its pending escalation episode.
+ *
+ * @param state - Mutable run state.
+ * @param response - Strict frontier response.
+ * @param output - Raw response used for provenance hashing.
+ */
+function applyFrontierResponse(state: RunState, response: FrontierResponse, output: string): void {
+    const pending = state.pendingFrontier
+    if (!pending) {
+        throw new Error("frontier response has no pending request")
+    }
+    const episode = completeFrontierEpisode(state, response, output)
+
+    if (response.disposition === "PROMOTE") {
+        if (!canPromotePending(state)) {
+            throw new Error("frontier promotion is not permitted by policy or budget")
+        }
+        pending.selectedTier = "high"
+        pending.request.tier = "high"
+        episode.selectedTier = "high"
+        return
+    }
+
+    if (response.disposition === "UPHOLD_BLOCKER" && pending.reviewFailure) {
+        scheduleRepairOrOutcome(
+            state,
+            response.repairMode ?? pending.reviewFailure.mode,
+            response.summary,
+            response.instruction,
+        )
+        state.pendingFrontier = undefined
+        return
+    }
+
+    if (pending.reviewFailure && response.disposition !== "DISMISS_BLOCKER") {
+        scheduleRepairOrOutcome(
+            state,
+            pending.reviewFailure.mode,
+            pending.reviewFailure.summary,
+            response.instruction,
+        )
+        state.pendingFrontier = undefined
+        return
+    }
+
+    if (response.disposition !== "DISMISS_BLOCKER" && !pending.reviewFailure) {
+        const advice = response.instruction?.trim() || response.summary
+        state.frontierResume = {
+            episodeId: pending.episodeId,
+            originalDispatchId: pending.originalDispatchId,
+            phase: pending.phase,
+            capability: pending.capability,
+            purpose: pending.purpose,
+            action: pending.action,
+            advice,
+            adviceHash: hash(advice),
+        }
+    }
+    state.pendingFrontier = undefined
+}
+
+/**
+ * Resume safely after an unavailable or malformed frontier response.
+ *
+ * @param state - Mutable run state.
+ * @param reason - Frontier failure description.
+ */
+function fallbackFromFrontierFailure(state: RunState, reason: string): void {
+    const pending = state.pendingFrontier
+    if (!pending) return
+    const episode = state.frontierHistory?.find(item => item.id === pending.episodeId)
+    if (episode) episode.status = "insufficient"
+    if (pending.reviewFailure) {
+        scheduleRepairOrOutcome(state, pending.reviewFailure.mode, pending.reviewFailure.summary)
+    } else {
+        const advice =
+            `Frontier escalation was unavailable (${reason}). Complete the original task using ` +
+            "the safest repository-grounded approach and do not request the same escalation again."
+        state.frontierResume = {
+            episodeId: pending.episodeId,
+            originalDispatchId: pending.originalDispatchId,
+            phase: pending.phase,
+            capability: pending.capability,
+            purpose: pending.purpose,
+            action: pending.action,
+            advice,
+            adviceHash: hash(advice),
+        }
+    }
+    state.pendingFrontier = undefined
 }
 
 /**
@@ -756,7 +1138,12 @@ async function saveReviewLedger(
  * @param mode - The repair mode.
  * @param summary - Human-readable summary of the finding that triggered the repair.
  */
-function scheduleRepairOrOutcome(state: RunState, mode: RepairMode, summary: string): void {
+function scheduleRepairOrOutcome(
+    state: RunState,
+    mode: RepairMode,
+    summary: string,
+    instruction?: string,
+): void {
     const used = state.budgetUsage.maxRepairCycles ?? 0
     if (used >= state.requirements.budgets.maxRepairCycles) {
         setOutcome(
@@ -769,10 +1156,18 @@ function scheduleRepairOrOutcome(state: RunState, mode: RepairMode, summary: str
         return
     }
 
-    state.pendingRepair = { mode, summary }
+    state.pendingRepair = { mode, summary, instruction }
     state.repairs.push({ mode, summary, at: new Date().toISOString() })
     state.budgetUsage.maxRepairCycles = used + 1
-    invalidate(state, ["implementation"], `blocking review finding: ${summary}`)
+    const root: ArtifactId =
+        mode === "spec-mismatch"
+            ? "proposal"
+            : mode === "design-revision"
+              ? state.scopeTier === "full"
+                  ? "design"
+                  : "proposal"
+              : "implementation"
+    invalidate(state, [root], `blocking review finding: ${summary}`)
 }
 
 /**
@@ -808,19 +1203,24 @@ function setOutcome(
  * @param state - The current run state (mutated in place).
  * @param claim - The parsed escalation claim, if any.
  */
-function applyClaim(state: RunState, claim: EscalationClaim | undefined): void {
+function applyClaim(
+    state: RunState,
+    claim: EscalationClaim | undefined,
+    config: Pick<SpecOpsConfig, "routing">,
+): void {
     if (!claim) {
         return
     }
 
-    const decision = decideEscalation(state, claim)
+    const decision = decideEscalation(state, claim, config)
     state.decisions.push(decision)
     if (decision.disposition === "accepted" || decision.disposition === "narrowed") {
         applyEscalation(state, decision.appliedPatch)
-        if (decision.appliedPatch.invalidate?.length) {
+        const invalidationRoots = decision.appliedPatch.invalidate ?? []
+        if (invalidationRoots.length) {
             invalidate(
                 state,
-                decision.appliedPatch.invalidate,
+                [...new Set(invalidationRoots)],
                 `accepted escalation: ${claim.summary}`,
             )
         }
@@ -833,6 +1233,50 @@ function applyClaim(state: RunState, claim: EscalationClaim | undefined): void {
             "budget-exhausted",
         )
     }
+}
+
+/**
+ * Upgrade a run when the actual implementation diff exceeds its current size floor.
+ *
+ * Files are counted directly. Modules are unique top-level directories, with
+ * repository-root files grouped under `"."`. Full thresholds take precedence
+ * over the Standard overflow threshold.
+ *
+ * @param state - Mutable run state.
+ * @param paths - Changed non-OpenSpec repository paths.
+ * @param config - Workflow thresholds and routing floors.
+ */
+function applyActualDiffFloor(
+    state: RunState,
+    paths: string[],
+    config: Pick<SpecOpsConfig, "workflow" | "routing">,
+): void {
+    if (state.scopeTier === "full" || paths.length === 0) return
+    const modules = new Set(
+        paths.map(changedPath => {
+            const segments = changedPath.split("/").filter(Boolean)
+            return segments.length > 1 ? segments[0] : "."
+        }),
+    ).size
+    const target = scopeForActualDiff(state.scopeTier, paths, config.workflow.scopeThresholds)
+    if (target === state.scopeTier) return
+
+    applyClaim(
+        state,
+        {
+            category: "scope-overflow",
+            confidence: "high",
+            summary: `Actual diff spans ${paths.length} files across ${modules} modules.`,
+            evidence: paths.map(changedPath => ({ kind: "changed-path", path: changedPath })),
+            boundaryCrossed: `${state.scopeTier} implementation size floor`,
+            whyCurrentRequirementsAreInsufficient:
+                "The actual implementation is larger than the routed workflow permits.",
+            requestedPatch: {
+                raiseScopeTier: target,
+            },
+        },
+        config,
+    )
 }
 
 /**
@@ -860,6 +1304,9 @@ function actionFromDispatch(dispatch: DispatchRecord): WorkflowAction {
  * @returns The artifact id the action targets.
  */
 function phaseForAction(action: WorkflowAction): ArtifactId {
+    if (action.capability === "frontier") {
+        return "review-ledger"
+    }
     if (action.purpose === "judgment") {
         return action.capability === "compliance-judgment"
             ? "compliance-judgment"
@@ -879,7 +1326,9 @@ function phaseForAction(action: WorkflowAction): ArtifactId {
         case "exploration":
             return "exploration"
         case "planning":
-            return action.mode === "task-refinement" ? "tasks" : "proposal"
+            return action.mode === "task-refinement" || action.mode === "lean-plan"
+                ? "tasks"
+                : "proposal"
         case "design":
             return "design"
         case "implementation":
@@ -1017,6 +1466,41 @@ function routingMarkdown(state: RunState): string {
         "",
         ...state.routingReasons.map(reason => `- ${reason}`),
         "",
+    ].join("\n")
+}
+
+/**
+ * Render the assessor's repository inspection into the Lean exploration artifact.
+ *
+ * This deterministic projection avoids a second inspection call while keeping
+ * the existing OpenSpec Lean evidence artifact and provenance.
+ *
+ * @param state - Newly routed Lean run state.
+ * @returns Evidence-backed exploration Markdown.
+ */
+function assessmentExplorationMarkdown(state: RunState): string {
+    const assessment = state.assessment
+    const section = (title: string, values: string[]): string[] => [
+        `## ${title}`,
+        "",
+        ...(values.length ? values.map(value => `- ${value}`) : ["- None."]),
+        "",
+    ]
+    return [
+        "# Exploration",
+        "",
+        ...section("Facts", assessment.facts),
+        ...section("Inferences", assessment.inferences),
+        ...section("Inspected paths", assessment.inspectedPaths),
+        ...section("Risk facets", assessment.riskFacets),
+        ...section("Unresolved questions", assessment.unresolvedQuestions),
+        ...section(
+            "Likely validations",
+            assessment.likelyValidations.map(
+                validation =>
+                    `${validation.executable} ${validation.args.join(" ")} — ${validation.purpose}`,
+            ),
+        ),
     ].join("\n")
 }
 

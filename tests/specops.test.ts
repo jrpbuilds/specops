@@ -131,8 +131,9 @@ describe("final SpecOps policy", () => {
             },
         }
         const decision = decideEscalation(state, claim)
-        expect(decision.disposition).toBe("accepted")
+        expect(decision.disposition).toBe("narrowed")
         applyEscalation(state, decision.appliedPatch)
+        expect(state.scopeTier).toBe("standard")
         expect(state.requirements.requiredCapabilities).toContain("public-contract")
         expect(decideEscalation(state, claim).disposition).toBe("rejected")
     })
@@ -424,6 +425,7 @@ function makeSchedulerComplete(state: RunState): void {
         "routing",
         "exploration",
         "proposal",
+        "tasks",
         "implementation",
         "verification",
         "correctness-judgment",

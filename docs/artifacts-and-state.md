@@ -30,9 +30,10 @@ The controller writes these files atomically after validating complete worker ou
 | `specops-evidence.json`  | Registered command invocations and immutable result hashes.                            |
 | `specops-artifacts.json` | Artifact provenance, input/output hashes, and validity.                                |
 | `specops-progress.json`  | Compact UI projection; not a second run-state format.                                  |
+| `specops-frontier.json`  | Bounded frontier policy, usage counters, and escalation episode history.               |
 
-Only state format version 1 exists. A different version is invalid; no detection or migration path
-for earlier pre-release formats is present.
+State format version 2 is current. Earlier supported state is normalized when
+safe defaults can be supplied; incompatible paused legacy state is rejected.
 
 ## Provenance
 
@@ -47,6 +48,10 @@ Every artifact records:
 
 Dispatch records separately capture the chosen agent, capability, purpose, independence, input
 hash, output hash, and status.
+
+Frontier-assisted dispatches additionally retain the escalation episode,
+selected low/high tier, advice hash, and originating dispatch. The completion
+receipt includes compact frontier usage and episode history.
 
 ## Dependency invalidation
 

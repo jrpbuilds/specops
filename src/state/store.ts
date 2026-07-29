@@ -86,6 +86,15 @@ export async function readRun(directory: string, change: string): Promise<RunSta
         }
     }
 
+    raw.frontierPolicy ??= {
+        mode: "disabled",
+        maxEscalationsPerRun: 2,
+        maxDispatchesPerRun: 3,
+        maxHighDispatchesPerRun: 1,
+    }
+    raw.frontierUsage ??= { escalations: 0, dispatches: 0, highDispatches: 0 }
+    raw.frontierHistory ??= []
+
     const value = raw as RunState
 
     // Validate all v2 invariants in a single pass.

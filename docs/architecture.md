@@ -21,9 +21,14 @@ their role.
 
 ## Shared execution engine
 
-Interactive and automatic runs differ only at their checkpoint policy. Both use OpenCode's native
-task mechanism and call the same `issueAction`, `completeAction`, validation, and finalization
-functions.
+Interactive and automatic runs differ only in question presentation. Both use
+OpenCode's native task mechanism and call the same `issueDirective`,
+`completeAction`, validation, and finalization functions. The scheduler follows
+the routed requirement envelope rather than adding mode-specific phases.
+
+A normal Lean run consolidates inspection into assessment and correctness
+assurance into verification. Standard and Full retain their independent
+exploration, judgment, risk, specialist, and refutation stages.
 
 Automatic execution has two OpenCode adapters:
 

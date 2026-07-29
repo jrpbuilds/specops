@@ -1,4 +1,4 @@
-import type { CapabilityId, DispatchPurpose, RiskFacet } from "../types.js"
+import type { CapabilityId, DispatchPurpose, FrontierTier, RiskFacet } from "../types.js"
 import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./ids.js"
 
 export type { AgentId } from "./ids.js"
@@ -59,6 +59,10 @@ const AGENT_ROLES: Record<AgentId, string> = {
     [AGENT_IDS.review.complianceJudge]:
         "Independently judges specification compliance; may run verification commands against the repository.",
     [AGENT_IDS.review.refuter]: "Deduplicates and challenges unsupported review findings.",
+    [AGENT_IDS.review.frontierLow]:
+        "Provides bounded low-tier frontier advice for evidence-backed workflow blockers.",
+    [AGENT_IDS.review.frontierHigh]:
+        "Provides bounded high-tier frontier adjudication for critical workflow blockers.",
     [AGENT_IDS.specialist.security]:
         "Reviews authentication, authorization, secrecy, and abuse risk.",
     [AGENT_IDS.specialist.dataMigration]: "Reviews persistent data and migration safety.",
@@ -165,6 +169,16 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
         "opencode/nemotron-3-ultra-free",
         32,
     ),
+    [AGENT_IDS.review.frontierLow]: readOnly(
+        AGENT_IDS.review.frontierLow,
+        "openai/gpt-5.6-luna",
+        8,
+    ),
+    [AGENT_IDS.review.frontierHigh]: readOnly(
+        AGENT_IDS.review.frontierHigh,
+        "openai/gpt-5.6-sol",
+        12,
+    ),
     [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, 64),
 }
 
@@ -211,6 +225,7 @@ export const SCHEDULER_CAPABILITIES: readonly CapabilityId[] = [
     "correctness-judgment",
     "compliance-judgment",
     "refutation",
+    "frontier",
 ]
 
 /**
@@ -229,7 +244,13 @@ export const SCHEDULER_CAPABILITIES: readonly CapabilityId[] = [
 export function agentForCapability(
     capability: CapabilityId,
     purpose: DispatchPurpose = "workflow",
+    frontierTier: FrontierTier = "low",
 ): AgentId {
+    if (capability === "frontier") {
+        return frontierTier === "high"
+            ? AGENT_IDS.review.frontierHigh
+            : AGENT_IDS.review.frontierLow
+    }
     if (purpose === "judgment") {
         return capability === "compliance-judgment"
             ? AGENT_IDS.review.complianceJudge

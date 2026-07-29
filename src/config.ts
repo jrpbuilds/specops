@@ -32,6 +32,13 @@ export type SpecOpsConfig = {
     automation: { requireCleanWorktree: boolean }
     /** Escalation budget limits consumed by the controller. */
     escalation: { budgets: EscalationBudget }
+    /** Optional adaptive low/high frontier escalation policy. */
+    frontier: {
+        mode: "disabled" | "adaptive"
+        maxEscalationsPerRun: number
+        maxDispatchesPerRun: number
+        maxHighDispatchesPerRun: number
+    }
     /** Worker-raised question loop limits and field-size bounds. */
     questions: {
         budgets: QuestionBudgets
@@ -95,6 +102,12 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
             maxRepairCycles: 3,
             maxRepeatedFailureFingerprints: 2,
         },
+    },
+    frontier: {
+        mode: "disabled",
+        maxEscalationsPerRun: 2,
+        maxDispatchesPerRun: 3,
+        maxHighDispatchesPerRun: 1,
     },
     questions: {
         budgets: {
@@ -162,6 +175,7 @@ export function validateConfig(value: unknown): SpecOpsConfig {
             "routing",
             "automation",
             "escalation",
+            "frontier",
             "questions",
             "review",
             "integrations",
@@ -178,6 +192,7 @@ export function validateConfig(value: unknown): SpecOpsConfig {
     const routing = parseRouting(root.routing)
     const automation = parseAutomation(root.automation)
     const escalation = parseEscalation(root.escalation)
+    const frontier = parseFrontier(root.frontier ?? {})
     const questions = parseQuestions(root.questions ?? {})
     const review = parseReview(root.review)
     const integrations = parseIntegrations(root.integrations)
@@ -189,10 +204,59 @@ export function validateConfig(value: unknown): SpecOpsConfig {
         routing,
         automation,
         escalation,
+        frontier,
         questions,
         review,
         integrations,
     }
+}
+
+/**
+ * Parse the optional adaptive frontier policy.
+ *
+ * Missing fields inherit disabled, bounded defaults so existing project
+ * configuration remains valid after the feature is installed.
+ *
+ * @param value - Raw `frontier` section.
+ * @returns The validated frontier policy.
+ */
+function parseFrontier(value: unknown): SpecOpsConfig["frontier"] {
+    const source = asObject(value, "frontier")
+    assertKeys(
+        source,
+        ["mode", "maxEscalationsPerRun", "maxDispatchesPerRun", "maxHighDispatchesPerRun"],
+        "frontier",
+    )
+    const mode = source.mode ?? DEFAULT_CONFIG.frontier.mode
+    if (!isOneOf(mode, ["disabled", "adaptive"])) {
+        throw new Error("invalid SpecOps configuration field: frontier.mode")
+    }
+    const result = {
+        mode,
+        maxEscalationsPerRun: positiveInteger(
+            source.maxEscalationsPerRun ?? DEFAULT_CONFIG.frontier.maxEscalationsPerRun,
+            "frontier.maxEscalationsPerRun",
+            0,
+        ),
+        maxDispatchesPerRun: positiveInteger(
+            source.maxDispatchesPerRun ?? DEFAULT_CONFIG.frontier.maxDispatchesPerRun,
+            "frontier.maxDispatchesPerRun",
+            0,
+        ),
+        maxHighDispatchesPerRun: positiveInteger(
+            source.maxHighDispatchesPerRun ?? DEFAULT_CONFIG.frontier.maxHighDispatchesPerRun,
+            "frontier.maxHighDispatchesPerRun",
+            0,
+        ),
+    }
+    if (
+        result.maxHighDispatchesPerRun > result.maxDispatchesPerRun ||
+        (result.mode === "adaptive" &&
+            (result.maxEscalationsPerRun === 0 || result.maxDispatchesPerRun === 0))
+    ) {
+        throw new Error("invalid SpecOps configuration field: frontier")
+    }
+    return result
 }
 
 /**

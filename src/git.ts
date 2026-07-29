@@ -168,6 +168,39 @@ export async function collectDiff(directory: string, maxBytes: number): Promise<
 }
 
 /**
+ * Collect changed implementation paths while excluding controller-owned OpenSpec files.
+ *
+ * Tracked paths come from Git's NUL-delimited name list and untracked paths
+ * from the matching untracked-file query. Results are normalized, deduplicated,
+ * and sorted; rename detection contributes the destination path once.
+ *
+ * @param directory - Repository working directory.
+ * @returns Changed paths relative to the repository root.
+ */
+export async function collectChangedPaths(directory: string): Promise<string[]> {
+    const tracked = await git(directory, [
+        "diff",
+        "--name-only",
+        "--find-renames",
+        "-z",
+        "HEAD",
+        "--",
+        ".",
+        ":(exclude)openspec/**",
+    ])
+    const untracked = await git(directory, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ".",
+        ":(exclude)openspec/**",
+    ])
+    return [...new Set([...tracked.split("\0"), ...untracked.split("\0")].filter(Boolean))].sort()
+}
+
+/**
  * Internal git wrapper: runs `git` with `NO_COLOR` and a narrowed `PATH`.
  * @param directory - Repository working directory.
  * @param args - Arguments passed to `git`.

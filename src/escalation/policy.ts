@@ -3,6 +3,8 @@
  * record controller decisions on worker-raised escalations.
  */
 import { createHash } from "node:crypto"
+import type { SpecOpsConfig } from "../config.js"
+import { artifactsFor, capabilitiesFor } from "../routing/policy.js"
 import type {
     ArtifactId,
     CapabilityId,
@@ -11,6 +13,7 @@ import type {
     EscalationPatch,
     RiskFacet,
     RunState,
+    ScopeTier,
 } from "../types.js"
 
 /** Numeric rank of each tier; used to refuse scope downgrades from a patch. */
@@ -42,7 +45,11 @@ const REVIEW_FACETS = new Set<RiskFacet>([
  * @param claim - The worker-raised escalation claim to evaluate.
  * @returns The controller's {@link EscalationDecision} — accepted, narrowed, or rejected.
  */
-export function decideEscalation(state: RunState, claim: EscalationClaim): EscalationDecision {
+export function decideEscalation(
+    state: RunState,
+    claim: EscalationClaim,
+    routing: Pick<SpecOpsConfig, "routing"> = { routing: { forceFullForFacets: [] } },
+): EscalationDecision {
     const fingerprint = createHash("sha256")
         .update(
             JSON.stringify({
@@ -64,7 +71,8 @@ export function decideEscalation(state: RunState, claim: EscalationClaim): Escal
         )
     }
 
-    const patch = narrowPatch(state, claim.requestedPatch)
+    const normalizedRequest = normalizeRiskTier(claim.requestedPatch, routing.routing)
+    const patch = narrowPatch(state, normalizedRequest)
     if (!hasPatch(patch)) {
         return rejected(
             claim.requestedPatch,
@@ -127,23 +135,19 @@ export function applyEscalation(state: RunState, patch: EscalationPatch): void {
     if (patch.raiseScopeTier) {
         state.scopeTier = patch.raiseScopeTier
         state.requirements.scopeTier = patch.raiseScopeTier
-        if (patch.raiseScopeTier === "full") {
-            state.requirements.requiredArtifacts = unique<ArtifactId>([
-                ...state.requirements.requiredArtifacts,
-                "proposal",
-                "specs",
-                "design",
-                "tasks",
-                "compliance-judgment",
-            ])
-            state.requirements.requiredCapabilities = unique<CapabilityId>([
-                ...state.requirements.requiredCapabilities,
-                "planning",
-                "design",
-                "compliance-judgment",
-            ])
-            state.requirements.judgePolicy.required = ["correctness", "compliance"]
-        }
+        state.requirements.requiredArtifacts = unique<ArtifactId>([
+            ...artifactsFor(patch.raiseScopeTier),
+            ...state.requirements.requiredArtifacts,
+        ])
+        state.requirements.requiredCapabilities = unique<CapabilityId>([
+            ...capabilitiesFor(
+                patch.raiseScopeTier,
+                state.requirements.requiredReviewFacets as CapabilityId[],
+            ),
+            ...state.requirements.requiredCapabilities,
+        ])
+        state.requirements.judgePolicy.required =
+            patch.raiseScopeTier === "lean" ? ["correctness"] : ["correctness", "compliance"]
         state.budgetUsage.maxScopeEscalations = (state.budgetUsage.maxScopeEscalations ?? 0) + 1
     }
 
@@ -162,6 +166,7 @@ export function applyEscalation(state: RunState, patch: EscalationPatch): void {
     }
 
     if (patch.addReviewFacets) {
+        state.riskFacets = unique([...state.riskFacets, ...patch.addReviewFacets]) as RiskFacet[]
         state.requirements.requiredReviewFacets = unique([
             ...state.requirements.requiredReviewFacets,
             ...patch.addReviewFacets,
@@ -178,6 +183,50 @@ export function applyEscalation(state: RunState, patch: EscalationPatch): void {
     state.requirements.policyHash = createHash("sha256")
         .update(JSON.stringify(state.requirements))
         .digest("hex")
+}
+
+/**
+ * Infer the minimum safe scope tier implied by newly discovered risk facets.
+ *
+ * @param patch - Worker-requested additive patch.
+ * @param routing - Project routing safety floors.
+ * @returns A patch whose scope raise includes the inferred facet floor.
+ */
+function normalizeRiskTier(
+    patch: EscalationPatch,
+    routing: SpecOpsConfig["routing"],
+): EscalationPatch {
+    const facets = unique<RiskFacet>([
+        ...(patch.addReviewFacets ?? []),
+        ...((patch.addCapabilities ?? []).filter(capability =>
+            REVIEW_FACETS.has(capability as RiskFacet),
+        ) as RiskFacet[]),
+    ])
+    const inferred: ScopeTier | undefined = facets.some(
+        facet =>
+            facet === "migration" ||
+            facet === "infrastructure" ||
+            routing.forceFullForFacets.includes(facet),
+    )
+        ? "full"
+        : facets.length
+          ? "standard"
+          : undefined
+    const requested = patch.raiseScopeTier
+    const raiseScopeTier =
+        requested && inferred
+            ? TIER_RANK[requested] >= TIER_RANK[inferred]
+                ? requested
+                : inferred
+            : (requested ?? inferred)
+    return {
+        ...patch,
+        raiseScopeTier,
+        addCapabilities: facets.length
+            ? unique<CapabilityId>([...(patch.addCapabilities ?? []), ...facets])
+            : patch.addCapabilities,
+        addReviewFacets: facets.length ? facets : patch.addReviewFacets,
+    }
 }
 
 /**

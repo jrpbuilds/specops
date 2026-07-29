@@ -24,19 +24,55 @@ const higherTier = (left: ScopeTier, right: ScopeTier): ScopeTier =>
     TIER_RANK[left] >= TIER_RANK[right] ? left : right
 
 /**
+ * Raise a scope tier when actual changed paths exceed configured size limits.
+ *
+ * Modules are unique top-level directories; repository-root files share the
+ * synthetic module `"."`. Full thresholds take precedence over Standard.
+ *
+ * @param current - Current routed scope tier.
+ * @param paths - Changed non-OpenSpec paths.
+ * @param thresholds - Configured file and module limits.
+ * @returns The current or mechanically raised scope tier.
+ */
+export function scopeForActualDiff(
+    current: ScopeTier,
+    paths: string[],
+    thresholds: SpecOpsConfig["workflow"]["scopeThresholds"],
+): ScopeTier {
+    if (current === "full" || paths.length === 0) return current
+    const modules = new Set(
+        paths.map(changedPath => {
+            const segments = changedPath.split("/").filter(Boolean)
+            return segments.length > 1 ? segments[0] : "."
+        }),
+    ).size
+    if (paths.length >= thresholds.fullMinFiles || modules >= thresholds.fullMinModules) {
+        return "full"
+    }
+    if (
+        current === "lean" &&
+        (paths.length > thresholds.leanMaxFiles || modules > thresholds.leanMaxModules)
+    ) {
+        return "standard"
+    }
+    return current
+}
+
+/**
  * Build the final artifact requirements list for the selected tier.
  *
- * Lean omits proposal/specs/design/tasks and compliance judgment; standard
- * adds those except design; full adds design and compliance judgment.
+ * Lean keeps a compact task plan but omits proposal/specs/design and compliance
+ * judgment; Standard adds proposal/specs and compliance; Full adds design.
  *
  * @param tier - The resolved scope tier.
  * @returns The ordered list of {@link ArtifactId} artifacts the run must produce.
  */
-function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArtifacts"] {
+export function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArtifacts"] {
     if (tier === "lean") {
         return [
             "routing",
             "exploration",
+            "tasks",
             "implementation",
             "verification",
             "correctness-judgment",
@@ -73,6 +109,35 @@ function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArtifacts"
         "review-ledger",
         "receipt",
     ]
+}
+
+/**
+ * Return the base capability set required by a scope tier.
+ *
+ * Lean consolidates inspection into assessment and assurance into verification.
+ * Standard and Full retain independent exploration, judgment, and review.
+ *
+ * @param tier - Resolved scope tier.
+ * @param specialists - Risk-facet capabilities required by assessment.
+ * @returns Ordered, deduplicated base capabilities.
+ */
+export function capabilitiesFor(tier: ScopeTier, specialists: CapabilityId[] = []): CapabilityId[] {
+    if (tier === "lean") {
+        return ["assessment", "planning", "implementation", "verification"]
+    }
+    const capabilities: CapabilityId[] = [
+        "assessment",
+        "exploration",
+        "planning",
+        "implementation",
+        "verification",
+        "general-risk",
+        "correctness-judgment",
+        "compliance-judgment",
+        ...specialists,
+    ]
+    if (tier === "full") capabilities.push("design")
+    return [...new Set(capabilities)]
 }
 
 /**
@@ -130,27 +195,11 @@ export function requirementsFor(
         config.workflow.defaultTier === "auto" ? "lean" : config.workflow.defaultTier
     const scopeTier = higherTier(higherTier(floor, requestedFloor), configuredFloor)
     const specialists = [...new Set<CapabilityId>(assessment.riskFacets)]
-    const requiredCapabilities: CapabilityId[] = [
-        "assessment",
-        "exploration",
-        "planning",
-        "implementation",
-        "verification",
-        "general-risk",
-        "correctness-judgment",
-        ...specialists,
-    ]
-    if (scopeTier === "full") {
-        requiredCapabilities.push("design")
-    }
-    if (scopeTier !== "lean") {
-        requiredCapabilities.push("compliance-judgment")
-    }
 
     const requirements: WorkflowRequirements = {
         scopeTier,
         requiredArtifacts: artifactsFor(scopeTier),
-        requiredCapabilities: [...new Set(requiredCapabilities)],
+        requiredCapabilities: capabilitiesFor(scopeTier, specialists),
         requiredReviewFacets: [...assessment.riskFacets],
         requiredValidations: [
             { id: "openspec-strict", kind: "openspec-strict" },
