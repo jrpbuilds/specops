@@ -8,11 +8,8 @@ __pycache__/
 *.py[cod]
 
 # OpenSpec live artifacts for this repo's own workflow runs. Bundled schema
-# templates ship from `schemas/`; `openspec/schemas/` is installed via
-# `npm run onboard` (or `/specops-onboard`) and is reproducible.
-openspec/changes/
-openspec/specs/
-openspec/schemas/
-!openspec/changes/.gitkeep
-!openspec/specs/.gitkeep
+# templates ship from `schemas/`; the entire `openspec/` tree (schemas, changes,
+# specs, config.yaml) is installed via `npm run onboard` (or `/specops-onboard`)
+# and is fully reproducible.
+openspec/
 
