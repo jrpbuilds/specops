@@ -430,7 +430,7 @@ export async function finalizeRun(
     }
 
     try {
-        await openSpecOrThrow(directory, config, ["validate", "--change", change])
+        await openSpecOrThrow(directory, config, ["validate", "--type", "change", change])
     } catch (error) {
         setOutcome(state, "failed", "validation-failed", String(error))
         await writeRun(directory, change, state)
