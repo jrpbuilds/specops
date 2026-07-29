@@ -16,6 +16,7 @@ import {
 import { footprintEscalation, moduleKey } from "../src/git.js"
 import { isTransientProviderError } from "../src/runner.js"
 import { DEFAULT_MANIFEST, manifestAgentConfig } from "../src/manifest.js"
+import SpecOpsTuiPlugin from "../src/tui.js"
 import {
   judgmentDayWithRunner,
   reviewPanelWithRunner,
@@ -61,6 +62,11 @@ describe("visible automatic controller", () => {
           : 32
       expect(agent.steps).toBe(expected)
     }
+  })
+
+  it("exports a stable OpenCode TUI plugin companion", async () => {
+    expect(SpecOpsTuiPlugin.id).toBe("specops")
+    await expect(SpecOpsTuiPlugin.tui()).resolves.toBeUndefined()
   })
 
   it("routes automatic mode through native task workers", () => {

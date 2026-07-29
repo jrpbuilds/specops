@@ -1,5 +1,13 @@
 # Configuration
 
+## OpenCode plugin registration
+
+The installer registers `@jrpbuilds/specops` in both OpenCode configuration
+surfaces: `opencode.json` loads its server commands, tools, and agents, while
+global `~/.config/opencode/tui.json` registers its TUI companion for the
+Plugins menu. Both registrations use the published npm package; a local
+`file://` entry is only appropriate while developing this repository.
+
 ## Agent manifest
 
 The agent manifest lives at `~/.config/opencode/specops-manifest.json`. The

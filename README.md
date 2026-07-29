@@ -54,15 +54,23 @@ agent manifest.
 curl -fsSL https://raw.githubusercontent.com/jrpbuilds/specops/master/scripts/install.sh | bash
 ```
 
-This adds `@jrpbuilds/specops` to the `plugin` array of your `opencode.json`
-(idempotent). OpenCode's Bun runtime installs the package from npm on the next
-launch. On first load, the plugin writes the default agent manifest to
+This registers `@jrpbuilds/specops` as both an OpenCode server plugin and a
+TUI plugin (idempotent), so it appears in the Plugins menu. OpenCode's Bun
+runtime installs the package from npm on the next launch. On first load, the
+plugin writes the default agent manifest to
 `~/.config/opencode/specops-manifest.json` — edit it to customize agent
 models and permissions; the file persists across plugin updates.
 
 ### Manual install
 
-Add the package to your `opencode.json`:
+Add the package to your `opencode.json` and global
+`~/.config/opencode/tui.json`:
+
+```json
+{
+  "plugin": ["@jrpbuilds/specops"]
+}
+```
 
 ```json
 {
