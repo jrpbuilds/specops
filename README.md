@@ -1,5 +1,7 @@
 # SpecOps
 
+![SpecOps](https://raw.githubusercontent.com/jrpbuilds/specops/master/docs/specops-logo.webp)
+
 SpecOps is an OpenCode plugin for deterministic, evidence-driven software changes backed by
 OpenSpec artifacts. Language models supply bounded reasoning and implementation work; TypeScript
 owns routing, scheduling, persistence, invalidation, command evidence, review independence, repair
