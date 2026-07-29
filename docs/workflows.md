@@ -8,7 +8,7 @@ Run:
 /specops-auto <goal>
 ```
 
-The command switches to `specops-controller`. A visible `sdd-assess` worker
+The command switches to `specops-auto`. A visible `sdd-assess` worker
 inspects the goal and focused repository evidence, then deterministic safety
 rules select the smallest safe workflow:
 

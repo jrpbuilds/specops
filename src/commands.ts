@@ -16,7 +16,7 @@ import type { Config } from "@opencode-ai/plugin"
  */
 export const COMMANDS: NonNullable<Config["command"]> = {
   "specops-auto": {
-    agent: "specops-controller",
+    agent: "specops-auto",
     subtask: false,
     description: "Run visible, inspectable SpecOps workers without phase checkpoints",
     template:
@@ -28,7 +28,7 @@ export const COMMANDS: NonNullable<Config["command"]> = {
       "Call the specops_run_auto tool exactly once with goal set to $ARGUMENTS. This is the compact headless runner, so child sessions may not appear in OpenCode's native subagent pane. Configured MCP tools remain optional. Do not perform an external write, commit, push, or other Git mutation. Report its final marker and do not claim success if the tool fails.",
   },
   specops: {
-    agent: "specops-interactive-controller",
+    agent: "specops",
     subtask: false,
     description: "Run SpecOps interactively with approval checkpoints",
     template:

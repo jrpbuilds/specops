@@ -65,7 +65,7 @@ export const SpecOpsPlugin: Plugin = async (input) => {
         openCodeConfig.command[name] ??= command
       }
       openCodeConfig.agent ??= {}
-      openCodeConfig.agent["specops-controller"] ??= {
+      openCodeConfig.agent["specops-auto"] ??= {
         mode: "primary",
         model: "opencode/deepseek-v4-flash-free",
         steps: 1000,
@@ -76,7 +76,7 @@ export const SpecOpsPlugin: Plugin = async (input) => {
           task: true,
         },
       }
-      openCodeConfig.agent["specops-interactive-controller"] ??= {
+      openCodeConfig.agent.specops ??= {
         mode: "primary",
         model: "opencode/deepseek-v4-flash-free",
         steps: 1000,

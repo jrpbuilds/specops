@@ -64,7 +64,7 @@ describe("visible automatic controller", () => {
   })
 
   it("routes automatic mode through native task workers", () => {
-    expect(COMMANDS["specops-auto"]?.agent).toBe("specops-controller")
+    expect(COMMANDS["specops-auto"]?.agent).toBe("specops-auto")
     expect(COMMANDS["specops-auto"]?.subtask).toBe(false)
     expect(COMMANDS["specops-auto"]?.template).toContain("built-in task tool")
     expect(COMMANDS["specops-auto-headless"]).toBeDefined()
@@ -74,7 +74,7 @@ describe("visible automatic controller", () => {
     expect(SPECOPS_CONTROLLER_PROMPT).toContain("sdd-assess")
     expect(SPECOPS_CONTROLLER_PROMPT).toContain("specops_wait_for_provider")
     expect(SPECOPS_CONTROLLER_PROMPT).not.toContain("\\`")
-    expect(COMMANDS.specops?.agent).toBe("specops-interactive-controller")
+    expect(COMMANDS.specops?.agent).toBe("specops")
     expect(SPECOPS_INTERACTIVE_PROMPT).toContain("Do not ask the user to select a workflow tier")
   })
 
