@@ -65,39 +65,33 @@ export function parseAssessment(output: string): Assessment {
     }
 
     const assessment = asObject(parsed, "assessment")
-    const uncertainty = asObject(assessment.uncertainty, "assessment.uncertainty")
+    const uncertainty = parseUncertainty(assessment.uncertainty)
     if (!CHANGE_KINDS.has(assessment.changeKind as Assessment["changeKind"])) {
-        throw new Error("invalid assessment.changeKind")
+        throw enumError("changeKind", assessment.changeKind, [...CHANGE_KINDS])
     }
     if (!isOneOf(assessment.publicContract, ["none", "compatible", "breaking"])) {
-        throw new Error("invalid assessment.publicContract")
+        throw enumError("publicContract", assessment.publicContract, [
+            "none",
+            "compatible",
+            "breaking",
+        ])
     }
     if (!isOneOf(assessment.suggestedTier, ["lean", "standard", "full"])) {
-        throw new Error("invalid assessment.suggestedTier")
+        throw enumError("suggestedTier", assessment.suggestedTier, ["lean", "standard", "full"])
     }
 
     const riskFacets = stringArray(assessment.riskFacets, "riskFacets") as RiskFacet[]
-    if (riskFacets.some(facet => !FACETS.has(facet))) {
-        throw new Error("invalid assessment.riskFacets")
+    const unknownFacet = riskFacets.find(facet => !FACETS.has(facet))
+    if (unknownFacet) {
+        throw enumError("riskFacets", unknownFacet, [...FACETS])
     }
     const touchedSurfaces = stringArray(
         assessment.touchedSurfaces,
         "touchedSurfaces",
     ) as TouchedSurface[]
-    if (touchedSurfaces.some(surface => !SURFACES.has(surface))) {
-        throw new Error("invalid assessment.touchedSurfaces")
-    }
-
-    for (const key of [
-        "requirements",
-        "repository",
-        "design",
-        "implementation",
-        "verification",
-    ] as const) {
-        if (!CONFIDENCE.has(uncertainty[key] as ConfidenceLevel)) {
-            throw new Error(`invalid assessment.uncertainty.${key}`)
-        }
+    const unknownSurface = touchedSurfaces.find(surface => !SURFACES.has(surface))
+    if (unknownSurface) {
+        throw enumError("touchedSurfaces", unknownSurface, [...SURFACES])
     }
 
     return {
@@ -120,6 +114,54 @@ export function parseAssessment(output: string): Assessment {
         facts: stringArray(assessment.facts, "facts"),
         inferences: stringArray(assessment.inferences, "inferences"),
     }
+}
+
+/**
+ * Parse and validate the `uncertainty` object.
+ *
+ * Each of the five concern keys must be present and map to a valid
+ * confidence level. The error message lists both the required keys and the
+ * accepted values so callers know why an assessment was rejected without
+ * reading the schema directly.
+ *
+ * @param value - The raw value of `assessment.uncertainty`.
+ * @returns A validated {@link UncertaintyProfile}.
+ * @throws {Error} If any required key is missing or has an invalid level.
+ */
+function parseUncertainty(value: unknown): Assessment["uncertainty"] {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw enumError("uncertainty", value, [
+            "requirements",
+            "repository",
+            "design",
+            "implementation",
+            "verification",
+        ])
+    }
+    const source = value as Record<string, unknown>
+    const keys = ["requirements", "repository", "design", "implementation", "verification"] as const
+    for (const key of keys) {
+        if (!CONFIDENCE.has(source[key] as ConfidenceLevel)) {
+            throw enumError(`uncertainty.${key}`, source[key], [...CONFIDENCE])
+        }
+    }
+    return source as Assessment["uncertainty"]
+}
+
+/**
+ * Build an enum-style validation error that echoes the rejected value and the
+ * allowed choices.
+ *
+ * @param field - Dotted assessment field name.
+ * @param value - The rejected raw value.
+ * @param choices - Allowed string values.
+ * @returns An `Error` ready to throw.
+ */
+function enumError(field: string, value: unknown, choices: readonly string[]): Error {
+    const display = value === undefined ? "undefined" : JSON.stringify(value)
+    return new Error(
+        `invalid assessment.${field} ${display} — must be one of: ${choices.join(", ")}`,
+    )
 }
 
 /**

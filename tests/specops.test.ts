@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, validateConfig } from "../src/config.js"
 import { requirementsFor } from "../src/routing/policy.js"
 import { downstream } from "../src/artifacts/graph.js"
 import { AGENT_REGISTRY, agentForCapability } from "../src/capabilities/registry.js"
+import { parseAssessment } from "../src/routing/assessment.js"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { executeValidation } from "../src/evidence/commands.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
@@ -246,6 +247,107 @@ describe("final SpecOps policy", () => {
         expect(cancelled.status).toBe("cancelled")
         expect(cancelled.outcome?.category).toBe("cancelled")
         expect(cancelled.dispatches[0]?.status).toBe("failed")
+    })
+})
+
+describe("parseAssessment", () => {
+    const valid = () =>
+        JSON.stringify({
+            changeKind: "bugfix",
+            expectedFiles: 1,
+            expectedModules: 1,
+            restoresExistingBehavior: true,
+            changesRequirements: false,
+            publicContract: "none",
+            riskFacets: [],
+            touchedSurfaces: [],
+            uncertainty: {
+                requirements: "high",
+                repository: "high",
+                design: "high",
+                implementation: "high",
+                verification: "high",
+            },
+            suggestedTier: "lean",
+            inspectedPaths: ["src/example.ts"],
+            unresolvedQuestions: [],
+            likelyValidations: [],
+            facts: ["localized"],
+            inferences: [],
+        })
+
+    it("presets uncertainty in error when missing", () => {
+        const payload = JSON.parse(valid())
+        delete payload.uncertainty
+        expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
+            /invalid assessment\.uncertainty/,
+        )
+    })
+
+    it("echoes back an invalid changeKind with choices", () => {
+        expect(() => parseAssessment(valid().replace('"bugfix"', '"readme-update"'))).toThrow(
+            `invalid assessment.changeKind "readme-update" — must be one of: documentation, configuration, test, bugfix, refactor, feature, migration, infrastructure`,
+        )
+    })
+
+    it("echoes back an invalid publicContract with choices", () => {
+        expect(() => parseAssessment(valid().replace('"none"', '"unknown"'))).toThrow(
+            `invalid assessment.publicContract "unknown" — must be one of: none, compatible, breaking`,
+        )
+    })
+
+    it("echoes back an invalid suggestedTier with choices", () => {
+        expect(() => parseAssessment(valid().replace('"lean"', '"tiny"'))).toThrow(
+            `invalid assessment.suggestedTier "tiny" — must be one of: lean, standard, full`,
+        )
+    })
+
+    it("echoes back an invalid riskFacet with choices", () => {
+        const payload = JSON.parse(valid())
+        payload.riskFacets = ["unknown"]
+        expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
+            `invalid assessment.riskFacets "unknown" — must be one of:`,
+        )
+    })
+
+    it("echoes back an invalid touchedSurface with choices", () => {
+        const payload = JSON.parse(valid())
+        payload.touchedSurfaces = ["unknown"]
+        expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
+            `invalid assessment.touchedSurfaces "unknown" — must be one of:`,
+        )
+    })
+
+    it("echoes back an invalid uncertainty level with choices", () => {
+        const payload = JSON.parse(valid())
+        payload.uncertainty.requirements = "sure"
+        expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
+            `invalid assessment.uncertainty.requirements "sure" — must be one of: low, medium, high`,
+        )
+    })
+})
+
+describe("agent permissions", () => {
+    it("gives correctness, compliance and risk reviewers bash access", () => {
+        for (const id of [
+            AGENT_IDS.review.correctnessJudge,
+            AGENT_IDS.review.complianceJudge,
+            AGENT_IDS.review.risk,
+        ]) {
+            expect(AGENT_REGISTRY[id].permission.bash).toBe("allow")
+            expect(AGENT_REGISTRY[id].permission.edit).toBe("deny")
+        }
+    })
+
+    it("keeps specialists and refuter read-only", () => {
+        for (const id of [
+            AGENT_IDS.specialist.security,
+            AGENT_IDS.specialist.dataMigration,
+            AGENT_IDS.review.refuter,
+        ]) {
+            expect(AGENT_REGISTRY[id].permission.bash).toBe("deny")
+            expect(AGENT_REGISTRY[id].permission.edit).toBe("deny")
+        }
     })
 })
 
