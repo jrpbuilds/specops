@@ -54,7 +54,10 @@ export type SpecOpsManifest = {
  * OpenCode supports additional provider-specific options such as
  * `reasoningEffort`.
  */
-export function manifestAgentConfig(agentId: string, definition: AgentDefinition) {
+export function manifestAgentConfig(agentId: string, definition: AgentDefinition): AgentDefinition & {
+ mode: "subagent"
+ prompt: string
+} {
   return {
     ...definition,
     mode: "subagent" as const,

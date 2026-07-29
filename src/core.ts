@@ -430,39 +430,12 @@ export async function hashArtifactTree(changeDirectory: string): Promise<string>
 }
 
 /**
- * Legacy v1 evidence receipt. Retained for backward compatibility with
- * archived changes produced before tier history was introduced.
+ * Current evidence receipt. Binds a change to a specific base commit, diff
+ * hash, and artifact tree hash so stale evidence cannot be archived.
  */
-export type SpecOpsReceiptV1 = {
-  version: 1
-  change: string
-  goal: string
-  base_commit: string
-  diff_sha256: string
-  artifacts_sha256: string
-  verified_at: string
-  fix_cycles: number
-  judgment: {
-    judge_a_passed: boolean
-    judge_b_passed: boolean
-  }
-  review: {
-    blocking_findings: boolean
-    ledger_sha256: string
-  }
-  test_evidence: {
-    source: "openspec-verification"
-    fabricated: false
-  }
-}
-
-/**
- * Current v2 evidence receipt. Binds a change to a specific base commit,
- * diff hash, and artifact tree hash so stale evidence cannot be archived.
- */
-export type SpecOpsReceiptV2 = {
-  version: 2
-  change: string
+export type SpecOpsReceipt = {
+ version: 2
+ change: string
   goal: string
   tier: WorkflowTier
   tier_history: Array<{
@@ -492,9 +465,6 @@ export type SpecOpsReceiptV2 = {
     fabricated: false
   }
 }
-
-/** Discriminated union of supported receipt versions. */
-export type SpecOpsReceipt = SpecOpsReceiptV1 | SpecOpsReceiptV2
 
 /**
  * Verify that a receipt still matches the current repository state.

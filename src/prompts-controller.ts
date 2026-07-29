@@ -58,7 +58,7 @@ Required state machine:
    - tasks / \`sdd-tasks\` -> tasks.md
    Before each schema artifact call \`specops_openspec\` with
    ["instructions", ARTIFACT, "--change", CHANGE, "--json"] and pass current instructions.
-4. Treat an `ESCALATION_JSON:` request as actionable only when it contains a valid target,
+4. Treat an \`ESCALATION_JSON:\` request as actionable only when it contains a valid target,
    classified boundary, confidence, summary, and concrete evidence for a scope boundary,
    material risk, or genuine blocker. Validate the request against the current tier before
    calling \`specops_escalate_auto\`; reject vague or duplicate requests. Legacy standalone
