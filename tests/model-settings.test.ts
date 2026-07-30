@@ -177,6 +177,9 @@ describe("configured OpenCode model catalogue", () => {
         expect(agentSettingsCategory(AGENT_IDS.core.repairer)).toBe("Review, judgment and repair")
         expect(agentSettingsCategory(AGENT_IDS.review.frontierLow)).toBe("Frontier escalation")
         expect(agentSettingsCategory(AGENT_IDS.specialist.security)).toBe("Specialists")
+        expect(DEFAULT_MANIFEST.agents[AGENT_IDS.core.repairer].model).toBe(
+            "opencode/north-mini-code-free",
+        )
     })
 
     it("retains available legacy models, falls back, and marks unresolved agents", () => {

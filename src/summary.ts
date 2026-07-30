@@ -39,6 +39,9 @@ export function summarize(state: RunState, change: string, label?: string): stri
     if (state.outcome) {
         line += `, outcome=${state.outcome.category}`
     }
+    if (state.pendingRepair?.taskId) {
+        line += `, repair=${state.pendingRepair.taskId.slice(0, 8)}`
+    }
     line += ")"
 
     if (state.status === "failed" && state.outcome?.message) {

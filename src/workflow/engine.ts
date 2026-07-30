@@ -1,3 +1,5 @@
+import { readFile, readdir } from "node:fs/promises"
+import path from "node:path"
 import type { SpecOpsConfig } from "../config.js"
 import { AGENT_IDS } from "../capabilities/ids.js"
 import { applyEscalation, decideEscalation } from "../escalation/policy.js"
@@ -5,7 +7,7 @@ import { assertCleanWorktree, baseCommit, collectChangedPaths, collectDiff } fro
 import { createChange, openSpecOrThrow, uniqueChangeName, writeArtifact } from "../openspec.js"
 import { parseAssessment } from "../routing/assessment.js"
 import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
-import { readMachine, readRun, writeMachine, writeRun } from "../state/store.js"
+import { changeRoot, readMachine, readRun, writeMachine, writeRun } from "../state/store.js"
 import type {
     ArtifactId,
     BlockReason,
@@ -13,7 +15,10 @@ import type {
     DispatchRecord,
     EscalationClaim,
     FrontierResponse,
+    AssuranceFinding,
     RepairMode,
+    RepairTask,
+    ReviewLedger,
     RunState,
     WorkflowOutcome,
 } from "../types.js"
@@ -28,13 +33,7 @@ import {
     registerPendingQuestion,
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
-import {
-    JUDGMENT_VERDICTS,
-    REPAIR_MODES,
-    SEVERITIES,
-    SPEC_NAME_REGEX,
-    validateSpecContent,
-} from "./contracts.js"
+import { SPEC_NAME_REGEX, validateSpecContent } from "./contracts.js"
 import {
     canPromotePending,
     completeFrontierEpisode,
@@ -44,6 +43,17 @@ import {
     recordFrontierDispatch,
     verifyFrontierEvidence,
 } from "../frontier/policy.js"
+import {
+    createReviewSubmission,
+    currentReviewSubmissions,
+    leanLedgerFromSubmission,
+    parseJudgment,
+    parseLeanReviewLedger,
+    parseReviewLedger,
+    parseReviewSubmission,
+    repairTargetForMode,
+    stableId,
+} from "./reviews.js"
 
 /**
  * Final-format deterministic workflow engine.
@@ -68,28 +78,6 @@ const ARTIFACT_FILES: Partial<Record<ArtifactId, string>> = {
     tasks: "tasks.md",
     verification: "verification.md",
     "review-ledger": "review-ledger.json",
-}
-
-/**
- * Refuter review ledger: a deduplicated list of findings with severity, an
- * optional {@link RepairMode} (set only for blocking findings), and a summary.
- */
-type ReviewLedger = {
-    findings: Array<{
-        severity: "BLOCKER" | "HIGH" | "MEDIUM" | "LOW"
-        mode?: RepairMode
-        summary: string
-    }>
-}
-
-/**
- * Parsed independent judgment: a PASS/FAIL verdict with a human summary and a
- * findings list. A FAIL verdict schedules a bounded repair or terminal outcome.
- */
-type Judgment = {
-    verdict: "PASS" | "FAIL"
-    summary: string
-    findings: unknown[]
 }
 
 /**
@@ -143,6 +131,8 @@ export async function startRun(
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
         frontierPolicy: structuredClone(config.frontier),
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
@@ -190,7 +180,7 @@ export async function startRun(
         relevantPaths: assessment.inspectedPaths,
         decisions: [],
     })
-    await writeMachine(directory, change, "specops-evidence.json", { version: 1, commands: [] })
+    await writeMachine(directory, change, "specops-evidence.json", { version: 2, commands: [] })
     await writeArtifactIndex(directory, change, state)
 
     return { change, state }
@@ -217,15 +207,17 @@ export async function issueDirective(
 ): Promise<ControllerDirective> {
     const state = await readRun(directory, change)
 
-    if (state.artifacts.implementation?.validity === "valid" && state.status === "running") {
-        state.implementationDiffHash = hash(
-            await collectDiff(directory, config.review.maxDiffBytes),
-        )
+    const issued = state.dispatches.find(dispatch => dispatch.status === "issued")
+    if (issued) {
+        throw new Error(`SpecOps dispatch ${issued.id} is still issued and must be completed first`)
     }
+
+    await refreshImplementationBinding(directory, state, config.review.maxDiffBytes)
 
     const directive = nextDirective(state)
 
     if (directive.type === "dispatch") {
+        const inputHash = dispatchHash(directive.action, state)
         const record: DispatchRecord = {
             id: directive.action.id,
             action: directive.action.mode ?? directive.action.capability,
@@ -233,9 +225,28 @@ export async function issueDirective(
             capability: directive.action.capability,
             purpose: directive.action.purpose,
             independent: directive.action.independent,
-            inputHash: dispatchHash(directive.action, state),
+            inputHash,
+            attempt:
+                state.dispatches.filter(
+                    item =>
+                        item.capability === directive.action.capability &&
+                        item.purpose === directive.action.purpose &&
+                        item.inputHash === inputHash,
+                ).length + 1,
             status: "issued",
             at: new Date().toISOString(),
+        }
+        if (
+            directive.action.capability === "implementation" ||
+            directive.action.capability === "repair"
+        ) {
+            try {
+                record.writerGuard = await captureWriterGuard(directory, change, state)
+            } catch (error) {
+                setOutcome(state, "blocked", "policy-blocked", String(error), "policy-rejected")
+                await writeRun(directory, change, state)
+                return { type: "block", reason: "policy-rejected", resumable: false }
+            }
         }
 
         // Persist resume target metadata on the dispatch before consuming it.
@@ -314,6 +325,9 @@ export async function completeAction(
     const phase = phaseForAction(action)
 
     try {
+        if (action.capability === "implementation" || action.capability === "repair") {
+            await assertWriterGuards(directory, change, state, dispatch)
+        }
         const parsed = parseWorkerOutput(output, config, phase, dispatch.capability)
 
         const scopeBeforeCompletion = state.scopeTier
@@ -331,9 +345,9 @@ export async function completeAction(
                 await persistActionResult(directory, change, state, action, parsed.prose, config)
             } else {
                 const evidenceRegistry = await readMachine<{
-                    version: 1
+                    version: number
                     commands: CommandEvidence[]
-                }>(directory, change, "specops-evidence.json", { version: 1, commands: [] })
+                }>(directory, change, "specops-evidence.json", { version: 2, commands: [] })
                 if (
                     !(await verifyFrontierEvidence(
                         directory,
@@ -386,8 +400,29 @@ export async function completeAction(
         }
     } catch (error) {
         dispatch.status = "failed"
+        dispatch.failureReason = String(error).slice(0, 2_000)
+        if (/writer guard/i.test(String(error))) {
+            setOutcome(state, "blocked", "policy-blocked", String(error), "policy-rejected")
+        }
         if (action.capability === "frontier") {
             fallbackFromFrontierFailure(state, String(error))
+        }
+        if (
+            isAssuranceAction(action) &&
+            state.dispatches.filter(
+                item =>
+                    item.status === "failed" &&
+                    item.capability === dispatch.capability &&
+                    item.purpose === dispatch.purpose &&
+                    item.inputHash === dispatch.inputHash,
+            ).length > config.review.transientRetries
+        ) {
+            setOutcome(
+                state,
+                "failed",
+                "validation-failed",
+                `Assurance output retry budget exhausted: ${dispatch.failureReason}`,
+            )
         }
         await writeRun(directory, change, state)
         throw error
@@ -413,6 +448,16 @@ export async function completeAction(
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
     return state
+}
+
+/** Return whether malformed output should consume the bounded assurance retry policy. */
+function isAssuranceAction(action: WorkflowAction): boolean {
+    return (
+        action.purpose === "judgment" ||
+        action.purpose === "independent-review" ||
+        action.capability === "refutation" ||
+        (action.capability === "verification" && action.mode === "lean-assurance-bundle")
+    )
 }
 
 /**
@@ -492,6 +537,10 @@ export async function cancelRun(
     }
     state.pendingFrontier = undefined
     state.frontierResume = undefined
+    for (const task of state.repairTasks ?? []) {
+        if (task.status === "queued") task.status = "cancelled"
+    }
+    state.pendingRepair = undefined
     flushPendingQuestionOnCancel(state)
     setOutcome(state, "cancelled", "cancelled", reason)
     await writeRun(directory, change, state)
@@ -528,8 +577,30 @@ export async function finalizeRun(
         return state
     }
 
+    if (await refreshImplementationBinding(directory, state, config.review.maxDiffBytes)) {
+        await writeArtifactIndex(directory, change, state)
+        await writeRun(directory, change, state)
+        return state
+    }
+
     if (nextAction(state)) {
         throw new Error("SpecOps completion gates are not satisfied")
+    }
+
+    const unresolvedRepairs = (state.repairTasks ?? []).filter(
+        task => task.status !== "verified" && task.status !== "superseded",
+    )
+    if (unresolvedRepairs.length > 0) {
+        setOutcome(
+            state,
+            "failed",
+            "validation-failed",
+            `Repair tasks are not verified: ${unresolvedRepairs
+                .map(task => `${task.id} (${task.status})`)
+                .join(", ")}`,
+        )
+        await writeRun(directory, change, state)
+        return state
     }
 
     const missing = state.requirements.requiredArtifacts.filter(
@@ -598,6 +669,8 @@ export async function finalizeRun(
         artifacts: state.artifacts,
         invalidations: state.invalidations,
         repairs: state.repairs,
+        reviewSubmissions: state.reviewSubmissions,
+        repairTasks: state.repairTasks,
         decisions: state.decisions,
         questionHistory: state.questionHistory,
         frontierUsage: state.frontierUsage,
@@ -640,11 +713,11 @@ async function missingEvidenceGates(
     change: string,
     state: RunState,
 ): Promise<string[]> {
-    const registry = await readMachine<{ version: 1; commands: CommandEvidence[] }>(
+    const registry = await readMachine<{ version: number; commands: CommandEvidence[] }>(
         directory,
         change,
         "specops-evidence.json",
-        { version: 1, commands: [] },
+        { version: 2, commands: [] },
     )
     const missingCommands = state.requirements.requiredValidations
         .filter(requirement => requirement.kind === "command")
@@ -655,7 +728,9 @@ async function missingEvidenceGates(
                         evidence.validationId === requirement.id &&
                         evidence.executable === requirement.executable &&
                         JSON.stringify(evidence.args) === JSON.stringify(requirement.args) &&
-                        evidence.exitCode === 0,
+                        evidence.exitCode === 0 &&
+                        evidence.implementationDiffHash === state.implementationDiffHash &&
+                        evidence.policyHash === state.requirements.policyHash,
                 ),
         )
         .map(requirement => requirement.id)
@@ -711,7 +786,7 @@ async function persistActionResult(
                     output,
                     action.purpose,
                 )
-                state.pendingRepair = undefined
+                completePendingRepair(state)
             } else {
                 await savePlanningBundle(directory, change, state, action, output)
             }
@@ -729,7 +804,7 @@ async function persistActionResult(
                 output,
                 action.purpose,
             )
-            state.pendingRepair = undefined
+            completePendingRepair(state)
             return
         case "implementation":
         case "repair":
@@ -752,7 +827,7 @@ async function persistActionResult(
                 action.purpose,
             )
             applyActualDiffFloor(state, await collectChangedPaths(directory), config)
-            state.pendingRepair = undefined
+            completePendingRepair(state, state.implementationDiffHash)
             return
         case "verification":
             if (action.mode === "lean-assurance-bundle") {
@@ -777,19 +852,36 @@ async function persistActionResult(
                 artifact === "correctness-judgment"
                     ? "judgment-correctness.json"
                     : "judgment-compliance.json"
+            const dispatch = state.dispatches.find(item => item.id === action.id)
+            if (!dispatch) throw new Error("judgment dispatch provenance is missing")
+            if (judgment.verdict === "FAIL" && judgment.findings.length === 0) {
+                const legacyMode: RepairMode =
+                    artifact === "correctness-judgment" ? "implementation-defect" : "spec-mismatch"
+                await writeArtifact(directory, change, file, output)
+                recordArtifact(state, artifact, action.agent, output, action.purpose)
+                if (!queueReviewFrontier(state, dispatch, artifact, legacyMode, judgment.summary)) {
+                    scheduleRepairOrOutcome(state, legacyMode, judgment.summary)
+                }
+                return
+            }
+            if (
+                judgment.verdict === "FAIL" &&
+                !judgment.findings.some(finding =>
+                    config.review.blockingSeverities.includes(finding.severity),
+                )
+            ) {
+                throw new Error("failed judgment requires a configured blocking finding")
+            }
+            await admitReviewSubmission(
+                directory,
+                change,
+                state,
+                dispatch,
+                judgment.findings,
+                config,
+            )
             await writeArtifact(directory, change, file, output)
             recordArtifact(state, artifact, action.agent, output, action.purpose)
-            if (judgment.verdict === "FAIL") {
-                const mode =
-                    artifact === "correctness-judgment" ? "implementation-defect" : "spec-mismatch"
-                const dispatch = state.dispatches.find(item => item.id === action.id)
-                if (
-                    !dispatch ||
-                    !queueReviewFrontier(state, dispatch, artifact, mode, judgment.summary)
-                ) {
-                    scheduleRepairOrOutcome(state, mode, judgment.summary)
-                }
-            }
             return
         }
         case "refutation":
@@ -798,12 +890,10 @@ async function persistActionResult(
         case "frontier":
             {
                 const response = parseFrontierResponse(output)
-                const registry = await readMachine<{ version: 1; commands: CommandEvidence[] }>(
-                    directory,
-                    change,
-                    "specops-evidence.json",
-                    { version: 1, commands: [] },
-                )
+                const registry = await readMachine<{
+                    version: number
+                    commands: CommandEvidence[]
+                }>(directory, change, "specops-evidence.json", { version: 2, commands: [] })
                 if (
                     !(await verifyFrontierEvidence(directory, response.evidence, registry.commands))
                 ) {
@@ -813,8 +903,19 @@ async function persistActionResult(
             }
             return
         default:
-            // Consultation and independent-review prose is captured in dispatch
-            // provenance. Only the refuter is allowed to turn it into a repair.
+            if (action.purpose === "independent-review") {
+                const dispatch = state.dispatches.find(item => item.id === action.id)
+                if (!dispatch) throw new Error("review dispatch provenance is missing")
+                await admitReviewSubmission(
+                    directory,
+                    change,
+                    state,
+                    dispatch,
+                    parseReviewSubmission(output),
+                    config,
+                )
+            }
+            // Consultation prose remains captured in dispatch provenance only.
             return
     }
 }
@@ -849,7 +950,25 @@ async function saveLeanAssuranceBundle(
     )
     const ledgerOutput = requireSerializedObject(bundle.reviewLedger, "Lean assurance reviewLedger")
     const judgment = parseJudgment(judgmentOutput)
-    const ledger = parseReviewLedger(ledgerOutput)
+    const leanFindings = parseLeanReviewLedger(ledgerOutput)
+    const dispatch = state.dispatches.find(item => item.id === action.id)
+    if (!dispatch) throw new Error("Lean assurance dispatch provenance is missing")
+    const submission = createReviewSubmission(state, dispatch, [
+        ...judgment.findings,
+        ...leanFindings,
+    ])
+    const hasBlockingFinding = submission.findings.some(finding =>
+        config.review.blockingSeverities.includes(finding.severity),
+    )
+    if (judgment.verdict === "FAIL" && submission.findings.length > 0 && !hasBlockingFinding) {
+        throw new Error("failed Lean judgment requires a configured blocking finding")
+    }
+    await verifySubmissionEvidence(directory, change, state, submission.findings, config)
+    state.reviewSubmissions ??= []
+    state.reviewSubmissions.push(submission)
+    const ledger = leanLedgerFromSubmission(submission)
+    const normalizedLedgerOutput = JSON.stringify(ledger)
+    reconcileRepairTasks(state, ledger, config)
 
     await persistArtifact(
         directory,
@@ -868,42 +987,235 @@ async function saveLeanAssuranceBundle(
         state,
         "review-ledger",
         action.agent,
-        ledgerOutput,
+        normalizedLedgerOutput,
         action.purpose,
     )
-
-    const dispatch = state.dispatches.find(item => item.id === action.id)
-    if (judgment.verdict === "FAIL") {
-        if (
-            !dispatch ||
-            !queueReviewFrontier(
-                state,
-                dispatch,
-                "correctness-judgment",
-                "implementation-defect",
-                judgment.summary,
-            )
-        ) {
-            scheduleRepairOrOutcome(state, "implementation-defect", judgment.summary)
-        }
-        return
-    }
 
     const finding = ledger.findings.find(item =>
         config.review.blockingSeverities.includes(item.severity),
     )
-    if (!finding) return
+    if (!finding) {
+        if (judgment.verdict === "FAIL") {
+            const mode: RepairMode = "implementation-defect"
+            if (
+                !queueReviewFrontier(
+                    state,
+                    dispatch,
+                    "correctness-judgment",
+                    mode,
+                    judgment.summary,
+                )
+            ) {
+                scheduleRepairOrOutcome(state, mode, judgment.summary)
+            }
+        }
+        return
+    }
     const mode = finding.mode ?? "review-finding"
     if (
         !dispatch ||
         !queueReviewFrontier(state, dispatch, "review-ledger", mode, finding.summary)
     ) {
-        if (finding.mode) {
-            scheduleRepairOrOutcome(state, finding.mode, finding.summary)
-        } else {
-            setOutcome(state, "failed", "review-failed", finding.summary)
+        scheduleLedgerRepairOrOutcome(state, ledger, normalizedLedgerOutput, config)
+    }
+}
+
+/**
+ * Verify and retain one normalized assurance submission.
+ *
+ * Blocking findings require repository-grounded evidence and repairable
+ * findings require acceptance criteria. The aggregate current submission
+ * payload is bounded before it can become refuter input.
+ */
+async function admitReviewSubmission(
+    directory: string,
+    change: string,
+    state: RunState,
+    dispatch: DispatchRecord,
+    findings: AssuranceFinding[],
+    config: Pick<SpecOpsConfig, "review">,
+): Promise<void> {
+    const submission = createReviewSubmission(state, dispatch, findings)
+    await verifySubmissionEvidence(directory, change, state, submission.findings, config)
+    const projected = [...currentReviewSubmissions(state), submission]
+    if (Buffer.byteLength(JSON.stringify(projected)) > config.review.maxContextBytes) {
+        throw new Error("current review submissions exceed review.maxContextBytes")
+    }
+    state.reviewSubmissions ??= []
+    state.reviewSubmissions.push(submission)
+}
+
+/** Verify evidence and acceptance criteria for controller-admitted findings. */
+async function verifySubmissionEvidence(
+    directory: string,
+    change: string,
+    state: RunState,
+    findings: AssuranceFinding[],
+    config: Pick<SpecOpsConfig, "review">,
+): Promise<void> {
+    const registry = await readMachine<{ version: number; commands: CommandEvidence[] }>(
+        directory,
+        change,
+        "specops-evidence.json",
+        { version: 2, commands: [] },
+    )
+    const changedPaths = findings.some(finding =>
+        finding.evidence.some(reference => reference.kind === "changed-path"),
+    )
+        ? new Set(await collectChangedPaths(directory))
+        : new Set<string>()
+    for (const finding of findings) {
+        const blocking = config.review.blockingSeverities.includes(finding.severity)
+        if (blocking && finding.evidence.length === 0) {
+            throw new Error("blocking assurance finding requires evidence")
+        }
+        if (blocking && finding.mode && finding.acceptanceCriteria.length === 0) {
+            throw new Error("repairable blocking finding requires acceptance criteria")
+        }
+        if (
+            blocking &&
+            !finding.evidence.some(reference =>
+                [
+                    "changed-path",
+                    "repository-path",
+                    "symbol",
+                    "command",
+                    "test-failure",
+                    "contract",
+                ].includes(reference.kind),
+            )
+        ) {
+            throw new Error("blocking assurance finding requires verifiable evidence")
+        }
+        if (
+            finding.evidence.some(
+                reference => reference.kind === "changed-path" && !changedPaths.has(reference.path),
+            )
+        ) {
+            throw new Error("assurance finding changed-path evidence is not in the current diff")
+        }
+        if (
+            !(await verifyFrontierEvidence(directory, finding.evidence, registry.commands)) ||
+            finding.evidence.some(reference => {
+                if (reference.kind !== "command" && reference.kind !== "test-failure") return false
+                const command = registry.commands.find(item => item.id === reference.commandId)
+                return (
+                    !command ||
+                    command.implementationDiffHash !== state.implementationDiffHash ||
+                    command.policyHash !== state.requirements.policyHash
+                )
+            })
+        ) {
+            throw new Error("assurance finding evidence could not be verified for current inputs")
         }
     }
+}
+
+/**
+ * Reject writer completion when Git history or controller-owned artifacts changed.
+ *
+ * This guard is an integrity check, not an automatic recovery mechanism. It
+ * intentionally leaves the unexpected worktree state available for diagnosis.
+ */
+async function assertWriterGuards(
+    directory: string,
+    change: string,
+    state: RunState,
+    dispatch: DispatchRecord,
+): Promise<void> {
+    if (!dispatch.writerGuard) return
+    if (dispatch.writerGuard.baseline !== state.baseline) {
+        throw new Error("Writer guard found modified run baseline")
+    }
+    if (/^[0-9a-f]{40}$/i.test(dispatch.writerGuard.baseline)) {
+        const head = await baseCommit(directory)
+        if (head !== dispatch.writerGuard.baseline) {
+            throw new Error("Writer guard rejected a changed Git HEAD")
+        }
+    }
+
+    const currentArtifacts = await protectedControllerTree(directory, change)
+    const expectedFiles = Object.keys(dispatch.writerGuard.artifacts).sort()
+    const currentFiles = Object.keys(currentArtifacts).sort()
+    if (JSON.stringify(currentFiles) !== JSON.stringify(expectedFiles)) {
+        throw new Error("Writer guard found a changed controller artifact tree")
+    }
+    for (const [file, expectedHash] of Object.entries(dispatch.writerGuard.artifacts)) {
+        if (currentArtifacts[file] !== expectedHash) {
+            throw new Error(`Writer guard found modified controller artifact: ${file}`)
+        }
+    }
+}
+
+/** Capture controller-owned artifact hashes when a writer dispatch is issued. */
+async function captureWriterGuard(
+    directory: string,
+    change: string,
+    state: RunState,
+): Promise<NonNullable<DispatchRecord["writerGuard"]>> {
+    const artifacts = await protectedControllerTree(directory, change)
+    for (const [artifact, file] of Object.entries(ARTIFACT_FILES) as Array<[ArtifactId, string]>) {
+        if (artifact === "implementation" || state.artifacts[artifact]?.validity !== "valid") {
+            continue
+        }
+        if (!(file in artifacts) && /^[0-9a-f]{40}$/i.test(state.baseline)) {
+            throw new Error(`Writer guard cannot issue with missing controller artifact: ${file}`)
+        }
+    }
+    if (state.artifacts.specs?.validity === "valid") {
+        const specifications = Object.keys(artifacts).filter(
+            relative => relative.startsWith("specs/") && relative.endsWith("/spec.md"),
+        )
+        if (specifications.length === 0 && /^[0-9a-f]{40}$/i.test(state.baseline)) {
+            throw new Error("Writer guard cannot issue with missing controller specifications")
+        }
+    }
+    return { baseline: state.baseline, artifacts }
+}
+
+/**
+ * Hash the complete immutable portion of one controller-owned change tree.
+ *
+ * Run, progress, and evidence records are excluded because controller tools may
+ * legitimately update them while a writer dispatch is active. Every other file
+ * and directory is protected, including unknown additions and symbolic links.
+ */
+async function protectedControllerTree(
+    directory: string,
+    change: string,
+): Promise<Record<string, string>> {
+    const root = changeRoot(directory, change)
+    const excluded = new Set(["specops-run.json", "specops-progress.json", "specops-evidence.json"])
+    const entries: Record<string, string> = {}
+
+    async function visit(current: string): Promise<void> {
+        for (const entry of (await readdir(current, { withFileTypes: true })).sort((left, right) =>
+            left.name.localeCompare(right.name),
+        )) {
+            const absolute = path.join(current, entry.name)
+            const relative = path.relative(root, absolute).split(path.sep).join("/")
+            if (excluded.has(relative)) continue
+            if (entry.isSymbolicLink()) {
+                throw new Error(
+                    `Writer guard rejected symbolic link in controller tree: ${relative}`,
+                )
+            }
+            if (entry.isDirectory()) {
+                entries[`${relative}/`] = hash("directory")
+                await visit(absolute)
+                continue
+            }
+            if (!entry.isFile()) {
+                throw new Error(
+                    `Writer guard rejected special file in controller tree: ${relative}`,
+                )
+            }
+            entries[relative] = hash((await readFile(absolute, "utf8")).trim())
+        }
+    }
+
+    await visit(root)
+    return entries
 }
 
 /**
@@ -978,6 +1290,30 @@ async function savePlanningBundle(
             action.purpose,
         )
     }
+    completePendingRepair(state)
+}
+
+/** Mark the active repair task from controller-observed output and clear it. */
+function completePendingRepair(state: RunState, afterDiffHash?: string): void {
+    const pending = state.pendingRepair
+    if (!pending) return
+    const task = state.repairTasks?.find(item => item.id === pending.taskId)
+    if (task) {
+        task.afterDiffHash = afterDiffHash
+        const unchanged =
+            task.target === "implementation" &&
+            task.beforeDiffHash !== undefined &&
+            task.beforeDiffHash === afterDiffHash
+        task.status = unchanged ? "failed" : "completed"
+        if (unchanged) {
+            setOutcome(
+                state,
+                "failed",
+                "validation-failed",
+                `Repair task ${task.id} produced no implementation diff change.`,
+            )
+        }
+    }
     state.pendingRepair = undefined
 }
 
@@ -1004,14 +1340,21 @@ async function saveReviewLedger(
     output: string,
     config: Pick<SpecOpsConfig, "review" | "frontier">,
 ): Promise<void> {
-    const ledger = parseReviewLedger(output)
+    const submissions = currentReviewSubmissions(state)
+    const sourceFindingIds = submissions.flatMap(submission =>
+        submission.findings.map(finding => finding.id),
+    )
+    const ledger = parseReviewLedger(output, sourceFindingIds)
+    await verifySubmissionEvidence(directory, change, state, ledger.findings, config)
+    const normalizedOutput = JSON.stringify(ledger)
+    reconcileRepairTasks(state, ledger, config)
     await persistArtifact(
         directory,
         change,
         state,
         "review-ledger",
         action.agent,
-        output,
+        normalizedOutput,
         action.purpose,
     )
     const finding = ledger.findings.find(item =>
@@ -1041,7 +1384,7 @@ async function saveReviewLedger(
         !dispatch ||
         !queueReviewFrontier(state, dispatch, "review-ledger", finding.mode, finding.summary)
     ) {
-        scheduleRepairOrOutcome(state, finding.mode, finding.summary)
+        scheduleLedgerRepairOrOutcome(state, ledger, normalizedOutput, config)
     }
 }
 
@@ -1151,30 +1494,220 @@ function scheduleRepairOrOutcome(
     summary: string,
     instruction?: string,
 ): void {
+    const syntheticLedger: ReviewLedger = {
+        findings: [
+            {
+                id: stableId("legacy-finding", mode, summary),
+                sourceFindingIds: [],
+                severity: "HIGH",
+                mode,
+                summary,
+                evidence: [],
+                acceptanceCriteria: instruction ? [instruction] : [],
+            },
+        ],
+        dismissed: [],
+    }
+    scheduleLedgerRepairOrOutcome(
+        state,
+        syntheticLedger,
+        JSON.stringify(syntheticLedger),
+        {
+            review: {
+                blockingSeverities: ["BLOCKER", "HIGH"],
+            },
+        },
+        instruction,
+    )
+}
+
+/**
+ * Select one compatible repair target from a sustained ledger and queue it.
+ *
+ * Upstream specification work precedes design, which precedes code/test
+ * mutation. A new ledger is required before a later target group may run.
+ */
+function scheduleLedgerRepairOrOutcome(
+    state: RunState,
+    ledger: ReviewLedger,
+    serializedLedger: string,
+    config: {
+        review: Pick<SpecOpsConfig["review"], "blockingSeverities">
+    },
+    instruction?: string,
+): void {
+    const blocking = ledger.findings.filter(finding =>
+        config.review.blockingSeverities.includes(finding.severity),
+    )
+    if (blocking.length === 0) return
+    const unrepairable = blocking.find(finding => !finding.mode)
+    if (unrepairable) {
+        setOutcome(state, "failed", "review-failed", unrepairable.summary)
+        return
+    }
+
     const used = state.budgetUsage.maxRepairCycles ?? 0
     if (used >= state.requirements.budgets.maxRepairCycles) {
         setOutcome(
             state,
             "blocked",
             "policy-blocked",
-            `Repair budget exhausted with unresolved finding: ${summary}`,
+            `Repair budget exhausted with unresolved finding: ${blocking[0]!.summary}`,
             "budget-exhausted",
         )
         return
     }
 
-    state.pendingRepair = { mode, summary, instruction }
-    state.repairs.push({ mode, summary, at: new Date().toISOString() })
+    const priority = ["planning", "design", "implementation"] as const
+    const target = priority.find(candidate =>
+        blocking.some(finding => repairTargetForMode(finding.mode!) === candidate),
+    )!
+    const severityRank = { BLOCKER: 0, HIGH: 1, MEDIUM: 2, LOW: 3 } as const
+    const selected = blocking
+        .filter(finding => repairTargetForMode(finding.mode!) === target)
+        .sort(
+            (left, right) =>
+                severityRank[left.severity] - severityRank[right.severity] ||
+                left.id.localeCompare(right.id),
+        )
+    const modes = [...new Set(selected.map(finding => finding.mode!))]
+    const summary = selected.map(finding => finding.summary).join("\n")
+    const fingerprint = repairGroupFingerprint(target, selected)
+    const priorAttempts = (state.repairTasks ?? []).filter(
+        task => task.fingerprint === fingerprint,
+    ).length
+    if (priorAttempts >= state.requirements.budgets.maxRepeatedFailureFingerprints) {
+        setOutcome(
+            state,
+            "blocked",
+            "policy-blocked",
+            `Repeated repair finding exceeded its budget: ${summary}`,
+            "budget-exhausted",
+        )
+        return
+    }
+    const now = new Date().toISOString()
+    const task: RepairTask = {
+        id: stableId("repair-task-instance", fingerprint, priorAttempts + 1, now),
+        target,
+        modes,
+        findingIds: selected.map(finding => finding.id),
+        findingFingerprints: selected.map(findingFingerprint),
+        summary,
+        evidence: selected.flatMap(finding => finding.evidence),
+        acceptanceCriteria: [...new Set(selected.flatMap(finding => finding.acceptanceCriteria))],
+        sourceLedgerHash: hash(serializedLedger),
+        sourceDiffHash: state.implementationDiffHash,
+        fingerprint,
+        attempt: priorAttempts + 1,
+        status: "queued",
+        beforeDiffHash: state.implementationDiffHash,
+        at: now,
+    }
+    state.repairTasks ??= []
+    state.repairTasks.push(task)
+    state.pendingRepair = {
+        mode: modes[0]!,
+        summary,
+        instruction,
+        taskId: task.id,
+        findingIds: task.findingIds,
+        evidence: task.evidence,
+        acceptanceCriteria: task.acceptanceCriteria,
+        sourceLedgerHash: task.sourceLedgerHash,
+    }
+    state.repairs.push({ mode: modes[0]!, summary, at: now })
     state.budgetUsage.maxRepairCycles = used + 1
     const root: ArtifactId =
-        mode === "spec-mismatch"
+        target === "planning"
             ? "proposal"
-            : mode === "design-revision"
+            : target === "design"
               ? state.scopeTier === "full"
                   ? "design"
                   : "proposal"
               : "implementation"
     invalidate(state, [root], `blocking review finding: ${summary}`)
+}
+
+/** Mark completed tasks verified only after fresh assurance no longer sustains their group. */
+function reconcileRepairTasks(
+    state: RunState,
+    ledger: ReviewLedger,
+    config: { review: Pick<SpecOpsConfig["review"], "blockingSeverities"> },
+): void {
+    const currentFingerprints = new Set<string>()
+    const currentFindingFingerprints = new Set<string>()
+    for (const target of ["planning", "design", "implementation"] as const) {
+        const findings = ledger.findings
+            .filter(
+                finding =>
+                    config.review.blockingSeverities.includes(finding.severity) &&
+                    finding.mode &&
+                    repairTargetForMode(finding.mode) === target,
+            )
+            .sort((left, right) => left.id.localeCompare(right.id))
+        if (findings.length) {
+            currentFingerprints.add(repairGroupFingerprint(target, findings))
+            for (const finding of findings) {
+                currentFindingFingerprints.add(findingFingerprint(finding))
+            }
+        }
+    }
+    for (const task of state.repairTasks ?? []) {
+        const remainsSustained =
+            task.findingFingerprints?.some(fingerprint =>
+                currentFindingFingerprints.has(fingerprint),
+            ) ?? currentFingerprints.has(task.fingerprint)
+        if (task.status === "completed" && !remainsSustained) {
+            task.status = "verified"
+        }
+    }
+}
+
+/**
+ * Rebind a valid implementation artifact to the current repository diff.
+ *
+ * Any change observed outside implementation/repair completion invalidates the
+ * implementation and all downstream assurance rather than silently reviewing
+ * or finalizing a different worktree.
+ */
+async function refreshImplementationBinding(
+    directory: string,
+    state: RunState,
+    maxDiffBytes: number,
+): Promise<boolean> {
+    if (state.status !== "running" || state.artifacts.implementation?.validity !== "valid") {
+        return false
+    }
+    // Non-SHA baselines exist only in legacy/synthetic compatibility states,
+    // where repository diff collection is not guaranteed to be available.
+    if (!/^[0-9a-f]{40}$/i.test(state.baseline)) return false
+    const current = hash(await collectDiff(directory, maxDiffBytes))
+    const previous = state.implementationDiffHash
+    state.implementationDiffHash = current
+    if (previous === undefined || previous === current) return false
+    invalidate(state, ["implementation"], "implementation diff changed outside writer completion")
+    return true
+}
+
+/** Build the semantic repeated-repair fingerprint for one target group. */
+function repairGroupFingerprint(
+    target: RepairTask["target"],
+    findings: ReviewLedger["findings"],
+): string {
+    return stableId("repair-task", target, findings.map(findingFingerprint).sort())
+}
+
+/** Build a semantic finding identity that survives fresh dispatch/source ids. */
+function findingFingerprint(finding: ReviewLedger["findings"][number]): string {
+    return stableId(
+        "repair-finding",
+        finding.mode ?? "",
+        finding.summary.trim().toLowerCase(),
+        [...finding.evidence].sort((left, right) =>
+            JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        ),
+    )
 }
 
 /**
@@ -1410,7 +1943,7 @@ function recordArtifact(
             diff: state.implementationDiffHash ?? "",
             ...answerHashes(state),
         },
-        outputHash: hash(content),
+        outputHash: hash(content.trim()),
         scopeTier: state.scopeTier,
         capabilities: state.requirements.requiredCapabilities,
         validity: "valid",
@@ -1579,77 +2112,10 @@ function parseSpecs(value: unknown): Record<string, string> {
         if (structureError) {
             throw new Error(`planning bundle ${structureError}`)
         }
-        specs[name] = content
+        specs[name] = content.trim()
     }
     if (!Object.keys(specs).length) {
         throw new Error("planning bundle must contain at least one spec")
     }
     return specs
-}
-
-/**
- * Parse and validate a refuter review ledger from raw output.
- *
- * Each finding must carry an uppercase severity from {@link SEVERITIES}, an
- * optional `mode` from {@link REPAIR_MODES}, and a string summary. A blocking
- * finding without a `mode` is intentionally permitted here: the engine falls
- * back to the terminal `review-failed` outcome for that case, which is
- * exercised by existing tests.
- *
- * @param output - The raw review ledger JSON string.
- * @returns The parsed and validated {@link ReviewLedger}.
- * @throws When the output is not valid JSON, lacks findings, or contains a
- *   finding with an invalid severity, mode, or summary.
- */
-function parseReviewLedger(output: string): ReviewLedger {
-    const value = parseObject(output, "review ledger")
-    if (!Array.isArray(value.findings)) {
-        throw new Error("review ledger must include a findings array")
-    }
-
-    for (const finding of value.findings) {
-        if (!finding || typeof finding !== "object") {
-            throw new Error("review ledger finding must be an object")
-        }
-        const entry = finding as ReviewLedger["findings"][number]
-        if (!SEVERITIES.has(String(entry.severity))) {
-            throw new Error(
-                `review ledger finding severity must be one of BLOCKER, HIGH, MEDIUM, LOW (uppercase), got ${JSON.stringify(entry.severity)}`,
-            )
-        }
-        if (typeof entry.summary !== "string" || !entry.summary.trim()) {
-            throw new Error("review ledger finding summary must be a non-empty string")
-        }
-        if (entry.mode !== undefined && !REPAIR_MODES.has(String(entry.mode))) {
-            throw new Error(
-                `review ledger finding mode must be one of implementation-defect, spec-mismatch, test-deficiency, review-finding, design-revision, got ${JSON.stringify(entry.mode)}`,
-            )
-        }
-    }
-
-    return value as ReviewLedger
-}
-
-/**
- * Parse a judgment before it can satisfy an independent-review artifact gate.
- *
- * @param output - The raw judgment JSON string.
- * @returns The parsed and validated {@link Judgment}.
- * @throws When the output is not valid JSON or lacks a valid verdict, summary,
- *   or findings field.
- */
-function parseJudgment(output: string): Judgment {
-    const value = parseObject(output, "judgment")
-    if (!JUDGMENT_VERDICTS.has(String(value.verdict))) {
-        throw new Error(
-            `judgment verdict must be "PASS" or "FAIL", got ${JSON.stringify(value.verdict)}`,
-        )
-    }
-    if (typeof value.summary !== "string" || !value.summary.trim()) {
-        throw new Error("judgment summary must be a non-empty string")
-    }
-    if (!Array.isArray(value.findings)) {
-        throw new Error("judgment findings must be an array")
-    }
-    return value as Judgment
 }

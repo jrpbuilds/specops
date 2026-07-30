@@ -322,6 +322,78 @@ export type RepairMode =
     | "review-finding"
     | "design-revision"
 
+/** Severity assigned to an assurance finding. */
+type ReviewSeverity = "BLOCKER" | "HIGH" | "MEDIUM" | "LOW"
+
+/**
+ * Evidence-backed finding emitted by a judgment, reviewer, or Lean assurance bundle.
+ *
+ * Blocking findings are admitted to repair only after the controller verifies
+ * their evidence. `acceptanceCriteria` describes the observable condition that
+ * later assurance must establish.
+ */
+export type AssuranceFinding = {
+    severity: ReviewSeverity
+    mode?: RepairMode
+    summary: string
+    evidence: EvidenceRef[]
+    acceptanceCriteria: string[]
+}
+
+/** Controller-normalized review output bound to one exact assurance dispatch. */
+export type ReviewSubmission = {
+    id: string
+    dispatchId: string
+    capability: CapabilityId
+    inputHash: string
+    implementationDiffHash?: string
+    policyHash: string
+    findings: Array<AssuranceFinding & { id: string }>
+    at: string
+}
+
+/** Sustained finding retained in the controller-owned OpenSpec review ledger. */
+export type SustainedReviewFinding = AssuranceFinding & {
+    id: string
+    sourceFindingIds: string[]
+}
+
+/** Refuted or duplicate source findings retained for audit. */
+export type DismissedReviewFinding = {
+    sourceFindingIds: string[]
+    reason: string
+}
+
+/** Final refuted review ledger persisted as an OpenSpec assurance artifact. */
+export type ReviewLedger = {
+    findings: SustainedReviewFinding[]
+    dismissed: DismissedReviewFinding[]
+}
+
+/** Repository or OpenSpec target selected deterministically for a repair task. */
+type RepairTarget = "planning" | "design" | "implementation"
+
+/** Immutable repair assignment plus its controller-observed outcome. */
+export type RepairTask = {
+    id: string
+    target: RepairTarget
+    modes: RepairMode[]
+    findingIds: string[]
+    /** Semantic identities used to reconcile the task against fresh reviews. */
+    findingFingerprints?: string[]
+    summary: string
+    evidence: EvidenceRef[]
+    acceptanceCriteria: string[]
+    sourceLedgerHash: string
+    sourceDiffHash?: string
+    fingerprint: string
+    attempt: number
+    status: "queued" | "completed" | "verified" | "failed" | "superseded" | "cancelled"
+    beforeDiffHash?: string
+    afterDiffHash?: string
+    at: string
+}
+
 /** Cost/quality tier selected for an adaptive frontier escalation. */
 export type FrontierTier = "low" | "high"
 
@@ -438,6 +510,12 @@ export type DispatchRecord = {
     independent: boolean
     inputHash: string
     outputHash?: string
+    /** Bounded validation failure retained for deterministic retry accounting. */
+    failureReason?: string
+    /** One-based attempt number for this capability/input binding. */
+    attempt?: number
+    /** Controller-issued integrity guard for repository-mutating work. */
+    writerGuard?: { baseline: string; artifacts: Record<string, string> }
     status: "issued" | "completed" | "failed"
     at: string
     /** Resume metadata when this dispatch re-issues a paused phase after an answer. */
@@ -475,6 +553,9 @@ export type CommandEvidence = {
     stderrExcerpt: string
     validationId: string
     dispatchId: string
+    /** Implementation diff and policy against which the command executed. */
+    implementationDiffHash?: string
+    policyHash?: string
 }
 
 /** Constrained impact category a worker question may request. */
@@ -609,8 +690,21 @@ export type RunState = {
     artifacts: Partial<Record<ArtifactId, ArtifactProvenance>>
     invalidations: Array<{ artifacts: ArtifactId[]; reason: string; at: string }>
     repairs: Array<{ mode: RepairMode; at: string; summary: string }>
+    /** Immutable normalized assurance responses used as refuter input. */
+    reviewSubmissions?: ReviewSubmission[]
+    /** Bounded repair assignments and their observed outcomes. */
+    repairTasks?: RepairTask[]
     /** A repair selected by the controller from a validated review ledger. */
-    pendingRepair?: { mode: RepairMode; summary: string; instruction?: string }
+    pendingRepair?: {
+        mode: RepairMode
+        summary: string
+        instruction?: string
+        taskId?: string
+        findingIds?: string[]
+        evidence?: EvidenceRef[]
+        acceptanceCriteria?: string[]
+        sourceLedgerHash?: string
+    }
     /** Frontier policy snapshotted when the run starts. */
     frontierPolicy?: FrontierPolicy
     /** Frontier call accounting. */

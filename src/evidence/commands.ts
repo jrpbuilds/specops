@@ -51,6 +51,8 @@ export async function executeValidation(
         cwd?: string
         validationId: string
         dispatchId: string
+        implementationDiffHash?: string
+        policyHash?: string
     },
     signal?: AbortSignal,
 ): Promise<CommandEvidence> {
@@ -104,5 +106,7 @@ export async function executeValidation(
         stderrExcerpt: result.stderr + stderrMarker,
         validationId: input.validationId,
         dispatchId: input.dispatchId,
+        implementationDiffHash: input.implementationDiffHash,
+        policyHash: input.policyHash,
     }
 }
