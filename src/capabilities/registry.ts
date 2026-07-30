@@ -106,7 +106,11 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
         "opencode/nemotron-3-ultra-free",
         48,
     ),
-    [AGENT_IDS.core.implementer]: writer(AGENT_IDS.core.implementer, 96),
+    [AGENT_IDS.core.implementer]: writer(
+        AGENT_IDS.core.implementer,
+        "opencode/north-mini-code-free",
+        96,
+    ),
     [AGENT_IDS.core.verifier]: verifier(AGENT_IDS.core.verifier, "opencode/mimo-v2.5-free", 64),
     [AGENT_IDS.review.risk]: reviewer(AGENT_IDS.review.risk, "opencode/mimo-v2.5-free", 32),
     [AGENT_IDS.specialist.security]: readOnly(
@@ -179,7 +183,7 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
         "openai/gpt-5.6-sol",
         12,
     ),
-    [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, 64),
+    [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, "opencode/north-mini-code-free", 64),
 }
 
 /** Map every {@link RiskFacet} to its assigned specialist agent. */
@@ -335,11 +339,11 @@ function readOnly(id: AgentId, model: string, steps: number): AgentPolicy {
  * @returns A fully populated writer {@link AgentPolicy} with the default
  * code-writing model and `task` tool disabled.
  */
-function writer(id: AgentId, steps: number): AgentPolicy {
+function writer(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
         id,
         role: AGENT_ROLES[id],
-        model: "opencode/north-mini-code-free",
+        model,
         steps,
         mode: "subagent",
         tools: { task: false },

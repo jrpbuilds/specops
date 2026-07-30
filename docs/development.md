@@ -180,3 +180,13 @@ evidence, independence, repair-budget, or completion gates.
 - The general risk reviewer detects cross-cutting facets but does not replace specialists.
 - Visible and non-interactive automatic adapters resolve the same command and scheduler.
 - New tests prove the packed behavior, not only source-level behavior.
+
+## Live review-fixer evaluation
+
+`SPECOPS_REPAIR_EVAL=1 npm run eval:review-fixer` runs three seeded temporary repositories through
+the installed `/specops-auto` workflow. It is intentionally excluded from `npm run check` because
+it requires configured model providers. The JSON result scores test and hidden-check success,
+baseline-commit preservation, completed outcome, and recorded repair tasks. Each fixture has a
+30-minute ceiling; override it with `SPECOPS_REPAIR_EVAL_TIMEOUT_MS`. To isolate one or more cases,
+set `SPECOPS_REPAIR_EVAL_FIXTURES` to comma-delimited fixture IDs such as
+`implementation-defect`.

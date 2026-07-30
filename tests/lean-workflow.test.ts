@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
+import { hash } from "../src/artifacts/lifecycle.js"
 import { DEFAULT_CONFIG } from "../src/config.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
 import { onboard } from "../src/openspec.js"
@@ -12,8 +13,12 @@ import { requirementsFor, scopeForActualDiff } from "../src/routing/policy.js"
 import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { ArtifactId, Assessment, DispatchRecord, RunState } from "../src/types.js"
 import { completeAction, finalizeRun, issueDirective, startRun } from "../src/workflow/engine.js"
-import { nextAction } from "../src/workflow/scheduler.js"
-import { JUDGMENT_CONTRACT, REVIEW_LEDGER_CONTRACT } from "../src/workflow/contracts.generated.js"
+import { dispatchHash, nextAction } from "../src/workflow/scheduler.js"
+import {
+    ASSURANCE_FINDINGS_CONTRACT,
+    JUDGMENT_CONTRACT,
+    REVIEW_LEDGER_CONTRACT,
+} from "../src/workflow/contracts.generated.js"
 import { parseWorkerOutput } from "../src/worker_output.js"
 
 const assessment: Assessment = {
@@ -103,7 +108,8 @@ describe("compact Lean workflow", () => {
             // review-ledger parsers, so the dispatch prompt must carry the
             // generated contracts for both nested JSON members.
             expect(verification?.prompt).toContain(JUDGMENT_CONTRACT)
-            expect(verification?.prompt).toContain(REVIEW_LEDGER_CONTRACT)
+            expect(verification?.prompt).toContain(ASSURANCE_FINDINGS_CONTRACT)
+            expect(verification?.prompt).not.toContain(REVIEW_LEDGER_CONTRACT)
             state.artifacts.verification = validArtifact(state, "verification")
             state.artifacts["correctness-judgment"] = validArtifact(state, "correctness-judgment")
             state.artifacts["review-ledger"] = validArtifact(state, "review-ledger")
@@ -242,21 +248,25 @@ describe("compact Lean workflow", () => {
             path.join(root, "judgment-compliance.json"),
             JSON.stringify({ verdict: "PASS", summary: "Compliant.", findings: [] }),
         )
-        await writeFile(path.join(root, "review-ledger.json"), JSON.stringify({ findings: [] }))
+        await writeFile(
+            path.join(root, "review-ledger.json"),
+            JSON.stringify({ findings: [], dismissed: [] }),
+        )
 
         for (const artifact of started.state.requirements.requiredArtifacts.filter(
             artifact => artifact !== "routing" && artifact !== "receipt",
         )) {
             started.state.artifacts[artifact] = validArtifact(started.state, artifact)
         }
+        started.state.implementationDiffHash = hash("(no implementation diff)")
+        const reviewAction = nextAction(started.state)
+        if (!reviewAction || reviewAction.capability !== "general-risk") {
+            throw new Error("expected general-risk review")
+        }
         started.state.dispatches.push({
-            id: "general-risk-review",
-            action: "general-risk",
-            agent: AGENT_IDS.review.risk,
-            capability: "general-risk",
-            purpose: "independent-review",
-            independent: true,
-            inputHash: "input",
+            ...reviewAction,
+            action: reviewAction.mode ?? reviewAction.capability,
+            inputHash: dispatchHash(reviewAction, started.state),
             outputHash: "output",
             status: "completed",
             at: "now",
@@ -329,7 +339,20 @@ describe("compact Lean workflow", () => {
             assuranceBundle({
                 verdict: "FAIL",
                 summary: "The README example is incorrect.",
-                findings: ["incorrect example"],
+                findings: [
+                    {
+                        severity: "HIGH",
+                        mode: "implementation-defect",
+                        summary: "The README example is incorrect.",
+                        evidence: [
+                            {
+                                kind: "repository-path",
+                                path: "openspec/changes/lean-failure/specops-run.json",
+                            },
+                        ],
+                        acceptanceCriteria: ["The README example matches the implementation."],
+                    },
+                ],
             }),
             DEFAULT_CONFIG,
         )
@@ -340,6 +363,53 @@ describe("compact Lean workflow", () => {
         })
         expect(completed.artifacts.implementation?.validity).toBe("stale")
         expect(completed.artifacts.verification?.validity).toBe("stale")
+    })
+
+    it("does not accept a legacy failed Lean judgment without findings as success", async () => {
+        const { directory, change } = await persistedLeanVerification("lean-legacy-failure")
+
+        const completed = await completeAction(
+            directory,
+            change,
+            "verification",
+            assuranceBundle({
+                verdict: "FAIL",
+                summary: "The implementation is still incorrect.",
+                findings: [],
+            }),
+            { ...DEFAULT_CONFIG, frontier: { ...DEFAULT_CONFIG.frontier, mode: "disabled" } },
+        )
+
+        expect(completed.pendingRepair).toMatchObject({
+            mode: "implementation-defect",
+            summary: "The implementation is still incorrect.",
+        })
+        expect(completed.artifacts.implementation?.validity).toBe("stale")
+    })
+
+    it("rejects a failed Lean judgment containing only non-blocking findings", async () => {
+        const { directory, change } = await persistedLeanVerification("lean-low-failure")
+
+        await expect(
+            completeAction(
+                directory,
+                change,
+                "verification",
+                assuranceBundle({
+                    verdict: "FAIL",
+                    summary: "The review failed.",
+                    findings: [
+                        {
+                            severity: "LOW",
+                            summary: "Minor wording.",
+                            evidence: [],
+                            acceptanceCriteria: [],
+                        },
+                    ],
+                }),
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("failed Lean judgment requires a configured blocking finding")
     })
 
     it("mechanically raises actual Lean diffs at Standard and Full thresholds", () => {
@@ -404,6 +474,207 @@ describe("compact Lean workflow", () => {
             capability: "planning",
             mode: "standard-bundle",
         })
+    })
+
+    it("blocks writer completion after a protected OpenSpec artifact changes", async () => {
+        const directory = await initializedRepository()
+        const change = "writer-guard"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        for (const artifact of ["routing", "exploration", "tasks"] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+            await writeFile(
+                path.join(changeRoot(directory, change), `${artifact}.md`),
+                `${artifact}\n`,
+            )
+        }
+        await writeRun(directory, change, state)
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        if (directive.type !== "dispatch") throw new Error("expected implementation dispatch")
+        expect(directive.action.capability).toBe("implementation")
+        await writeFile(path.join(changeRoot(directory, change), "tasks.md"), "tampered\n")
+
+        await expect(
+            completeAction(
+                directory,
+                change,
+                directive.action.id,
+                "Implementation complete.",
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("Writer guard found modified controller artifact")
+        const blocked = await readRun(directory, change)
+        expect(blocked.status).toBe("blocked")
+        expect(blocked.outcome?.category).toBe("policy-blocked")
+    })
+
+    it("blocks writer issuance when a valid controller artifact is missing", async () => {
+        const directory = await initializedRepository()
+        const change = "writer-guard-missing"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        for (const artifact of ["routing", "exploration", "tasks"] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+        }
+        await writeFile(path.join(changeRoot(directory, change), "routing.md"), "routing\n")
+        await writeFile(path.join(changeRoot(directory, change), "exploration.md"), "exploration\n")
+        await writeRun(directory, change, state)
+
+        await expect(issueDirective(directory, change, DEFAULT_CONFIG)).resolves.toMatchObject({
+            type: "block",
+            reason: "policy-rejected",
+            resumable: false,
+        })
+        const blocked = await readRun(directory, change)
+        expect(blocked.status).toBe("blocked")
+        expect(blocked.outcome?.message).toContain("missing controller artifact: tasks.md")
+    })
+
+    it("blocks writer completion after an unexpected OpenSpec artifact is added", async () => {
+        const directory = await initializedRepository()
+        const change = "writer-guard-addition"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        for (const artifact of ["routing", "exploration", "tasks"] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+            await writeFile(
+                path.join(changeRoot(directory, change), `${artifact}.md`),
+                `${artifact}\n`,
+            )
+        }
+        await writeRun(directory, change, state)
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        if (directive.type !== "dispatch") throw new Error("expected implementation dispatch")
+        await writeFile(path.join(changeRoot(directory, change), "unexpected.md"), "tampered\n")
+
+        await expect(
+            completeAction(
+                directory,
+                change,
+                directive.action.id,
+                "Implementation complete.",
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("Writer guard found a changed controller artifact tree")
+        expect((await readRun(directory, change)).status).toBe("blocked")
+    })
+
+    it("invalidates assurance when the implementation diff changes between phases", async () => {
+        const directory = await initializedRepository()
+        const change = "stale-implementation-binding"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        state.implementationDiffHash = hash("(no implementation diff)")
+        for (const artifact of [
+            "routing",
+            "exploration",
+            "tasks",
+            "implementation",
+        ] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+            if (artifact !== "implementation") {
+                await writeFile(
+                    path.join(changeRoot(directory, change), `${artifact}.md`),
+                    `${artifact}\n`,
+                )
+            }
+        }
+        await writeRun(directory, change, state)
+        await writeFile(path.join(directory, "README.md"), "# Externally changed\n")
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        expect(directive).toMatchObject({
+            type: "dispatch",
+            action: { capability: "implementation" },
+        })
+        const rebound = await readRun(directory, change)
+        expect(rebound.artifacts.implementation?.validity).toBe("stale")
+        expect(rebound.invalidations.at(-1)?.reason).toContain(
+            "implementation diff changed outside writer completion",
+        )
+    })
+
+    it("fails safely when an implementation repair makes no diff change", async () => {
+        const directory = await initializedRepository()
+        const change = "no-change-repair"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        const diffHash = hash("(no implementation diff)")
+        state.implementationDiffHash = diffHash
+        for (const artifact of [
+            "routing",
+            "exploration",
+            "tasks",
+            "implementation",
+        ] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+            if (artifact !== "implementation") {
+                await writeFile(
+                    path.join(changeRoot(directory, change), `${artifact}.md`),
+                    `${artifact}\n`,
+                )
+            }
+        }
+        state.repairTasks = [
+            {
+                id: "repair-task",
+                target: "implementation",
+                modes: ["implementation-defect"],
+                findingIds: ["finding"],
+                summary: "Fix the defect.",
+                evidence: [],
+                acceptanceCriteria: ["The defect is fixed."],
+                sourceLedgerHash: "ledger",
+                sourceDiffHash: diffHash,
+                fingerprint: "fingerprint",
+                attempt: 1,
+                status: "queued",
+                beforeDiffHash: diffHash,
+                at: "now",
+            },
+        ]
+        state.pendingRepair = {
+            mode: "implementation-defect",
+            summary: "Fix the defect.",
+            taskId: "repair-task",
+        }
+        await writeRun(directory, change, state)
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        if (directive.type !== "dispatch") throw new Error("expected repair dispatch")
+        const completed = await completeAction(
+            directory,
+            change,
+            directive.action.id,
+            "No changes were necessary.",
+            DEFAULT_CONFIG,
+        )
+
+        expect(completed.status).toBe("failed")
+        expect(completed.outcome?.category).toBe("validation-failed")
+        expect(completed.repairTasks?.[0]?.status).toBe("failed")
     })
 
     it("rebuilds complete Standard requirements when Lean discovers a risk facet", () => {

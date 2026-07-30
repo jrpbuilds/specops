@@ -10,9 +10,9 @@ import { parseAssessment } from "../src/routing/assessment.js"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { executeValidation } from "../src/evidence/commands.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
-import { changeRoot, writeRun } from "../src/state/store.js"
+import { changeRoot, writeMachine, writeRun } from "../src/state/store.js"
 import type { Assessment, RunState } from "../src/types.js"
-import { cancelRun, completeAction, finalizeRun } from "../src/workflow/engine.js"
+import { cancelRun, completeAction, finalizeRun, issueDirective } from "../src/workflow/engine.js"
 import { nextAction } from "../src/workflow/scheduler.js"
 
 const assessment = (overrides: Partial<Assessment> = {}): Assessment => ({
@@ -44,6 +44,15 @@ describe("final SpecOps policy", () => {
     it("routes a restorative local fix to Lean", () => {
         expect(requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements.scopeTier).toBe(
             "lean",
+        )
+    })
+
+    it("snapshots run budgets without mutating project defaults", () => {
+        const first = requirementsFor(assessment(), "auto", DEFAULT_CONFIG)
+        first.requirements.budgets.maxRepairCycles = 0
+        const second = requirementsFor(assessment(), "auto", DEFAULT_CONFIG)
+        expect(second.requirements.budgets.maxRepairCycles).toBe(
+            DEFAULT_CONFIG.escalation.budgets.maxRepairCycles,
         )
     })
     it("adds a security specialist without forcing Full", () => {
@@ -150,12 +159,18 @@ describe("final SpecOps policy", () => {
                 args: ["--eval", "process.stdout.write('x'.repeat(1000))"],
                 validationId: "node-output",
                 dispatchId: "dispatch",
+                implementationDiffHash: "diff",
+                policyHash: "policy",
             },
         )
         expect(
             Buffer.byteLength(evidence.stdoutExcerpt) + Buffer.byteLength(evidence.stderrExcerpt),
         ).toBeLessThanOrEqual(96)
         expect(evidence.args).toEqual(["--eval", "process.stdout.write('x'.repeat(1000))"])
+        expect(evidence).toMatchObject({
+            implementationDiffHash: "diff",
+            policyHash: "policy",
+        })
     })
 
     it("forwards adapter cancellation to a running evidence command", async () => {
@@ -195,6 +210,30 @@ describe("final SpecOps policy", () => {
 
     it("persists review and validation failure outcomes for machine consumers", async () => {
         const reviewRun = await persistedRun()
+        reviewRun.state.reviewSubmissions = [
+            {
+                id: "submission",
+                dispatchId: "source-dispatch",
+                capability: "general-risk",
+                inputHash: "input",
+                implementationDiffHash: reviewRun.state.implementationDiffHash,
+                policyHash: reviewRun.state.requirements.policyHash,
+                findings: [
+                    {
+                        id: "source",
+                        severity: "HIGH",
+                        summary: "Unresolved review failure.",
+                        evidence: [],
+                        acceptanceCriteria: [],
+                    },
+                ],
+                at: "now",
+            },
+        ]
+        reviewRun.state.dispatches.push({
+            ...dispatch("source-dispatch", "general-risk", "independent-review"),
+            status: "completed",
+        })
         reviewRun.state.dispatches.push(dispatch("review", "refutation", "workflow"))
         await writeRun(reviewRun.directory, reviewRun.change, reviewRun.state)
         const reviewed = await completeAction(
@@ -202,7 +241,21 @@ describe("final SpecOps policy", () => {
             reviewRun.change,
             "review",
             JSON.stringify({
-                findings: [{ severity: "HIGH", summary: "Unresolved review failure." }],
+                findings: [
+                    {
+                        severity: "HIGH",
+                        summary: "Unresolved review failure.",
+                        evidence: [
+                            {
+                                kind: "repository-path",
+                                path: `openspec/changes/${reviewRun.change}/specops-run.json`,
+                            },
+                        ],
+                        acceptanceCriteria: [],
+                        sourceFindingIds: ["source"],
+                    },
+                ],
+                dismissed: [],
             }),
             DEFAULT_CONFIG,
         )
@@ -218,6 +271,28 @@ describe("final SpecOps policy", () => {
             args: ["--version"],
             purpose: "Required command evidence.",
             requirements: ["outcome"],
+        })
+        await writeMachine(validationRun.directory, validationRun.change, "specops-evidence.json", {
+            version: 2,
+            commands: [
+                {
+                    id: "stale-command",
+                    executable: process.execPath,
+                    args: ["--version"],
+                    cwd: validationRun.directory,
+                    startedAt: "now",
+                    finishedAt: "now",
+                    exitCode: 0,
+                    stdoutHash: "stdout",
+                    stderrHash: "stderr",
+                    stdoutExcerpt: "",
+                    stderrExcerpt: "",
+                    validationId: "required-command",
+                    dispatchId: "old-dispatch",
+                    implementationDiffHash: "old-diff",
+                    policyHash: "old-policy",
+                },
+            ],
         })
         await writeRun(validationRun.directory, validationRun.change, validationRun.state)
         const validated = await finalizeRun(
@@ -248,6 +323,43 @@ describe("final SpecOps policy", () => {
         expect(cancelled.status).toBe("cancelled")
         expect(cancelled.outcome?.category).toBe("cancelled")
         expect(cancelled.dispatches[0]?.status).toBe("failed")
+    })
+
+    it("refuses to issue concurrent workflow dispatches", async () => {
+        const { directory, change, state } = await persistedRun()
+        await writeRun(directory, change, state)
+
+        const first = await issueDirective(directory, change, DEFAULT_CONFIG)
+        expect(first.type).toBe("dispatch")
+        await expect(issueDirective(directory, change, DEFAULT_CONFIG)).rejects.toThrow(
+            "is still issued and must be completed first",
+        )
+    })
+
+    it("does not finalize with an unresolved repair task", async () => {
+        const { directory, change, state } = await persistedRun()
+        makeSchedulerComplete(state)
+        state.repairTasks = [
+            {
+                id: "unverified-repair",
+                target: "implementation",
+                modes: ["implementation-defect"],
+                findingIds: ["finding"],
+                summary: "Repair is awaiting fresh assurance.",
+                evidence: [],
+                acceptanceCriteria: [],
+                sourceLedgerHash: "ledger",
+                fingerprint: "fingerprint",
+                attempt: 1,
+                status: "completed",
+                at: "now",
+            },
+        ]
+        await writeRun(directory, change, state)
+
+        const finalized = await finalizeRun(directory, change, DEFAULT_CONFIG)
+        expect(finalized.status).toBe("failed")
+        expect(finalized.outcome?.message).toContain("Repair tasks are not verified")
     })
 })
 

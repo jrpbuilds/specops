@@ -244,7 +244,11 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 const evidence = await executeValidation(
                     context.directory,
                     config,
-                    args,
+                    {
+                        ...args,
+                        implementationDiffHash: state.implementationDiffHash,
+                        policyHash: state.requirements.policyHash,
+                    },
                     context.abort,
                 )
                 const registry = await readMachine(
@@ -252,10 +256,11 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     "specops-evidence.json",
                     {
-                        version: 1,
+                        version: 2,
                         commands: [] as unknown[],
                     },
                 )
+                registry.version = 2
                 registry.commands.push(evidence)
                 await writeMachine(
                     context.directory,

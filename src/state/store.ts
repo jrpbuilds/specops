@@ -94,6 +94,33 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     }
     raw.frontierUsage ??= { escalations: 0, dispatches: 0, highDispatches: 0 }
     raw.frontierHistory ??= []
+    raw.reviewSubmissions ??= []
+    raw.repairTasks ??= []
+    if (raw.pendingRepair && !raw.pendingRepair.taskId) {
+        const taskId = `legacy-${String(raw.updatedAt ?? "repair")}`
+        raw.repairTasks.push({
+            id: taskId,
+            target:
+                raw.pendingRepair.mode === "spec-mismatch"
+                    ? "planning"
+                    : raw.pendingRepair.mode === "design-revision"
+                      ? "design"
+                      : "implementation",
+            modes: [raw.pendingRepair.mode],
+            findingIds: [],
+            summary: raw.pendingRepair.summary,
+            evidence: [],
+            acceptanceCriteria: [],
+            sourceLedgerHash: "",
+            sourceDiffHash: raw.implementationDiffHash,
+            fingerprint: taskId,
+            attempt: 1,
+            status: "queued",
+            beforeDiffHash: raw.implementationDiffHash,
+            at: raw.updatedAt ?? new Date(0).toISOString(),
+        })
+        raw.pendingRepair.taskId = taskId
+    }
 
     const value = raw as RunState
 

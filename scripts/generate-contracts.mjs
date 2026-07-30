@@ -92,21 +92,41 @@ const standardBundleTasksContract = [
     `  (sections: ${tasksHeaders.join(", ")}).`,
 ].join("\n")
 
+const assuranceFindingShape =
+    `{ "severity": string, "mode"?: string, "summary": string, ` +
+    `"evidence": array, "acceptanceCriteria": string[] }`
+const assuranceRules = [
+    `Each finding must have exactly this shape: ${assuranceFindingShape}.`,
+    `- "severity": one of ${severitiesList} (uppercase).`,
+    `- "mode": optional; one of ${repairModesList}.`,
+    `- "summary": a non-empty string.`,
+    `- "evidence": zero or more typed SpecOps evidence references.`,
+    `- "acceptanceCriteria": observable non-empty strings.`,
+].join("\n")
+
+const assuranceFindingsContract = [
+    `Return a JSON object {"findings": [${assuranceFindingShape}]}.`,
+    assuranceRules,
+    `Do not wrap the JSON in markdown fences.`,
+].join("\n")
+
 // Judgment contract: the exact JSON shape from the bundled template.
 const judgmentContract = [
     `Return a JSON object with exactly these keys: {${judgmentKeys.map(k => `"${k}"`).join(", ")}}.`,
     `- "verdict": ${verdictsList}.`,
     `- "summary": a non-empty string.`,
-    `- "findings": an array (may be empty).`,
+    `- "findings": an array (may be empty only for PASS).`,
+    assuranceRules,
     `Do not wrap the JSON in markdown fences.`,
 ].join("\n")
 
-// Review-ledger contract: shape plus the uppercase severity and mode enums.
+// Review-ledger contract: sustained findings plus explicit dismissed-source coverage.
 const reviewLedgerContract = [
-    `Return a JSON object {"findings": [{ "severity": string, "mode"?: string, "summary": string }]}.`,
-    `- "severity": one of ${severitiesList} (uppercase).`,
-    `- "mode": optional; one of ${repairModesList}. Set mode only when the finding warrants a bounded repair.`,
-    `- "summary": a non-empty string describing the finding.`,
+    `Return a JSON object with exactly "findings" and "dismissed" arrays.`,
+    `Each sustained finding is ${assuranceFindingShape.slice(0, -2)}, "sourceFindingIds": string[] }.`,
+    assuranceRules,
+    `Each dismissed entry is { "sourceFindingIds": string[], "reason": string }.`,
+    `Cover every supplied source finding exactly once across findings and dismissed.`,
     `Deduplicate findings. Do not wrap the JSON in markdown fences.`,
 ].join("\n")
 
@@ -125,6 +145,9 @@ const generated = [
     ``,
     `/** Additional tasks-member contract appended for standard-tier planning bundles. */`,
     `export const STANDARD_BUNDLE_TASKS_CONTRACT = ${JSON.stringify(standardBundleTasksContract)}`,
+    ``,
+    `/** Shared evidence-backed finding response used by independent reviewers. */`,
+    `export const ASSURANCE_FINDINGS_CONTRACT = ${JSON.stringify(assuranceFindingsContract)}`,
     ``,
     `/** Independent-judgment contract (correctness and compliance). */`,
     `export const JUDGMENT_CONTRACT = ${JSON.stringify(judgmentContract)}`,

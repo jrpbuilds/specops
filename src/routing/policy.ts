@@ -221,7 +221,9 @@ export function requirementsFor(
             mode: "conditional",
             triggers: ["findings", "disagreement", "critical-risk"],
         },
-        budgets: config.escalation.budgets,
+        // Runs own their budget snapshot; callers and tests may consume or
+        // adjust it without mutating the shared project configuration object.
+        budgets: { ...config.escalation.budgets },
         policyHash: "",
     }
     requirements.policyHash = createHash("sha256")

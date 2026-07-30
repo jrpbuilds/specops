@@ -8,7 +8,7 @@
  * verify that the scheduler dispatch prompts include the generated contract
  * strings so agents receive the exact expected output shape.
  */
-import { mkdir, mkdtemp } from "node:fs/promises"
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -18,6 +18,7 @@ import { agentForCapability } from "../src/capabilities/registry.js"
 import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { Assessment, RunState } from "../src/types.js"
 import { completeAction } from "../src/workflow/engine.js"
+import { currentReviewSubmissions } from "../src/workflow/reviews.js"
 import { nextAction } from "../src/workflow/scheduler.js"
 import {
     JUDGMENT_CONTRACT,
@@ -140,6 +141,46 @@ function validArtifact(state: RunState, artifact: string): void {
         capabilities: state.requirements.requiredCapabilities,
         validity: "valid",
     } as RunState["artifacts"][keyof RunState["artifacts"]]
+}
+
+/** Seed one current source finding for refuter-ledger contract tests. */
+function seedReviewSource(state: RunState): void {
+    state.dispatches.push({
+        ...dispatch("source-dispatch", "general-risk", "independent-review", "general-risk"),
+        status: "completed",
+    })
+    state.reviewSubmissions = [
+        {
+            id: "submission",
+            dispatchId: "source-dispatch",
+            capability: "general-risk",
+            inputHash: "input",
+            implementationDiffHash: state.implementationDiffHash,
+            policyHash: state.requirements.policyHash,
+            findings: [
+                {
+                    id: "source",
+                    severity: "HIGH",
+                    summary: "Source finding.",
+                    evidence: [],
+                    acceptanceCriteria: [],
+                },
+            ],
+            at: "now",
+        },
+    ]
+}
+
+/** Build a strict sustained-ledger entry with safe defaults. */
+function ledgerFinding(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+        severity: "HIGH",
+        summary: "Finding.",
+        evidence: [],
+        acceptanceCriteria: [],
+        sourceFindingIds: ["source"],
+        ...overrides,
+    }
 }
 
 describe("planning bundle contract", () => {
@@ -375,6 +416,7 @@ describe("judgment contract", () => {
 describe("review ledger contract", () => {
     it("rejects a lowercase severity with the uppercase enum", async () => {
         const run = await persistedRun()
+        seedReviewSource(run.state)
         run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
         await writeRun(run.directory, run.change, run.state)
 
@@ -384,17 +426,19 @@ describe("review ledger contract", () => {
                 run.change,
                 "review",
                 JSON.stringify({
-                    findings: [{ severity: "high", summary: "Lowercase severity." }],
+                    findings: [ledgerFinding({ severity: "high", summary: "Lowercase severity." })],
+                    dismissed: [],
                 }),
                 DEFAULT_CONFIG,
             ),
         ).rejects.toThrow(/severity must be one of BLOCKER, HIGH, MEDIUM, LOW \(uppercase\)/)
         const failedState = await readRun(run.directory, run.change)
-        expect(failedState.dispatches[0]?.status).toBe("failed")
+        expect(failedState.dispatches.find(item => item.id === "review")?.status).toBe("failed")
     })
 
     it("rejects an invalid mode with the allowed set", async () => {
         const run = await persistedRun()
+        seedReviewSource(run.state)
         run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
         await writeRun(run.directory, run.change, run.state)
 
@@ -404,7 +448,8 @@ describe("review ledger contract", () => {
                 run.change,
                 "review",
                 JSON.stringify({
-                    findings: [{ severity: "HIGH", mode: "unknown-mode", summary: "Bad mode." }],
+                    findings: [ledgerFinding({ mode: "unknown-mode", summary: "Bad mode." })],
+                    dismissed: [],
                 }),
                 DEFAULT_CONFIG,
             ),
@@ -413,6 +458,7 @@ describe("review ledger contract", () => {
 
     it("rejects an empty summary", async () => {
         const run = await persistedRun()
+        seedReviewSource(run.state)
         run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
         await writeRun(run.directory, run.change, run.state)
 
@@ -422,11 +468,74 @@ describe("review ledger contract", () => {
                 run.change,
                 "review",
                 JSON.stringify({
-                    findings: [{ severity: "HIGH", summary: "   " }],
+                    findings: [ledgerFinding({ summary: "   " })],
+                    dismissed: [],
                 }),
                 DEFAULT_CONFIG,
             ),
         ).rejects.toThrow(/summary must be a non-empty string/)
+    })
+
+    it("rejects semantically duplicated sustained findings", async () => {
+        const run = await persistedRun()
+        seedReviewSource(run.state)
+        run.state.reviewSubmissions![0]!.findings.push({
+            ...run.state.reviewSubmissions![0]!.findings[0]!,
+            id: "source-two",
+        })
+        run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, run.state)
+
+        await expect(
+            completeAction(
+                run.directory,
+                run.change,
+                "review",
+                JSON.stringify({
+                    findings: [
+                        ledgerFinding({ sourceFindingIds: ["source"] }),
+                        ledgerFinding({ sourceFindingIds: ["source-two"] }),
+                    ],
+                    dismissed: [],
+                }),
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("review ledger must deduplicate semantically identical findings")
+    })
+
+    it("fails safely after malformed refuter output exhausts its retry budget", async () => {
+        const run = await persistedRun()
+        seedReviewSource(run.state)
+        run.state.dispatches.push(dispatch("review-one", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, run.state)
+
+        await expect(
+            completeAction(
+                run.directory,
+                run.change,
+                "review-one",
+                JSON.stringify({ findings: [] }),
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("unknown or missing fields")
+        const retryable = await readRun(run.directory, run.change)
+        expect(retryable.status).toBe("running")
+        retryable.dispatches.push(dispatch("review-two", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, retryable)
+
+        await expect(
+            completeAction(
+                run.directory,
+                run.change,
+                "review-two",
+                JSON.stringify({ findings: [] }),
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("unknown or missing fields")
+        const exhausted = await readRun(run.directory, run.change)
+        expect(exhausted.status).toBe("failed")
+        expect(exhausted.outcome?.category).toBe("validation-failed")
+        expect(exhausted.outcome?.message).toContain("retry budget exhausted")
     })
 
     it("does not embed runtime blocking severities in the generated contract", () => {
@@ -437,6 +546,7 @@ describe("review ledger contract", () => {
 
     it("accepts a modeless blocking finding as review-failed", async () => {
         const run = await persistedRun()
+        seedReviewSource(run.state)
         run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
         await writeRun(run.directory, run.change, run.state)
 
@@ -445,7 +555,18 @@ describe("review ledger contract", () => {
             run.change,
             "review",
             JSON.stringify({
-                findings: [{ severity: "HIGH", summary: "Unresolved review failure." }],
+                findings: [
+                    ledgerFinding({
+                        summary: "Unresolved review failure.",
+                        evidence: [
+                            {
+                                kind: "repository-path",
+                                path: "openspec/changes/contract-test/specops-run.json",
+                            },
+                        ],
+                    }),
+                ],
+                dismissed: [],
             }),
             DEFAULT_CONFIG,
         )
@@ -453,6 +574,171 @@ describe("review ledger contract", () => {
         // falls through to the terminal review-failed outcome — intended behavior.
         expect(reviewed.status).toBe("failed")
         expect(reviewed.outcome?.category).toBe("review-failed")
+    })
+})
+
+describe("evidence-backed review repair flow", () => {
+    it("persists an independent review submission with dispatch provenance", async () => {
+        const run = await persistedRun()
+        run.state.dispatches.push(
+            dispatch("risk", "general-risk", "independent-review", "general-risk"),
+        )
+        await writeRun(run.directory, run.change, run.state)
+
+        const completed = await completeAction(
+            run.directory,
+            run.change,
+            "risk",
+            JSON.stringify({
+                findings: [
+                    {
+                        severity: "HIGH",
+                        mode: "implementation-defect",
+                        summary: "The implementation can return stale data.",
+                        evidence: [
+                            {
+                                kind: "repository-path",
+                                path: "openspec/changes/contract-test/specops-run.json",
+                            },
+                        ],
+                        acceptanceCriteria: ["The current value is returned."],
+                    },
+                ],
+            }),
+            DEFAULT_CONFIG,
+        )
+
+        expect(completed.reviewSubmissions).toHaveLength(1)
+        expect(completed.reviewSubmissions?.[0]).toMatchObject({
+            dispatchId: "risk",
+            capability: "general-risk",
+            inputHash: "input",
+        })
+        expect(completed.reviewSubmissions?.[0]?.findings[0]?.id).toMatch(/^[0-9a-f]{64}$/)
+    })
+
+    it("groups compatible sustained findings into one repair task and prompt", async () => {
+        const run = await persistedRun()
+        seedReviewSource(run.state)
+        run.state.reviewSubmissions?.[0]?.findings.push({
+            id: "source-two",
+            severity: "HIGH",
+            mode: "test-deficiency",
+            summary: "The regression test is missing.",
+            evidence: [],
+            acceptanceCriteria: [],
+        })
+        run.state.dispatches.push(dispatch("review", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, run.state)
+        const evidence = [
+            {
+                kind: "repository-path",
+                path: "openspec/changes/contract-test/specops-run.json",
+            },
+        ]
+
+        const completed = await completeAction(
+            run.directory,
+            run.change,
+            "review",
+            JSON.stringify({
+                findings: [
+                    ledgerFinding({
+                        mode: "implementation-defect",
+                        summary: "The implementation can return stale data.",
+                        evidence,
+                        acceptanceCriteria: ["The current value is returned."],
+                    }),
+                    ledgerFinding({
+                        mode: "test-deficiency",
+                        summary: "The regression test is missing.",
+                        evidence,
+                        acceptanceCriteria: ["A regression test covers the stale-data case."],
+                        sourceFindingIds: ["source-two"],
+                    }),
+                ],
+                dismissed: [],
+            }),
+            DEFAULT_CONFIG,
+        )
+
+        expect(completed.repairTasks).toHaveLength(1)
+        expect(completed.repairTasks?.[0]).toMatchObject({
+            target: "implementation",
+            status: "queued",
+        })
+        expect(completed.repairTasks?.[0]?.findingIds).toHaveLength(2)
+        const action = nextAction(completed)
+        expect(action?.capability).toBe("repair")
+        expect(action?.prompt).toContain("The regression test is missing.")
+        expect(action?.prompt).toContain("<repair-task>")
+    })
+
+    it("ignores a submission whose originating dispatch failed", async () => {
+        const state = standardState()
+        seedReviewSource(state)
+        state.dispatches.find(item => item.id === "source-dispatch")!.status = "failed"
+
+        expect(currentReviewSubmissions(state)).toEqual([])
+    })
+
+    it("marks a completed repair verified after a fresh ledger clears its finding", async () => {
+        const run = await persistedRun()
+        seedReviewSource(run.state)
+        run.state.dispatches.push(dispatch("review-one", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, run.state)
+        const evidence = [
+            {
+                kind: "repository-path",
+                path: "openspec/changes/contract-test/specops-run.json",
+            },
+        ]
+        const scheduled = await completeAction(
+            run.directory,
+            run.change,
+            "review-one",
+            JSON.stringify({
+                findings: [
+                    ledgerFinding({
+                        mode: "implementation-defect",
+                        summary: "The implementation can return stale data.",
+                        evidence,
+                        acceptanceCriteria: ["The current value is returned."],
+                    }),
+                ],
+                dismissed: [],
+            }),
+            DEFAULT_CONFIG,
+        )
+        scheduled.repairTasks![0]!.status = "completed"
+        scheduled.pendingRepair = undefined
+        scheduled.reviewSubmissions = []
+        scheduled.dispatches.push({
+            ...dispatch("empty-source", "general-risk", "independent-review", "general-risk"),
+            status: "completed",
+        })
+        scheduled.reviewSubmissions.push({
+            id: "empty-submission",
+            dispatchId: "empty-source",
+            capability: "general-risk",
+            inputHash: "input",
+            implementationDiffHash: scheduled.implementationDiffHash,
+            policyHash: scheduled.requirements.policyHash,
+            findings: [],
+            at: "later",
+        })
+        scheduled.dispatches.push(dispatch("review-two", "refutation", "workflow", "refutation"))
+        await writeRun(run.directory, run.change, scheduled)
+
+        const reconciled = await completeAction(
+            run.directory,
+            run.change,
+            "review-two",
+            JSON.stringify({ findings: [], dismissed: [] }),
+            DEFAULT_CONFIG,
+        )
+
+        expect(reconciled.repairTasks?.[0]?.status).toBe("verified")
     })
 })
 
@@ -526,5 +812,60 @@ describe("scheduler contract consumption", () => {
         const action = nextAction(state)
         expect(action?.capability).toBe("refutation")
         expect(action?.prompt).toContain(REVIEW_LEDGER_CONTRACT)
+    })
+
+    it("does not let a review bound to an older diff satisfy current assurance", () => {
+        const state = standardState()
+        state.implementationDiffHash = "current-diff"
+        for (const artifact of [
+            "routing",
+            "exploration",
+            "proposal",
+            "specs",
+            "tasks",
+            "implementation",
+            "verification",
+            "correctness-judgment",
+            "compliance-judgment",
+        ]) {
+            validArtifact(state, artifact)
+        }
+        state.dispatches.push({
+            ...dispatch("risk", "general-risk", "independent-review", "general-risk"),
+            inputHash: "older-diff-binding",
+            status: "completed",
+        })
+
+        const action = nextAction(state)
+        expect(action?.capability).toBe("general-risk")
+        expect(action?.purpose).toBe("independent-review")
+    })
+})
+
+describe("version-2 review state compatibility", () => {
+    it("supplies safe defaults and converts a legacy pending repair once", async () => {
+        const run = await persistedRun()
+        const legacy = {
+            ...run.state,
+            pendingRepair: {
+                mode: "implementation-defect" as const,
+                summary: "Legacy repair.",
+            },
+        }
+        delete (legacy as Partial<RunState>).reviewSubmissions
+        delete (legacy as Partial<RunState>).repairTasks
+        await writeFile(
+            path.join(changeRoot(run.directory, run.change), "specops-run.json"),
+            `${JSON.stringify(legacy)}\n`,
+        )
+
+        const migrated = await readRun(run.directory, run.change)
+        expect(migrated.reviewSubmissions).toEqual([])
+        expect(migrated.repairTasks).toHaveLength(1)
+        expect(migrated.pendingRepair?.taskId).toBe(migrated.repairTasks?.[0]?.id)
+        expect(migrated.repairTasks?.[0]).toMatchObject({
+            target: "implementation",
+            status: "queued",
+        })
     })
 })
