@@ -1,6 +1,6 @@
 {
     "name": "@jrpbuilds/specops",
-    "version": "0.9.0",
+    "version": "0.10.0",
     "description": "Spec-driven development orchestration plugin for OpenCode, powered by OpenSpec.",
     "type": "module",
     "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "scripts": {
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "generate": "npm run build && node scripts/generate-docs.mjs && npm run format",
+        "generate": "npm run build && node scripts/generate-contracts.mjs && npm run build && node scripts/generate-docs.mjs && npm run format",
         "generated:check": "npm run build && node scripts/check-generated.mjs",
         "build": "node scripts/clean.mjs && tsc",
         "prepublishOnly": "npm run build",

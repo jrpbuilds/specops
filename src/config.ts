@@ -149,8 +149,9 @@ const RISK_FACETS = new Set<RiskFacet>([
     "maintainability",
 ])
 
-/** Set of valid review severity strings, used to validate `review.blockingSeverities`. */
-const SEVERITIES = new Set(["BLOCKER", "HIGH", "MEDIUM", "LOW"])
+// The canonical severity set lives in the shared contracts module so the
+// generate-contracts script and parser share the single source of truth.
+import { SEVERITIES } from "./workflow/contracts.js"
 
 /**
  * Parse and reject unknown configuration fields instead of silently carrying

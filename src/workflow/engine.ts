@@ -29,6 +29,13 @@ import {
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
 import {
+    JUDGMENT_VERDICTS,
+    REPAIR_MODES,
+    SEVERITIES,
+    SPEC_NAME_REGEX,
+    validateSpecContent,
+} from "./contracts.js"
+import {
     canPromotePending,
     completeFrontierEpisode,
     parseFrontierResponse,
@@ -1542,20 +1549,35 @@ function requireString(value: unknown, label: string): string {
 /**
  * Parse and validate a planning bundle's specs record.
  *
+ * Each spec name must match {@link SPEC_NAME_REGEX} (it becomes the
+ * `specs/<name>/spec.md` directory) and each value must be a non-empty string
+ * following the normative spec template enforced by {@link validateSpecContent}.
+ *
  * @param value - The raw value from the planning bundle JSON.
- * @returns A record of spec names to content strings.
- * @throws When the value is not an object, contains invalid spec names, or
- *   has empty content.
+ * @returns A record of spec names to validated spec markdown bodies.
+ * @throws When the value is not an object, is an array, contains invalid spec
+ *   names, has empty content, fails normative structure validation, or is empty.
  */
 function parseSpecs(value: unknown): Record<string, string> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error("planning bundle specs are invalid")
+        throw new Error(
+            "planning bundle specs must be a JSON object mapping spec names to markdown strings, not an array",
+        )
     }
 
     const specs: Record<string, string> = {}
     for (const [name, content] of Object.entries(value as Record<string, unknown>)) {
-        if (!/^[a-z0-9][a-z0-9-]*$/.test(name) || typeof content !== "string" || !content.trim()) {
-            throw new Error("planning bundle contains an invalid spec")
+        if (!SPEC_NAME_REGEX.test(name)) {
+            throw new Error(
+                `planning bundle spec name "${name}" must match ^[a-z0-9][a-z0-9-]*$ (lowercase alphanumeric and hyphens)`,
+            )
+        }
+        if (typeof content !== "string" || !content.trim()) {
+            throw new Error(`planning bundle spec "${name}" content must be a non-empty string`)
+        }
+        const structureError = validateSpecContent(content, name)
+        if (structureError) {
+            throw new Error(`planning bundle ${structureError}`)
         }
         specs[name] = content
     }
@@ -1568,36 +1590,40 @@ function parseSpecs(value: unknown): Record<string, string> {
 /**
  * Parse and validate a refuter review ledger from raw output.
  *
+ * Each finding must carry an uppercase severity from {@link SEVERITIES}, an
+ * optional `mode` from {@link REPAIR_MODES}, and a string summary. A blocking
+ * finding without a `mode` is intentionally permitted here: the engine falls
+ * back to the terminal `review-failed` outcome for that case, which is
+ * exercised by existing tests.
+ *
  * @param output - The raw review ledger JSON string.
  * @returns The parsed and validated {@link ReviewLedger}.
- * @throws When the output is not valid JSON, lacks findings, or contains an
- *   invalid finding.
+ * @throws When the output is not valid JSON, lacks findings, or contains a
+ *   finding with an invalid severity, mode, or summary.
  */
 function parseReviewLedger(output: string): ReviewLedger {
     const value = parseObject(output, "review ledger")
     if (!Array.isArray(value.findings)) {
-        throw new Error("review ledger must include findings")
+        throw new Error("review ledger must include a findings array")
     }
 
-    const modes = new Set<RepairMode>([
-        "implementation-defect",
-        "spec-mismatch",
-        "test-deficiency",
-        "review-finding",
-        "design-revision",
-    ])
     for (const finding of value.findings) {
-        if (
-            !finding ||
-            typeof finding !== "object" ||
-            !["BLOCKER", "HIGH", "MEDIUM", "LOW"].includes(
-                (finding as ReviewLedger["findings"][number]).severity,
-            ) ||
-            typeof (finding as ReviewLedger["findings"][number]).summary !== "string" ||
-            ((finding as ReviewLedger["findings"][number]).mode !== undefined &&
-                !modes.has((finding as ReviewLedger["findings"][number]).mode as RepairMode))
-        ) {
-            throw new Error("review ledger contains an invalid finding")
+        if (!finding || typeof finding !== "object") {
+            throw new Error("review ledger finding must be an object")
+        }
+        const entry = finding as ReviewLedger["findings"][number]
+        if (!SEVERITIES.has(String(entry.severity))) {
+            throw new Error(
+                `review ledger finding severity must be one of BLOCKER, HIGH, MEDIUM, LOW (uppercase), got ${JSON.stringify(entry.severity)}`,
+            )
+        }
+        if (typeof entry.summary !== "string" || !entry.summary.trim()) {
+            throw new Error("review ledger finding summary must be a non-empty string")
+        }
+        if (entry.mode !== undefined && !REPAIR_MODES.has(String(entry.mode))) {
+            throw new Error(
+                `review ledger finding mode must be one of implementation-defect, spec-mismatch, test-deficiency, review-finding, design-revision, got ${JSON.stringify(entry.mode)}`,
+            )
         }
     }
 
@@ -1609,16 +1635,21 @@ function parseReviewLedger(output: string): ReviewLedger {
  *
  * @param output - The raw judgment JSON string.
  * @returns The parsed and validated {@link Judgment}.
- * @throws When the output is not valid JSON or lacks required fields.
+ * @throws When the output is not valid JSON or lacks a valid verdict, summary,
+ *   or findings field.
  */
 function parseJudgment(output: string): Judgment {
     const value = parseObject(output, "judgment")
-    if (
-        (value.verdict !== "PASS" && value.verdict !== "FAIL") ||
-        typeof value.summary !== "string" ||
-        !Array.isArray(value.findings)
-    ) {
-        throw new Error("judgment must include verdict, summary, and findings")
+    if (!JUDGMENT_VERDICTS.has(String(value.verdict))) {
+        throw new Error(
+            `judgment verdict must be "PASS" or "FAIL", got ${JSON.stringify(value.verdict)}`,
+        )
+    }
+    if (typeof value.summary !== "string" || !value.summary.trim()) {
+        throw new Error("judgment summary must be a non-empty string")
+    }
+    if (!Array.isArray(value.findings)) {
+        throw new Error("judgment findings must be an array")
     }
     return value as Judgment
 }

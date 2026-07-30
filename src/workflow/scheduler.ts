@@ -11,6 +11,12 @@ import type {
     FrontierTier,
 } from "../types.js"
 import type { WorkflowAction } from "./actions.js"
+import {
+    JUDGMENT_CONTRACT,
+    PLANNING_BUNDLE_CONTRACT,
+    REVIEW_LEDGER_CONTRACT,
+    STANDARD_BUNDLE_TASKS_CONTRACT,
+} from "./contracts.generated.js"
 import { getResumeTarget, resumePromptForAnswer } from "./questions.js"
 import { canIssuePendingFrontier } from "../frontier/policy.js"
 
@@ -121,8 +127,8 @@ export function nextAction(
             artifact: "bundle",
             prompt:
                 state.scopeTier === "full"
-                    ? "Return JSON with proposal and specs only. Do not write files."
-                    : "Return JSON with proposal, specs, and tasks. Do not write files.",
+                    ? `${PLANNING_BUNDLE_CONTRACT} Return proposal and specs only. Do not write files.`
+                    : `${PLANNING_BUNDLE_CONTRACT} ${STANDARD_BUNDLE_TASKS_CONTRACT} Return proposal, specs, and tasks. Do not write files.`,
         })
     }
 
@@ -174,8 +180,9 @@ export function nextAction(
             prompt:
                 state.scopeTier === "lean"
                     ? "Return only JSON { verification, correctnessJudgment, reviewLedger }. " +
-                      "verification is Markdown; correctnessJudgment is { verdict, summary, findings }; " +
-                      "reviewLedger is { findings: [{ severity, mode?, summary }] }."
+                      "verification is Markdown. " +
+                      `correctnessJudgment: ${JUDGMENT_CONTRACT} ` +
+                      `reviewLedger: ${REVIEW_LEDGER_CONTRACT}`
                     : "Verify requirements using registered command evidence. Return verification Markdown only.",
         })
     }
@@ -187,7 +194,7 @@ export function nextAction(
         return createAction(state, "correctness-judgment", "judgment", {
             independent: true,
             artifact: "judgment-correctness.json",
-            prompt: "Return an independent structured correctness judgment for the current diff.",
+            prompt: `${JUDGMENT_CONTRACT} Return an independent structured correctness judgment for the current diff.`,
         })
     }
 
@@ -199,7 +206,7 @@ export function nextAction(
         return createAction(state, "compliance-judgment", "judgment", {
             independent: true,
             artifact: "judgment-compliance.json",
-            prompt: "Return an independent structured specification-compliance judgment for the current diff.",
+            prompt: `${JUDGMENT_CONTRACT} Return an independent structured specification-compliance judgment for the current diff.`,
         })
     }
 
@@ -228,9 +235,7 @@ export function nextAction(
     if (requiresArtifact(state, "review-ledger") && !isComplete(state, "review-ledger")) {
         return createAction(state, "refutation", "workflow", {
             artifact: "review-ledger.json",
-            prompt:
-                "Return JSON { findings: [{ severity, mode?, summary }] }. " +
-                "Deduplicate findings and set mode only for a blocking repair.",
+            prompt: REVIEW_LEDGER_CONTRACT,
         })
     }
 
@@ -387,7 +392,7 @@ function repairAction(state: RunState): WorkflowAction | undefined {
             mode: "artifact-repair",
             artifact: "bundle",
             prompt:
-                "Return validated replacement proposal and specs JSON. Do not edit repository files." +
+                `${PLANNING_BUNDLE_CONTRACT} Return validated replacement proposal and specs JSON. Do not edit repository files.` +
                 repairInstruction(repair.instruction),
         })
     }

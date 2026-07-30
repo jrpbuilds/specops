@@ -13,6 +13,7 @@ import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { ArtifactId, Assessment, DispatchRecord, RunState } from "../src/types.js"
 import { completeAction, finalizeRun, issueDirective, startRun } from "../src/workflow/engine.js"
 import { nextAction } from "../src/workflow/scheduler.js"
+import { JUDGMENT_CONTRACT, REVIEW_LEDGER_CONTRACT } from "../src/workflow/contracts.generated.js"
 import { parseWorkerOutput } from "../src/worker_output.js"
 
 const assessment: Assessment = {
@@ -98,6 +99,11 @@ describe("compact Lean workflow", () => {
                 agent: AGENT_IDS.core.verifier,
                 mode: "lean-assurance-bundle",
             })
+            // Lean assurance output is parsed by the same judgment and
+            // review-ledger parsers, so the dispatch prompt must carry the
+            // generated contracts for both nested JSON members.
+            expect(verification?.prompt).toContain(JUDGMENT_CONTRACT)
+            expect(verification?.prompt).toContain(REVIEW_LEDGER_CONTRACT)
             state.artifacts.verification = validArtifact(state, "verification")
             state.artifacts["correctness-judgment"] = validArtifact(state, "correctness-judgment")
             state.artifacts["review-ledger"] = validArtifact(state, "review-ledger")

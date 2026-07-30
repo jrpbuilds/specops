@@ -9,6 +9,16 @@ import { DEFAULT_MANIFEST, validateManifest } from "../dist/manifest.js"
 import { promptText } from "../dist/prompts.generated.js"
 import { spawnSync } from "node:child_process"
 
+// Verify the generated contract strings match the canonical constants and
+// templates before checking the rest of the generated surface.
+const contracts = spawnSync(process.execPath, ["scripts/generate-contracts.mjs", "--check"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+})
+if (contracts.status !== 0) {
+    throw new Error(contracts.stderr || contracts.stdout)
+}
+
 const expected = [...ALL_AGENT_IDS].sort()
 const registryIDs = Object.keys(AGENT_REGISTRY).sort()
 const manifestIDs = Object.keys(validateManifest(DEFAULT_MANIFEST).agents).sort()

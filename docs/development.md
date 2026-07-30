@@ -1,7 +1,7 @@
 # Development and release verification
 
 SpecOps is developed as a clean-slate OpenCode plugin. A change is complete only when the source
-tree, generated runtime surfaces, packed package, installer, schemas, and documentation agree on
+tree, generated runtime surfaces, packed package, schemas, and documentation agree on
 the same architecture.
 
 ## Prerequisites
@@ -26,8 +26,9 @@ command change:
 npm run generate
 ```
 
-This command builds the TypeScript, regenerates `docs/agents.md` and `docs/commands.md`, and
-formats the repository. Do not hand-edit those two generated files.
+This command builds the TypeScript, regenerates `src/workflow/contracts.generated.ts`
+and `docs/agents.md` and `docs/commands.md`, and formats the repository. Do not
+hand-edit those generated files.
 
 `npm run generated:check` verifies:
 
@@ -35,6 +36,7 @@ formats the repository. Do not hand-edit those two generated files.
   agent set;
 - each scheduler capability resolves to a registered agent;
 - every public command targets a registered controller or protocol tool;
+- the generated artifact wire-format contracts match the canonical constants and templates;
 - generated documentation is current.
 
 ## Formatting and static analysis
@@ -62,8 +64,8 @@ npm run validate:openspec
 ```
 
 Vitest covers scheduler behavior, command/controller consistency, manifest replacement, plugin
-hook registration, permission boundaries, prompts, protocol tools, the idempotent installer, and
-the checked-in example configuration. OpenSpec validates all three final schemas.
+hook registration, permission boundaries, prompts, protocol tools, and the checked-in example
+configuration. OpenSpec validates all three final schemas.
 
 ## Packed-package integration
 
@@ -108,6 +110,22 @@ opencode run --command specops-auto --dir <isolated-project> --format json \
 The harness observes the first scheduler action and sends `SIGINT`, or reports the exact external
 provider boundary when authentication or networking prevents that point. It also uses
 `opencode debug config` and `opencode debug agent` to prove both controllers resolve.
+
+## Release publishing
+
+Publishing is automated through the GitHub Actions release workflow. A version tag
+matching `v[0-9]+.[0-9]+.[0-9]+` triggers a single job that:
+
+- installs dependencies with `npm ci`;
+- runs the full validation matrix (`npm run check`);
+- publishes to the npm registry using `npm publish --provenance --access public`;
+- creates a GitHub release with generated release notes.
+
+npm publishing uses OIDC Trusted Publishing: the workflow declares
+`id-token: write` permission and npm provenance, so no long-lived `NPM_TOKEN`
+secret is required. The GitHub release step requires `contents: write`. Pushing
+a stable version tag is the only publish action; there is no manual publish path
+and no `curl | bash` installer distribution.
 
 ## Full validation
 

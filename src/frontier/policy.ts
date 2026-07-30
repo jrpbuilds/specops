@@ -15,15 +15,9 @@ import type {
     RunState,
 } from "../types.js"
 import { parseEvidenceRef } from "../worker_output.js"
-
-/** Repair modes accepted from a frontier response. */
-const REPAIR_MODES = new Set<RepairMode>([
-    "implementation-defect",
-    "spec-mismatch",
-    "test-deficiency",
-    "review-finding",
-    "design-revision",
-])
+// The canonical repair-mode set lives in the shared contracts module so the
+// generate-contracts script and frontier parser share the single source of truth.
+import { REPAIR_MODES } from "../workflow/contracts.js"
 
 /** Result of applying frontier admission policy to a worker request. */
 type FrontierQueueDecision =
