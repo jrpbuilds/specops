@@ -25,7 +25,7 @@ that registers the commands.
     ```bash
     npm install
     npm run check
-    bash scripts/install.sh
+    opencode plugin @jrpbuilds/specops -g -f
     ```
 
 Agent registration is deliberately all-or-nothing. Before registration, the plugin materialises
@@ -41,7 +41,7 @@ $XDG_CONFIG_HOME/opencode/specops-manifest.json
 ```
 
 When `XDG_CONFIG_HOME` is unset, it is
-`~/.config/opencode/specops-manifest.json`. The installer reports the exact path used.
+`~/.config/opencode/specops-manifest.json`. Run `/specops-doctor` to confirm the exact path used.
 
 The schema-v2 manifest may customise only `model` and optional OpenCode `variant` for every
 canonical agent. Use `SpecOps: Configure agent models` in the command palette so choices are

@@ -39,12 +39,6 @@ For a published install:
 opencode plugin @jrpbuilds/specops -g
 ```
 
-The repository also contains an idempotent installer:
-
-```bash
-bash scripts/install.sh
-```
-
 It registers `@jrpbuilds/specops` in OpenCode's server and TUI configuration. On the first plugin
 load, SpecOps automatically writes the exact final agent manifest to:
 
@@ -208,7 +202,7 @@ npm pack --dry-run
 ```
 
 `npm run check` includes formatting, strict TypeScript and unused-symbol checks, unit/integration
-tests, installer tests, packed-output materialisation tests, generated-asset drift checks, and
+tests, packed-output materialisation tests, generated-asset drift checks, and
 OpenSpec schema validation. `npm run smoke:opencode` additionally loads the packed plugin through
 a real isolated OpenCode installation and runs the documented CLI command until the first
 scheduler action or an external provider boundary is reached.

@@ -15,15 +15,6 @@ Install through OpenCode:
 opencode plugin @jrpbuilds/specops -g
 ```
 
-Alternatively, run the repository installer:
-
-```bash
-bash scripts/install.sh
-```
-
-The installer updates OpenCode's server and TUI plugin arrays idempotently. It honors
-`OPENCODE_CONFIG`, `OPENCODE_TUI_CONFIG`, and `XDG_CONFIG_HOME`.
-
 Restart OpenCode after installation. During plugin load, SpecOps automatically materialises
 `specops-manifest.json` in OpenCode's configuration directory and registers all controllers and
 workers in the resolved configuration.
