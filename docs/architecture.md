@@ -83,4 +83,18 @@ definitions, including embedded prompts and registry-controlled authority.
 - Escalation can only add bounded requirements or raise scope.
 - Repair budgets and repeated-fingerprint budgets terminate loops deterministically.
 
+## Worker-output contracts
+
+Worker agents (planner, judges, refuter) must return output in exact wire-format
+shapes: a planning bundle, an independent judgment, a refuted review ledger, or
+similar structured payloads. The same architectural boundary governs each
+format: a single shared source of truth for enum value sets and validation
+patterns, generated contract strings consumed by dispatch prompts, and engine
+parsers that validate against the canonical values. The planner, judges, and
+refuter therefore all receive the exact expected output shape in their
+prompts, and the engine rejects malformed submissions with specific, actionable
+error messages. A change to an accepted enum or template heading cannot
+silently drift between prompt, parser, and OpenSpec template because all three
+derive from the same canonical values.
+
 The final run format is described in [Artifacts and state](artifacts-and-state.md).

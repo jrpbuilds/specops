@@ -40,6 +40,12 @@ The planner returns one validated JSON bundle containing:
 - one or more normative specifications;
 - implementation tasks.
 
+Each specification must follow the spec template at submission time: at least one
+`## ADDED`, `## MODIFIED`, or `## REMOVED Requirements` section, at least one
+`### Requirement:` block, and every requirement must have at least one
+`#### Scenario:` with both `- **WHEN**` and `- **THEN**` clauses. File-operation
+prose (e.g. "DELETE <path>") is rejected as spec content.
+
 The controller validates the complete bundle before writing any member. Selected specialists may
 then consult on planning. After implementation, consultation records do not count toward
 independent review.
@@ -96,6 +102,10 @@ The refuter returns a structured ledger. A blocking finding selects one repair m
 - test deficiency;
 - review finding;
 - design revision.
+
+A blocking finding may also intentionally omit a repair mode when no bounded
+repair applies. In that case the run terminates with a `review-failed`
+outcome rather than entering a repair cycle.
 
 Specification/design repair is reasoned about by planner or designer and persisted by the
 controller. Code repair is performed only by implementer or repairer. Downstream evidence is then
