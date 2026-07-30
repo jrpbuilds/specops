@@ -12,7 +12,13 @@ import { promptText } from "../src/prompts.generated.js"
 import { requirementsFor, scopeForActualDiff } from "../src/routing/policy.js"
 import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { ArtifactId, Assessment, DispatchRecord, RunState } from "../src/types.js"
-import { completeAction, finalizeRun, issueDirective, startRun } from "../src/workflow/engine.js"
+import {
+    completeAction,
+    finalizeRun,
+    issueDirective,
+    resumeCheckpointAction,
+    startRun,
+} from "../src/workflow/engine.js"
 import { dispatchHash, nextAction } from "../src/workflow/scheduler.js"
 import {
     ASSURANCE_FINDINGS_CONTRACT,
@@ -151,6 +157,8 @@ describe("compact Lean workflow", () => {
                 DEFAULT_CONFIG,
             )
 
+            await expectNextAfterCheckpoint(directory, started.change, mode)
+
             const implementation = await issueDirective(directory, started.change, DEFAULT_CONFIG)
             expect(implementation.type).toBe("dispatch")
             if (implementation.type !== "dispatch") {
@@ -165,6 +173,8 @@ describe("compact Lean workflow", () => {
                 "Updated README wording.",
                 DEFAULT_CONFIG,
             )
+
+            await expectNextAfterCheckpoint(directory, started.change, mode)
 
             const verification = await issueDirective(directory, started.change, DEFAULT_CONFIG)
             expect(verification.type).toBe("dispatch")
@@ -181,9 +191,10 @@ describe("compact Lean workflow", () => {
                 DEFAULT_CONFIG,
             )
 
-            await expect(
-                issueDirective(directory, started.change, DEFAULT_CONFIG),
-            ).resolves.toMatchObject({ type: "finalize" })
+            // Final checkpoint after the verifier in interactive mode.
+            await expectNextAfterCheckpoint(directory, started.change, mode)
+            const last = await issueDirective(directory, started.change, DEFAULT_CONFIG)
+            expect(last.type).toBe("finalize")
             const finalized = await finalizeRun(directory, started.change, DEFAULT_CONFIG)
 
             expect(finalized.status, finalized.outcome?.message).toBe("passed")
@@ -947,6 +958,36 @@ function leanState(mode: RunState["mode"]): RunState {
         createdAt: "now",
         updatedAt: "now",
         status: "running",
+    }
+}
+
+/**
+ * Resolve a pending checkpoint (interactive) or confirm auto-advance (automatic).
+ *
+ * Interactive mode pauses after every checkpoint artifact group. After a phase
+ * is completed, the next `issueDirective` returns a `checkpoint` directive; this
+ * helper resumes the run with no feedback (Continue) so the next dispatch can
+ * proceed. In automatic mode the run advances directly and the helper simply
+ * confirms the run is still running with no pending checkpoint.
+ */
+async function expectNextAfterCheckpoint(
+    directory: string,
+    change: string,
+    mode: RunState["mode"],
+): Promise<void> {
+    if (mode === "interactive") {
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        expect(directive.type).toBe("checkpoint")
+        if (directive.type !== "checkpoint") {
+            throw new Error("expected checkpoint directive")
+        }
+        await resumeCheckpointAction(directory, change, undefined, DEFAULT_CONFIG)
+    } else {
+        // Automatic runs never checkpoint; readRun confirms no pending pause.
+        const { readRun } = await import("../src/state/store.js")
+        const state = await readRun(directory, change)
+        expect(state.status).toBe("running")
+        expect(state.pendingCheckpoint).toBeUndefined()
     }
 }
 

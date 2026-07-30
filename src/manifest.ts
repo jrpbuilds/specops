@@ -2,8 +2,14 @@ import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
 import { AGENT_REGISTRY } from "./capabilities/registry.js"
 import { promptText } from "./prompts.generated.js"
 
-/** User-selectable OpenCode model settings for one registered agent. */
-export type ManifestEntry = { model: string; variant?: string }
+/**
+ * User-selectable OpenCode model settings for one registered agent.
+ *
+ * An absent or empty `model` means "use OpenCode's configured global default
+ * model"; a `variant` may pin a provider-specific model flavour when a model is
+ * selected.
+ */
+export type ManifestEntry = { model?: string; variant?: string }
 
 /**
  * Persisted model choices for precisely the current agent catalogue.
@@ -17,7 +23,10 @@ export type SpecOpsManifest = { version: 2; agents: Record<AgentId, ManifestEntr
 export const DEFAULT_MANIFEST: SpecOpsManifest = {
     version: 2,
     agents: Object.fromEntries(
-        Object.values(AGENT_REGISTRY).map(agent => [agent.id, { model: agent.model }]),
+        Object.values(AGENT_REGISTRY).map(agent => [
+            agent.id,
+            agent.model ? { model: agent.model } : {},
+        ]),
     ) as SpecOpsManifest["agents"],
 }
 
@@ -25,7 +34,8 @@ export const DEFAULT_MANIFEST: SpecOpsManifest = {
  * Reject partial, stale, empty, or extensible manifest catalogues.
  *
  * The top level must contain exactly `version` and `agents`; every agent entry
- * must contain exactly `model` and, optionally, `variant`.
+ * may contain `model` (empty counts as "use OpenCode global default") and,
+ * optionally, `variant`.
  */
 export function validateManifest(value: unknown): SpecOpsManifest {
     if (!isRecord(value) || !hasExactKeys(value, ["agents", "version"]) || value.version !== 2) {
@@ -39,13 +49,13 @@ export function validateManifest(value: unknown): SpecOpsManifest {
     }
     for (const id of expected) {
         const item = value.agents[id]
-        if (
-            !isRecord(item) ||
-            !hasOnlyKeys(item, ["model", "variant"]) ||
-            typeof item.model !== "string" ||
-            !item.model.trim() ||
-            ("variant" in item && (typeof item.variant !== "string" || !item.variant.trim()))
-        ) {
+        if (!isRecord(item) || !hasOnlyKeys(item, ["model", "variant"])) {
+            throw new Error(`invalid manifest agent: ${id}`)
+        }
+        const modelOk = !("model" in item) || typeof item.model === "string"
+        const variantOk =
+            !("variant" in item) || (typeof item.variant === "string" && !!item.variant.trim())
+        if (!modelOk || !variantOk) {
             throw new Error(`invalid manifest agent: ${id}`)
         }
     }
@@ -65,9 +75,11 @@ export function isLegacyManifest(value: unknown): value is {
  */
 export function manifestAgentConfig(id: AgentId, entry: ManifestEntry) {
     const policy = AGENT_REGISTRY[id]
+    const model = entry.model?.trim()
+    // A variant pins a chosen model's flavour; without a model it has no
+    // meaning, so drop it rather than forward a dangling variant to OpenCode.
     return {
-        model: entry.model,
-        ...(entry.variant ? { variant: entry.variant } : {}),
+        ...(model ? { model, ...(entry.variant ? { variant: entry.variant } : {}) } : {}),
         maxSteps: policy.steps,
         mode: policy.mode,
         prompt: promptText(id),

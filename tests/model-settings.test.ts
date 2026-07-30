@@ -12,19 +12,30 @@ import {
 } from "../src/installation.js"
 import {
     agentSettingsCategory,
+    clearConfiguredModel,
     configuredModels,
     createManifestDraft,
     selectConfiguredModel,
     validateManifestSelections,
 } from "../src/model-settings.js"
-import { DEFAULT_MANIFEST, manifestAgentConfig, validateManifest } from "../src/manifest.js"
+import {
+    DEFAULT_MANIFEST,
+    manifestAgentConfig,
+    validateManifest,
+    type SpecOpsManifest,
+} from "../src/manifest.js"
 
 describe("agent model manifest v2", () => {
-    it("accepts only a complete model and optional variant catalogue", () => {
+    it("accepts optional model and optional variant for every agent", () => {
         const valid = structuredClone(DEFAULT_MANIFEST)
         const first = ALL_AGENT_IDS[0]
         valid.agents[first].variant = "high"
         expect(validateManifest(valid)).toEqual(valid)
+
+        // Empty model means "use OpenCode's configured global default".
+        const blankModel = structuredClone(DEFAULT_MANIFEST)
+        blankModel.agents[first] = {}
+        expect(validateManifest(blankModel)).toEqual(blankModel)
 
         for (const invalid of [
             { ...valid, extra: true },
@@ -40,7 +51,6 @@ describe("agent model manifest v2", () => {
                     [first]: { model: "x/y", reasoningEffort: "high" },
                 },
             },
-            { ...valid, agents: { ...valid.agents, [first]: { model: "" } } },
             { ...valid, agents: { ...valid.agents, [first]: { model: "x/y", variant: "" } } },
             {
                 ...valid,
@@ -63,6 +73,14 @@ describe("agent model manifest v2", () => {
         expect(config.mode).toBe(AGENT_REGISTRY[id].mode)
     })
 
+    it("omits the model field when manifest entry is blank so OpenCode uses its global default", () => {
+        const id = ALL_AGENT_IDS[0]
+        const config = manifestAgentConfig(id, { variant: "high" })
+        expect("model" in config).toBe(false)
+        // A dangling variant without a model has no meaning and must not be forwarded.
+        expect("variant" in config).toBe(false)
+    })
+
     it("preserves legacy bytes and uses packaged defaults for the session", async () => {
         const directory = await mkdtemp(path.join(os.tmpdir(), "specops-v1-"))
         const destination = path.join(directory, "specops-manifest.json")
@@ -72,7 +90,10 @@ describe("agent model manifest v2", () => {
                 ALL_AGENT_IDS.map(id => [
                     id,
                     {
-                        model: DEFAULT_MANIFEST.agents[id].model,
+                        // Legacy files may reference obsolete models; SpecOps falls back to
+                        // the registry default (now blank/OpenCode default) and preserves only
+                        // the bytes on disk.
+                        model: "legacy/obsolete",
                         steps: 999,
                         reasoningEffort: "high",
                     },
@@ -177,12 +198,11 @@ describe("configured OpenCode model catalogue", () => {
         expect(agentSettingsCategory(AGENT_IDS.core.repairer)).toBe("Review, judgment and repair")
         expect(agentSettingsCategory(AGENT_IDS.review.frontierLow)).toBe("Frontier escalation")
         expect(agentSettingsCategory(AGENT_IDS.specialist.security)).toBe("Specialists")
-        expect(DEFAULT_MANIFEST.agents[AGENT_IDS.core.repairer].model).toBe(
-            "opencode/north-mini-code-free",
-        )
+        // Packaged defaults are intentionally blank so the agent inherits OpenCode's global model.
+        expect(DEFAULT_MANIFEST.agents[AGENT_IDS.core.repairer].model).toBeUndefined()
     })
 
-    it("retains available legacy models, falls back, and marks unresolved agents", () => {
+    it("retains available legacy models and falls back to OpenCode's default for unavailable ones", () => {
         const legacy = {
             version: 1 as const,
             agents: Object.fromEntries(
@@ -195,12 +215,30 @@ describe("configured OpenCode model catalogue", () => {
             ALL_AGENT_IDS.every(id => retained.manifest.agents[id].model === "provider/plain"),
         ).toBe(true)
 
+        // Unavailable v1 models fall back to the packaged default, which is blank/OpenCode default.
         legacy.agents[ALL_AGENT_IDS[0]] = { model: "missing/model", steps: 20 }
-        const unresolved = createManifestDraft(legacy, models)
-        expect(unresolved.unresolved).toContain(ALL_AGENT_IDS[0])
-        expect(validateManifestSelections(unresolved.manifest, models)).toContain(
-            `${ALL_AGENT_IDS[0]}: model ${DEFAULT_MANIFEST.agents[ALL_AGENT_IDS[0]].model} is not currently configured`,
+        const fallback = createManifestDraft(legacy, models)
+        expect(fallback.unresolved).toEqual([])
+        expect(fallback.manifest.agents[ALL_AGENT_IDS[0]].model).toBeUndefined()
+        expect(validateManifestSelections(fallback.manifest, models)).toEqual([])
+    })
+
+    it("produces a blank clean-install draft and clears models back to default", () => {
+        const draft = createManifestDraft(DEFAULT_MANIFEST, models)
+        expect(draft.unresolved).toEqual([])
+        expect(validateManifestSelections(draft.manifest, models)).toEqual([])
+        expect(ALL_AGENT_IDS.every(id => draft.manifest.agents[id].model === undefined)).toBe(true)
+
+        const selected = createManifestDraft(
+            {
+                version: 2,
+                agents: { [ALL_AGENT_IDS[0]]: { model: "provider/luna", variant: "high" } },
+            } as SpecOpsManifest,
+            models,
         )
+        const cleared = clearConfiguredModel(selected.manifest.agents[ALL_AGENT_IDS[0]])
+        expect(cleared.model).toBeUndefined()
+        expect(cleared.variant).toBe("high")
     })
 
     it("preserves unavailable v2 selections so the user must resolve them", () => {
@@ -239,5 +277,11 @@ describe("configured OpenCode model catalogue", () => {
         expect(validateManifestSelections(manifest, models)).toEqual([
             `${ALL_AGENT_IDS[0]}: variant unsupported is unavailable for provider/luna`,
         ])
+    })
+
+    it("accepts blank models as OpenCode's global default", () => {
+        const manifest = structuredClone(DEFAULT_MANIFEST)
+        // Blank entries should produce no issues, even if OpenCode exposes no models at all.
+        expect(validateManifestSelections(manifest, [])).toEqual([])
     })
 })

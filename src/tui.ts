@@ -6,6 +6,7 @@ import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
 import { inspectAgentManifest, ManifestConflictError, saveAgentManifest } from "./installation.js"
 import {
     agentSettingsCategory,
+    clearConfiguredModel,
     configuredModels,
     createManifestDraft,
     selectConfiguredModel,
@@ -23,6 +24,7 @@ const BACK = Symbol("specops-back")
 export function registerModelSettings(api: TuiPluginApi): void {
     let editorOpen = false
 
+    /** Open the model editor once, guarding against re-entrant launches. */
     const openEditor = async (): Promise<void> => {
         if (editorOpen) return
         editorOpen = true
@@ -102,16 +104,19 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
     let staged = structuredClone(draft.manifest)
 
     let closed = false
+    /** Mark the editor closed exactly once, idempotently. */
     const finish = (): void => {
         if (closed) return
         closed = true
         onClose()
     }
+    /** Clear the dialog surface and finish the editor. */
     const close = (): void => {
         api.ui.dialog.clear()
         finish()
     }
 
+    /** Surface manifest validation issues and return to the agent list on confirm. */
     const showIssues = (issues: readonly string[]): void => {
         api.ui.dialog.replace(() =>
             api.ui.DialogAlert({
@@ -122,6 +127,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         )
     }
 
+    /** Validate the staged mapping and persist it once if the on-disk hash is unchanged. */
     const save = async (): Promise<void> => {
         const issues = validateManifestSelections(staged, models)
         if (issues.length) {
@@ -152,6 +158,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         }
     }
 
+    /** Show the save-confirmation dialog, or issues, before persisting. */
     const showReview = (): void => {
         const issues = validateManifestSelections(staged, models)
         if (issues.length) {
@@ -176,6 +183,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         )
     }
 
+    /** Pick a variant for the selected model, or clear it to the model default. */
     const showVariant = (id: AgentId, model: ConfiguredModel): void => {
         const variants = ["", ...model.variants]
         api.ui.dialog.replace(() =>
@@ -212,6 +220,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         )
     }
 
+    /** Pick a configured model (or OpenCode's global default) for one agent. */
     const showModels = (id: AgentId): void => {
         api.ui.dialog.replace(() =>
             api.ui.DialogSelect<string | typeof BACK>({
@@ -219,6 +228,11 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 placeholder: "Search configured models",
                 current: staged.agents[id].model,
                 options: [
+                    {
+                        title: "Use OpenCode default",
+                        value: "",
+                        description: "Use OpenCode's configured global default model",
+                    },
                     ...models.map(model => ({
                         title: model.name,
                         value: model.id,
@@ -236,6 +250,11 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                         showAgents()
                         return
                     }
+                    if (option.value === "") {
+                        staged.agents[id] = clearConfiguredModel(staged.agents[id])
+                        showAgents()
+                        return
+                    }
                     const selected = models.find(model => model.id === option.value)
                     if (!selected) return
                     staged.agents[id] = selectConfiguredModel(staged.agents[id], selected)
@@ -245,6 +264,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         )
     }
 
+    /** Render the staged agent mapping list with review and cancel actions. */
     const showAgents = (): void => {
         api.ui.dialog.setSize("xlarge")
         const unresolved = new Set(
@@ -302,6 +322,9 @@ function describeSelection(
     models: readonly ConfiguredModel[],
 ): string {
     const entry = manifest.agents[id]
+    if (!entry.model?.trim()) {
+        return "OpenCode default"
+    }
     const name = models.find(model => model.id === entry.model)?.name ?? entry.model
     const compactName = name.length > 28 ? `${name.slice(0, 27)}…` : name
     return `${compactName} · ${entry.variant ?? "Default"}`

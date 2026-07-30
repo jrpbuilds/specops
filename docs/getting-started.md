@@ -67,6 +67,9 @@ SpecOps does not install another executable or define private CLI flags.
 
 ## Model assignments
 
+SpecOps ships with every agent set to **Default**; each agent inherits OpenCode's configured
+global default model until you assign a provider/model mapping.
+
 After first load, edit:
 
 ```text
@@ -76,12 +79,56 @@ $XDG_CONFIG_HOME/opencode/specops-manifest.json
 or `~/.config/opencode/specops-manifest.json` when XDG configuration is unset.
 
 Open `SpecOps: Configure agent models` from OpenCode's command palette. Select an agent, one of
-OpenCode's configured provider/model entries, and either **Default** or a variant exposed by that
-model. Review the complete mapping and save it once.
+OpenCode's configured provider/model entries, and either **Default** (for OpenCode's global default)
+or a variant exposed by that model. Choose **Use OpenCode default** to clear an agent-specific
+selection so it follows OpenCode's global model again.
 
-The schema-v2 manifest accepts exactly `model` and optional `variant` for every canonical agent.
-Workflow steps, prompts, tools, permissions, and modes remain registry-owned. Restart or reload
-OpenCode and run `/specops-doctor` after saving.
+The schema-v2 manifest accepts an optional `model` and optional `variant` for every canonical
+agent. An absent or blank `model` means "use OpenCode's global default". Workflow steps, prompts,
+tools, permissions, and modes remain registry-owned. Restart or reload OpenCode and run
+`/specops-doctor` after saving.
+
+### Recommended mapping (neutral placeholders)
+
+This is the shape we use internally. Replace `<provider>` with your configured OpenCode providers
+and `<model>` with the exact model IDs they expose. We tune stronger models for assessment, design,
+implementation, and frontier adjudication, and smaller/cheaper models for the controllers and
+narrow specialists.
+
+```json
+{
+    "version": 2,
+    "agents": {
+        "specops-auto-controller": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-interactive-controller": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-assessor": { "model": "<provider>/<strong-model>", "variant": "high" },
+        "specops-explorer": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-planner": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-designer": { "model": "<provider>/<strong-model>", "variant": "max" },
+        "specops-implementer": { "model": "<provider>/<code-model>", "variant": "thinking" },
+        "specops-verifier": { "model": "<provider>/<strong-model>", "variant": "max" },
+        "specops-repairer": { "model": "<provider>/<model>", "variant": "medium" },
+        "specops-risk-reviewer": { "model": "<provider>/<model>", "variant": "thinking" },
+        "specops-correctness-judge": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-compliance-judge": { "model": "<provider>/<strong-model>", "variant": "high" },
+        "specops-review-refuter": { "model": "<provider>/<model>", "variant": "max" },
+        "specops-frontier-low": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-frontier-high": { "model": "<provider>/<strong-model>", "variant": "high" },
+        "specops-security-specialist": { "model": "<provider>/<strong-model>", "variant": "max" },
+        "specops-data-migration-specialist": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-contract-specialist": { "model": "<provider>/<model>", "variant": "max" },
+        "specops-concurrency-specialist": {
+            "model": "<provider>/<strong-model>",
+            "variant": "max"
+        },
+        "specops-resilience-specialist": { "model": "<provider>/<model>", "variant": "thinking" },
+        "specops-performance-specialist": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-infrastructure-specialist": { "model": "<provider>/<model>", "variant": "high" },
+        "specops-usability-specialist": { "model": "<provider>/<model>", "variant": "thinking" },
+        "specops-maintainability-specialist": { "model": "<provider>/<model>", "variant": "high" }
+    }
+}
+```
 
 If an existing schema-v1 manifest is detected, the mapping screen opens once per launch. SpecOps
 preserves the old file until you save and uses packaged defaults for that session. Available legacy

@@ -186,13 +186,15 @@ OpenCode and the variants each model actually exposes:
 }
 ```
 
-`variant` is optional; selecting **Default** omits it. All canonical agent IDs must be present.
-Unknown fields, empty values, partial catalogues, and unsupported variants are rejected. Restart
-or reload OpenCode after saving, then run `/specops-doctor`. The complete generated catalogue and
-role descriptions are in [Agents](docs/agents.md). Clean installs use the free
-`opencode/north-mini-code-free` model for the repairer. For the most reliable review-fixing
-results, configure that role with a frontier-capability coding model through the same settings
-command. Existing manifests preserve their current selection.
+`model` and `variant` are both optional; an absent or blank `model` means the
+agent uses OpenCode's configured global default model. All canonical agent IDs
+must be present. Unknown fields, partial catalogues, and unsupported variants
+are rejected. Restart or reload OpenCode after saving, then run
+`/specops-doctor`. The complete generated catalogue and role descriptions are in
+[Agents](docs/agents.md). Clean installs ship every agent set to OpenCode's
+global default; assign stronger coding models to the implementer, repairer, and
+frontier roles for the most reliable results. Existing manifests preserve their
+current selection.
 
 ## Development and verification
 

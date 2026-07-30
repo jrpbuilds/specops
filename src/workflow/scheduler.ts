@@ -4,7 +4,10 @@ import type {
     ArtifactId,
     BlockReason,
     CapabilityId,
+    CheckpointArtifactSnapshot,
+    DispatchPurpose,
     PauseReason,
+    PendingCheckpoint,
     PendingQuestion,
     ResumeTarget,
     RunState,
@@ -19,7 +22,7 @@ import {
     STANDARD_BUNDLE_TASKS_CONTRACT,
 } from "./contracts.generated.js"
 import { currentReviewSubmissions } from "./reviews.js"
-import { getResumeTarget, resumePromptForAnswer } from "./questions.js"
+import { getResumeTarget, resumePromptForAnswer, resumePromptForCheckpoint } from "./questions.js"
 import { canIssuePendingFrontier } from "../frontier/policy.js"
 
 /**
@@ -40,6 +43,201 @@ const SPECIALIST_CAPABILITIES = new Set<CapabilityId>([
 ])
 
 /**
+ * Checkpoint-eligible artifact groups produced by a single completed dispatch.
+ *
+ * Each entry maps a (capability, purpose, mode) tuple to the checkpoint
+ * artifacts that were newly produced and remain valid after the dispatch
+ * completes. An interactive run pauses once per group so the user may continue
+ * or feed back before the next phase. Automatic runs never checkpoint.
+ *
+ * `purpose: "workflow"` is required so repair, consultation, independent
+ * review, judgment, and frontier dispatches never checkpoint even when they
+ * share a capability or mode with a workflow dispatch.
+ */
+const CHECKPOINT_ACTIONS: Array<{
+    capability: CapabilityId
+    purpose: DispatchPurpose
+    mode?: string
+    artifacts: ArtifactId[]
+}> = [
+    // Lean planning produces tasks only.
+    {
+        capability: "planning",
+        purpose: "workflow",
+        mode: "lean-plan",
+        artifacts: ["tasks"],
+    },
+    // Standard planning atomically produces proposal, specs, and tasks.
+    {
+        capability: "planning",
+        purpose: "workflow",
+        mode: "standard-bundle",
+        artifacts: ["proposal", "tasks"],
+    },
+    // Full requirements bundle produces proposal (specs/design follow later).
+    {
+        capability: "planning",
+        purpose: "workflow",
+        mode: "requirements-bundle",
+        artifacts: ["proposal"],
+    },
+    // Full designer produces the independent design artifact.
+    { capability: "design", purpose: "workflow", artifacts: ["design"] },
+    // Full task refinement produces tasks from proposal/specs/design.
+    {
+        capability: "planning",
+        purpose: "workflow",
+        mode: "task-refinement",
+        artifacts: ["tasks"],
+    },
+    // Implementer produces the implementation diff.
+    { capability: "implementation", purpose: "workflow", artifacts: ["implementation"] },
+    // Verifier produces verification (Lean bundle also yields judgments/ledger
+    // but those are assurance tail; the checkpoint is the verification phase).
+    { capability: "verification", purpose: "workflow", artifacts: ["verification"] },
+]
+
+/**
+ * Return the checkpoint-eligible artifacts a completed dispatch produced.
+ *
+ * Matches the dispatch's capability, purpose, and mode (if any) against the
+ * configured checkpoint groups and returns only those artifacts that are
+ * currently recorded with `validity === "valid"`. Returns an empty array when
+ * the dispatch is not a checkpoint boundary (e.g. exploration, consultation,
+ * independent review, judgment, repair, frontier).
+ *
+ * @param state - The current run state with persisted artifacts.
+ * @param action - The action whose dispatch just completed.
+ * @returns The checkpoint artifacts that remain valid, or an empty array.
+ */
+export function checkpointArtifactsFor(state: RunState, action: WorkflowAction): ArtifactId[] {
+    return CHECKPOINT_ACTIONS.filter(
+        entry =>
+            entry.capability === action.capability &&
+            entry.purpose === action.purpose &&
+            (entry.mode === undefined || entry.mode === action.mode),
+    ).flatMap(entry => entry.artifacts.filter(artifact => isComplete(state, artifact)))
+}
+
+/**
+ * Build an immutable snapshot of the checkpoint artifacts and their current
+ * output hashes. The snapshot is stored in the pending checkpoint and history
+ * so duplicate detection and binding validation do not depend on the live
+ * (mutable) artifact state.
+ *
+ * @param state - The current run state.
+ * @param artifacts - The checkpoint artifact ids to snapshot.
+ * @returns Immutable artifact/hash pairs.
+ */
+export function snapshotCheckpointArtifacts(
+    state: RunState,
+    artifacts: ArtifactId[],
+): CheckpointArtifactSnapshot[] {
+    return artifacts.map(artifact => ({
+        artifact,
+        outputHash: state.artifacts[artifact]?.outputHash ?? "",
+    }))
+}
+
+/**
+ * Return whether a checkpoint has already been recorded for a given dispatch
+ * and set of artifact output hashes. The comparison uses the immutable
+ * snapshot persisted in {@link CheckpointRecord.artifacts}, not the live
+ * artifact state, so a regenerated artifact with a different output hash
+ * produces a new checkpoint while a duplicate is suppressed.
+ *
+ * @param state - The current run state.
+ * @param dispatchId - The completed dispatch id.
+ * @param artifacts - The checkpoint artifact snapshot to compare against.
+ * @returns `true` when an equivalent checkpoint already exists in history.
+ */
+export function hasCheckpointFor(
+    state: RunState,
+    dispatchId: string,
+    artifacts: CheckpointArtifactSnapshot[],
+): boolean {
+    const hash = checkpointSnapshotHash(artifacts)
+    return (state.checkpointHistory ?? []).some(
+        record =>
+            record.dispatchId === dispatchId && checkpointSnapshotHash(record.artifacts) === hash,
+    )
+}
+
+/**
+ * Build a stable hash over an immutable artifact snapshot.
+ *
+ * @param artifacts - The checkpoint artifact snapshot.
+ * @returns A SHA-256 hex digest of the artifact id/output-hash pairs.
+ */
+function checkpointSnapshotHash(artifacts: CheckpointArtifactSnapshot[]): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify(
+                [...artifacts]
+                    .map(entry => [entry.artifact, entry.outputHash])
+                    .sort(([left], [right]) => left.localeCompare(right)),
+            ),
+        )
+        .digest("hex")
+}
+
+/**
+ * Compute the stable binding hash for a checkpoint using the current run state.
+ *
+ * Binds the checkpoint to the policy hash, the implementation diff hash, and
+ * the immutable artifact snapshot so a regenerated phase produces a different
+ * binding and may checkpoint again.
+ *
+ * @param state - The current run state.
+ * @param dispatch - The dispatch that produced the checkpoint artifacts.
+ * @param artifacts - The immutable checkpoint artifact snapshot.
+ * @returns A SHA-256 hex digest over authoritative inputs.
+ */
+export function computeCheckpointBindingHash(
+    state: RunState,
+    dispatch: { inputHash: string },
+    artifacts: CheckpointArtifactSnapshot[],
+): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify({
+                policyHash: state.requirements.policyHash,
+                dispatchInputHash: dispatch.inputHash,
+                implementationDiffHash: state.implementationDiffHash,
+                artifacts: checkpointSnapshotHash(artifacts),
+            }),
+        )
+        .digest("hex")
+}
+
+/**
+ * Validate that a pending checkpoint's binding still matches the authoritative
+ * run inputs. A stale checkpoint (e.g. after implementation diff or policy
+ * changed between queueing and resolution) must not apply feedback against
+ * outputs that were already invalidated.
+ *
+ * @param state - The current run state.
+ * @param pending - The pending checkpoint to validate.
+ * @returns `true` when the binding is still current; `false` when stale.
+ */
+export function isCheckpointBindingCurrent(state: RunState, pending: PendingCheckpoint): boolean {
+    if (state.requirements.policyHash !== pending.policyHash) return false
+    if ((state.implementationDiffHash ?? "") !== (pending.implementationDiffHash ?? "")) {
+        return false
+    }
+    // Every snapshot artifact must still be valid with the recorded hash.
+    for (const snapshot of pending.artifacts) {
+        const provenance = state.artifacts[snapshot.artifact]
+        if (!provenance || provenance.validity !== "valid") return false
+        if (provenance.outputHash !== snapshot.outputHash) return false
+    }
+    const dispatch = state.dispatches.find(record => record.id === pending.dispatchId)
+    if (!dispatch) return false
+    const recomputed = computeCheckpointBindingHash(state, dispatch, pending.artifacts)
+    return recomputed === pending.bindingHash
+}
+
+/**
  * Explicit directive returned by the canonical progression tool.
  *
  * Controllers follow this directive instead of inspecting arbitrary run state.
@@ -47,6 +245,7 @@ const SPECIALIST_CAPABILITIES = new Set<CapabilityId>([
 export type ControllerDirective =
     | { type: "dispatch"; action: WorkflowAction }
     | { type: "ask-question"; question: PendingQuestion; bindingHash: string }
+    | { type: "checkpoint"; checkpoint: PendingCheckpoint }
     | {
           type: "block"
           reason: BlockReason | PauseReason
@@ -92,7 +291,7 @@ export function nextAction(
     state: RunState,
     resumeTarget?: ResumeTarget,
 ): WorkflowAction | undefined {
-    if (state.status !== "running" || state.pendingQuestion) {
+    if (state.status !== "running" || state.pendingQuestion || state.pendingCheckpoint) {
         return undefined
     }
 
@@ -262,8 +461,8 @@ export function nextAction(
 export function nextDirective(state: RunState): ControllerDirective {
     const mode = state.mode ?? "interactive"
 
-    // Paused states are handled first so a resumable pending question can be
-    // presented again without dispatching a worker.
+    // Paused states are handled first so a resumable pending question or
+    // checkpoint can be presented again without dispatching a worker.
     if (state.status === "paused") {
         if (state.pendingQuestion) {
             if (mode === "automatic") {
@@ -279,6 +478,19 @@ export function nextDirective(state: RunState): ControllerDirective {
                 question: state.pendingQuestion,
                 bindingHash: state.pendingQuestion.bindingHash,
             }
+        }
+        if (state.pendingCheckpoint) {
+            if (mode === "automatic") {
+                // Checkpoints are never queued in automatic mode; a persisted
+                // checkpoint-paused state here indicates a mode mismatch and
+                // is surfaced as a non-resumable block for diagnosis.
+                return {
+                    type: "block",
+                    reason: "checkpoint",
+                    resumable: false,
+                }
+            }
+            return { type: "checkpoint", checkpoint: state.pendingCheckpoint }
         }
         return {
             type: "block",
@@ -315,12 +527,27 @@ export function nextDirective(state: RunState): ControllerDirective {
     const resumeTarget = getResumeTarget(state)
     const action = nextAction(state, resumeTarget)
 
-    if (resumeTarget && action) {
-        const answered = state.questionHistory.find(
-            record => record.id === resumeTarget.questionId && record.outcome === "answered",
-        )
-        if (answered) {
-            action.prompt = resumePromptForAnswer(action.prompt, answered)
+    // Inject resume feedback only into an action whose capability, purpose,
+    // and action exactly match the originating dispatch. This prevents a
+    // pending repair, frontier, consultation, or review dispatch from
+    // consuming feedback meant for a prior phase.
+    if (resumeTarget && action && matchesResumeTarget(action, resumeTarget)) {
+        if (resumeTarget.origin === "checkpoint") {
+            const checkpoint = (state.checkpointHistory ?? []).find(
+                record =>
+                    record.dispatchId === resumeTarget.originalDispatchId &&
+                    record.outcome === "feedback",
+            )
+            if (checkpoint) {
+                action.prompt = resumePromptForCheckpoint(action.prompt, checkpoint)
+            }
+        } else {
+            const answered = state.questionHistory.find(
+                record => record.id === resumeTarget.sourceId && record.outcome === "answered",
+            )
+            if (answered) {
+                action.prompt = resumePromptForAnswer(action.prompt, answered)
+            }
         }
     }
 
@@ -552,15 +779,45 @@ function matchesFrontierResume(
 }
 
 /**
- * Build a stable map of answered question ids to answer hashes.
+ * Return whether an action is the exact phase dispatch targeted for replay
+ * after a worker-question answer or checkpoint feedback.
+ *
+ * Compares capability, purpose, and action mode so a repair, frontier,
+ * consultation, or review dispatch cannot consume feedback meant for a
+ * prior phase.
+ *
+ * @param action - Candidate scheduler action.
+ * @param target - Persisted resume target.
+ * @returns `true` only for the originating capability, purpose, and action.
+ */
+function matchesResumeTarget(action: WorkflowAction, target: ResumeTarget): boolean {
+    return (
+        action.capability === target.capability &&
+        action.purpose === target.purpose &&
+        (action.mode ?? action.capability) === target.action
+    )
+}
+
+/**
+ * Build a stable map of answered question and checkpoint-feedback hashes.
+ *
+ * Includes both worker-question answer hashes and checkpoint feedback hashes
+ * so that changed checkpoint feedback makes dependent artifacts stale exactly
+ * like a changed question answer.
  *
  * @param state - The current run state.
- * @returns Record of question id to answer hash.
+ * @returns Record of source id to answer/feedback hash.
  */
 function answerHashes(state: RunState): Record<string, string> {
-    return Object.fromEntries(
-        state.questionHistory
-            .filter(record => record.outcome === "answered" && record.answerHash)
-            .map(record => [record.id, record.answerHash]),
-    )
+    const questionHashes = state.questionHistory
+        .filter(record => record.outcome === "answered" && record.answerHash)
+        .map(record => [record.id, record.answerHash] as [string, string])
+    const checkpointHashes = (state.checkpointHistory ?? [])
+        .filter(record => record.outcome === "feedback" && record.feedbackHash)
+        .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
+    const result: Record<string, string> = {}
+    for (const [k, v] of [...questionHashes, ...checkpointHashes]) {
+        result[k] = v
+    }
+    return result
 }

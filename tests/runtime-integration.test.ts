@@ -73,12 +73,37 @@ describe.sequential("installed runtime contract", () => {
         expect(automatic?.mode).toBe("primary")
         expect(interactive?.maxSteps).toBe(1_000)
         expect(automatic?.tools?.task).toBe(true)
+        expect(interactive?.tools?.question).toBe(true)
+        expect(automatic?.tools?.question).toBe(false)
+
+        const controllerPermission: Record<string, string> = {
+            bash: "deny",
+            edit: "deny",
+            read: "deny",
+            glob: "deny",
+            grep: "deny",
+            todowrite: "deny",
+        }
+        for (const id of CONTROLLER_AGENT_IDS) {
+            expect(config.agent?.[id]?.permission as Record<string, string>).toEqual(
+                controllerPermission,
+            )
+            const prompt = promptText(id)
+            expect(prompt).toContain("FIRST action")
+            expect(prompt).toContain("specops-assessor")
+            expect(prompt).toContain("Never do")
+            expect(prompt).toContain("collapse, simulate")
+        }
 
         for (const id of ALL_AGENT_IDS) {
             expect(config.agent?.[id]?.prompt).toBe(promptText(id))
             if (!CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
                 expect(config.agent?.[id]?.mode).toBe("subagent")
                 expect(config.agent?.[id]?.tools?.task).toBe(false)
+                // Workers need read/glob/grep to inspect the repository.
+                expect(
+                    (config.agent?.[id]?.permission as Record<string, string> | undefined)?.read,
+                ).not.toBe("deny")
             }
         }
 

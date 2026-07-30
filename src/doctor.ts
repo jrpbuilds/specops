@@ -265,9 +265,20 @@ function checkCapabilityMappings(diagnostics: Diagnostic[]): void {
     })
 }
 
+/** Mandatory guardrail phrases that must be present in controller prompts. */
+const CONTROLLER_GUARDRAIL_PHRASES = [
+    "specops-assessor",
+    "FIRST action",
+    "Never do",
+    "collapse, simulate",
+    "specops_next_action",
+    "specops_complete_action",
+]
+
 /**
  * Verify every final agent has a non-empty generated prompt via
- * {@link promptText}.
+ * {@link promptText} and that controller prompts carry the mandatory
+ * guardrail phrases.
  *
  * Pushes a single `PASS` or `FAIL` diagnostic.
  *
@@ -275,11 +286,19 @@ function checkCapabilityMappings(diagnostics: Diagnostic[]): void {
  */
 function checkPrompts(diagnostics: Diagnostic[]): void {
     const missing = ALL_AGENT_IDS.filter(id => !promptText(id).trim())
+    const controllerDrift = CONTROLLER_AGENT_IDS.filter(id => {
+        const text = promptText(id)
+        return CONTROLLER_GUARDRAIL_PHRASES.some(phrase => !text.includes(phrase))
+    })
+    const status = missing.length || controllerDrift.length ? "FAIL" : "PASS"
+    const message = missing.length
+        ? `generated prompts are missing for: ${missing.join(", ")}`
+        : controllerDrift.length
+          ? `controller prompt guardrails are missing for: ${controllerDrift.join(", ")}`
+          : `embedded prompts resolve for all ${ALL_AGENT_IDS.length} final agents with controller guardrails`
     diagnostics.push({
-        status: missing.length ? "FAIL" : "PASS",
-        message: missing.length
-            ? `generated prompts are missing for: ${missing.join(", ")}`
-            : `embedded prompts resolve for all ${ALL_AGENT_IDS.length} final agents`,
+        status,
+        message,
         repair: "Run npm run generate and reinstall the rebuilt package.",
     })
 }

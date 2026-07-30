@@ -7,6 +7,10 @@ export type { AgentId } from "./ids.js"
 type AgentPermission = {
     bash: "allow" | "deny"
     edit: "allow" | "deny"
+    read?: "allow" | "deny"
+    glob?: "allow" | "deny"
+    grep?: "allow" | "deny"
+    todowrite?: "allow" | "deny"
 }
 
 /**
@@ -23,7 +27,7 @@ export type AgentPolicy = {
     model: string
     steps: number
     mode: "primary" | "subagent"
-    tools: { question?: boolean; todowrite?: boolean; task?: boolean }
+    tools: { question?: boolean; task?: boolean }
     permission: AgentPermission
 }
 
@@ -35,6 +39,16 @@ const WRITER: AgentPermission = { bash: "allow", edit: "allow" }
 
 /** Permission preset: bash access but no edit access. */
 const VERIFIER: AgentPermission = { bash: "allow", edit: "deny" }
+
+/** Permission preset: controllers may only dispatch and present checkpoints. */
+const CONTROLLER_PERMISSION: AgentPermission = {
+    bash: "deny",
+    edit: "deny",
+    read: "deny",
+    glob: "deny",
+    grep: "deny",
+    todowrite: "deny",
+}
 
 /**
  * Human-readable role catalogue generated alongside the runtime policies.
@@ -86,104 +100,28 @@ const AGENT_ROLES: Record<AgentId, string> = {
 export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     [AGENT_IDS.controller.automatic]: primary(AGENT_IDS.controller.automatic, false),
     [AGENT_IDS.controller.interactive]: primary(AGENT_IDS.controller.interactive, true),
-    [AGENT_IDS.core.assessor]: readOnly(
-        AGENT_IDS.core.assessor,
-        "opencode/deepseek-v4-flash-free",
-        32,
-    ),
-    [AGENT_IDS.core.explorer]: readOnly(
-        AGENT_IDS.core.explorer,
-        "opencode/ling-3.0-flash-free",
-        32,
-    ),
-    [AGENT_IDS.core.planner]: readOnly(
-        AGENT_IDS.core.planner,
-        "opencode/nemotron-3-ultra-free",
-        48,
-    ),
-    [AGENT_IDS.core.designer]: readOnly(
-        AGENT_IDS.core.designer,
-        "opencode/nemotron-3-ultra-free",
-        48,
-    ),
-    [AGENT_IDS.core.implementer]: writer(
-        AGENT_IDS.core.implementer,
-        "opencode/north-mini-code-free",
-        96,
-    ),
-    [AGENT_IDS.core.verifier]: verifier(AGENT_IDS.core.verifier, "opencode/mimo-v2.5-free", 64),
-    [AGENT_IDS.review.risk]: reviewer(AGENT_IDS.review.risk, "opencode/mimo-v2.5-free", 32),
-    [AGENT_IDS.specialist.security]: readOnly(
-        AGENT_IDS.specialist.security,
-        "opencode/mimo-v2.5-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.dataMigration]: readOnly(
-        AGENT_IDS.specialist.dataMigration,
-        "opencode/nemotron-3-ultra-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.contract]: readOnly(
-        AGENT_IDS.specialist.contract,
-        "opencode/mimo-v2.5-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.concurrency]: readOnly(
-        AGENT_IDS.specialist.concurrency,
-        "opencode/mimo-v2.5-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.resilience]: readOnly(
-        AGENT_IDS.specialist.resilience,
-        "opencode/ling-3.0-flash-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.performance]: readOnly(
-        AGENT_IDS.specialist.performance,
-        "opencode/laguna-s-2.1-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.infrastructure]: readOnly(
-        AGENT_IDS.specialist.infrastructure,
-        "opencode/nemotron-3-ultra-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.usability]: readOnly(
-        AGENT_IDS.specialist.usability,
-        "opencode/laguna-s-2.1-free",
-        40,
-    ),
-    [AGENT_IDS.specialist.maintainability]: readOnly(
-        AGENT_IDS.specialist.maintainability,
-        "opencode/laguna-s-2.1-free",
-        40,
-    ),
-    [AGENT_IDS.review.correctnessJudge]: reviewer(
-        AGENT_IDS.review.correctnessJudge,
-        "opencode/nemotron-3-ultra-free",
-        40,
-    ),
-    [AGENT_IDS.review.complianceJudge]: reviewer(
-        AGENT_IDS.review.complianceJudge,
-        "opencode/mimo-v2.5-free",
-        40,
-    ),
-    [AGENT_IDS.review.refuter]: readOnly(
-        AGENT_IDS.review.refuter,
-        "opencode/nemotron-3-ultra-free",
-        32,
-    ),
-    [AGENT_IDS.review.frontierLow]: readOnly(
-        AGENT_IDS.review.frontierLow,
-        "openai/gpt-5.6-luna",
-        8,
-    ),
-    [AGENT_IDS.review.frontierHigh]: readOnly(
-        AGENT_IDS.review.frontierHigh,
-        "openai/gpt-5.6-sol",
-        12,
-    ),
-    [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, "opencode/north-mini-code-free", 64),
+    [AGENT_IDS.core.assessor]: readOnly(AGENT_IDS.core.assessor, "", 32),
+    [AGENT_IDS.core.explorer]: readOnly(AGENT_IDS.core.explorer, "", 32),
+    [AGENT_IDS.core.planner]: readOnly(AGENT_IDS.core.planner, "", 48),
+    [AGENT_IDS.core.designer]: readOnly(AGENT_IDS.core.designer, "", 48),
+    [AGENT_IDS.core.implementer]: writer(AGENT_IDS.core.implementer, "", 96),
+    [AGENT_IDS.core.verifier]: verifier(AGENT_IDS.core.verifier, "", 64),
+    [AGENT_IDS.review.risk]: reviewer(AGENT_IDS.review.risk, "", 32),
+    [AGENT_IDS.specialist.security]: readOnly(AGENT_IDS.specialist.security, "", 40),
+    [AGENT_IDS.specialist.dataMigration]: readOnly(AGENT_IDS.specialist.dataMigration, "", 40),
+    [AGENT_IDS.specialist.contract]: readOnly(AGENT_IDS.specialist.contract, "", 40),
+    [AGENT_IDS.specialist.concurrency]: readOnly(AGENT_IDS.specialist.concurrency, "", 40),
+    [AGENT_IDS.specialist.resilience]: readOnly(AGENT_IDS.specialist.resilience, "", 40),
+    [AGENT_IDS.specialist.performance]: readOnly(AGENT_IDS.specialist.performance, "", 40),
+    [AGENT_IDS.specialist.infrastructure]: readOnly(AGENT_IDS.specialist.infrastructure, "", 40),
+    [AGENT_IDS.specialist.usability]: readOnly(AGENT_IDS.specialist.usability, "", 40),
+    [AGENT_IDS.specialist.maintainability]: readOnly(AGENT_IDS.specialist.maintainability, "", 40),
+    [AGENT_IDS.review.correctnessJudge]: reviewer(AGENT_IDS.review.correctnessJudge, "", 40),
+    [AGENT_IDS.review.complianceJudge]: reviewer(AGENT_IDS.review.complianceJudge, "", 40),
+    [AGENT_IDS.review.refuter]: readOnly(AGENT_IDS.review.refuter, "", 32),
+    [AGENT_IDS.review.frontierLow]: readOnly(AGENT_IDS.review.frontierLow, "", 8),
+    [AGENT_IDS.review.frontierHigh]: readOnly(AGENT_IDS.review.frontierHigh, "", 12),
+    [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, "", 64),
 }
 
 /** Map every {@link RiskFacet} to its assigned specialist agent. */
@@ -296,17 +234,18 @@ export function agentForCapability(
  * @param interactive - Whether the controller should have the `question` tool
  * enabled for user checkpoints.
  * @returns A fully populated primary {@link AgentPolicy} with 1 000 steps,
- * no bash or edit permissions, and the `task` tool enabled.
+ * a blank default model (so OpenCode uses its global default), no direct
+ * exploration or edit permissions, and the `task` tool enabled.
  */
 function primary(id: AgentId, interactive: boolean): AgentPolicy {
     return {
         id,
         role: AGENT_ROLES[id],
-        model: "opencode/deepseek-v4-flash-free",
+        model: "",
         steps: 1_000,
         mode: "primary",
-        tools: { question: interactive, todowrite: false, task: true },
-        permission: { bash: "deny", edit: "deny" },
+        tools: { question: interactive, task: true },
+        permission: CONTROLLER_PERMISSION,
     }
 }
 

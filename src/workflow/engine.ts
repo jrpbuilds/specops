@@ -1,4 +1,5 @@
 import { readFile, readdir } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import path from "node:path"
 import type { SpecOpsConfig } from "../config.js"
 import { AGENT_IDS } from "../capabilities/ids.js"
@@ -11,11 +12,13 @@ import { changeRoot, readMachine, readRun, writeMachine, writeRun } from "../sta
 import type {
     ArtifactId,
     BlockReason,
+    CheckpointRecord,
     CommandEvidence,
     DispatchRecord,
     EscalationClaim,
     FrontierResponse,
     AssuranceFinding,
+    PendingCheckpoint,
     RepairMode,
     RepairTask,
     ReviewLedger,
@@ -23,13 +26,24 @@ import type {
     WorkflowOutcome,
 } from "../types.js"
 import { hash, invalidate } from "../artifacts/lifecycle.js"
-import { dispatchHash, nextAction, nextDirective, type ControllerDirective } from "./scheduler.js"
+import {
+    checkpointArtifactsFor,
+    computeCheckpointBindingHash,
+    dispatchHash,
+    hasCheckpointFor,
+    isCheckpointBindingCurrent,
+    nextAction,
+    nextDirective,
+    snapshotCheckpointArtifacts,
+    type ControllerDirective,
+} from "./scheduler.js"
 import type { WorkflowAction } from "./actions.js"
 import {
     answerQuestion,
     consumeResumeTarget,
     dismissQuestion,
     flushPendingQuestionOnCancel,
+    invalidationForCheckpoint,
     registerPendingQuestion,
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
@@ -253,11 +267,15 @@ export async function issueDirective(
         const resume = consumeResumeTarget(state)
         if (resume) {
             record.resume = {
+                sourceId: resume.sourceId,
                 questionId: resume.questionId,
                 originalDispatchId: resume.originalDispatchId,
                 answerHash: resume.answerHash,
                 phase: resume.phase,
                 capability: resume.capability,
+                purpose: resume.purpose,
+                action: resume.action,
+                origin: resume.origin,
             }
         }
         if (
@@ -398,6 +416,41 @@ export async function completeAction(
                 `scope raised from ${scopeBeforeCompletion} to ${state.scopeTier}`,
             )
         }
+
+        // Queue an interactive checkpoint after a successful dispatch produces
+        // checkpoint-eligible artifacts. Automatic runs never checkpoint. A
+        // worker-raised question takes precedence (no artifact is published,
+        // so no checkpoint is queued). The run must still be running and the
+        // checkpoint artifacts must remain valid after any scope escalation.
+        if (
+            state.mode === "interactive" &&
+            state.status === "running" &&
+            !state.pendingQuestion &&
+            !state.pendingFrontier
+        ) {
+            const checkpointArtifacts = checkpointArtifactsFor(state, action)
+            if (checkpointArtifacts.length > 0) {
+                const snapshot = snapshotCheckpointArtifacts(state, checkpointArtifacts)
+                if (!hasCheckpointFor(state, dispatch.id, snapshot)) {
+                    const bindingHash = computeCheckpointBindingHash(state, dispatch, snapshot)
+                    const pending: PendingCheckpoint = {
+                        dispatchId: dispatch.id,
+                        capability: dispatch.capability,
+                        purpose: dispatch.purpose,
+                        action: dispatch.action,
+                        artifacts: snapshot,
+                        policyHash: state.requirements.policyHash,
+                        implementationDiffHash: state.implementationDiffHash,
+                        bindingHash,
+                        raisedAt: new Date().toISOString(),
+                    }
+                    state.pendingCheckpoint = pending
+                    state.status = "paused"
+                    state.pauseReason = "checkpoint"
+                    state.resumable = true
+                }
+            }
+        }
     } catch (error) {
         dispatch.status = "failed"
         dispatch.failureReason = String(error).slice(0, 2_000)
@@ -510,6 +563,140 @@ export async function dismissQuestionAction(
 }
 
 /**
+ * Resolve a pending checkpoint and resume scheduling.
+ *
+ * With no feedback (Continue or dismissal) the checkpoint is recorded as
+ * `continued`/`dismissed`, the pause is cleared, and the run resumes. With
+ * feedback text the checkpoint is recorded as `feedback`, the checkpoint
+ * artifact group and its downstream closure are invalidated, and a resume
+ * target is set so the next dispatch replays the phase with the feedback
+ * injected as untrusted prompt content.
+ *
+ * @param directory - Repository root directory.
+ * @param change - The change name.
+ * @param feedback - User feedback text, or `undefined` for Continue/dismissal.
+ * @param config - Configuration carrying feedback length bounds.
+ * @returns The updated {@link RunState}.
+ * @throws When no checkpoint is pending or the feedback exceeds bounds.
+ */
+export async function resumeCheckpointAction(
+    directory: string,
+    change: string,
+    feedback: string | undefined,
+    config: Pick<SpecOpsConfig, "questions" | "review">,
+): Promise<RunState> {
+    const state = await readRun(directory, change)
+    const pending = state.pendingCheckpoint
+    if (!pending) {
+        throw new Error("SpecOps checkpoint is not pending")
+    }
+
+    // Refresh the implementation diff before validating the checkpoint binding
+    // so an externally mutated worktree is detected before feedback is applied.
+    await refreshImplementationBinding(directory, state, config.review.maxDiffBytes)
+
+    const now = new Date().toISOString()
+    const dispatch = state.dispatches.find(record => record.id === pending.dispatchId)
+    if (!dispatch) {
+        throw new Error("SpecOps checkpoint references an unknown dispatch")
+    }
+
+    // Validate the checkpoint binding before applying Continue or feedback.
+    // If the authoritative inputs have changed (policy, diff, or artifact
+    // hashes) the checkpoint is stale: record it and resume scheduling without
+    // applying the user's feedback against invalidated outputs.
+    if (!isCheckpointBindingCurrent(state, pending)) {
+        state.checkpointHistory ??= []
+        state.checkpointHistory.push({
+            dispatchId: pending.dispatchId,
+            capability: pending.capability,
+            purpose: pending.purpose,
+            action: pending.action,
+            artifacts: pending.artifacts,
+            policyHash: pending.policyHash,
+            implementationDiffHash: pending.implementationDiffHash,
+            bindingHash: pending.bindingHash,
+            raisedAt: pending.raisedAt,
+            resolvedAt: now,
+            outcome: "stale",
+            feedback,
+            feedbackHash: undefined,
+            invalidatedArtifacts: [],
+        })
+        state.pendingCheckpoint = undefined
+        state.status = "running"
+        state.pauseReason = undefined
+        state.resumable = undefined
+        await writeArtifactIndex(directory, change, state)
+        await writeRun(directory, change, state)
+        return state
+    }
+
+    const outcome: CheckpointRecord["outcome"] = feedback === undefined ? "continued" : "feedback"
+    let feedbackHash: string | undefined
+    let invalidatedArtifacts: ArtifactId[] = []
+
+    if (feedback !== undefined) {
+        const trimmed = feedback.trim()
+        if (!trimmed) {
+            throw new Error("SpecOps checkpoint feedback must be non-empty")
+        }
+        if (feedback.length > config.questions.maxOtherTextLength) {
+            throw new Error("SpecOps checkpoint feedback exceeds maximum length")
+        }
+        feedbackHash = createHash("sha256")
+            .update(
+                JSON.stringify({
+                    dispatchId: pending.dispatchId,
+                    feedback,
+                    bindingHash: pending.bindingHash,
+                }),
+            )
+            .digest("hex")
+        invalidatedArtifacts = invalidationForCheckpoint(pending.artifacts)
+        invalidate(state, invalidatedArtifacts, "checkpoint feedback")
+        state.resumeTarget = {
+            sourceId: pending.dispatchId,
+            questionId: pending.dispatchId,
+            originalDispatchId: pending.dispatchId,
+            phase: pending.artifacts[0]?.artifact ?? "proposal",
+            capability: pending.capability,
+            purpose: pending.purpose,
+            action: pending.action,
+            answerHash: feedbackHash,
+            origin: "checkpoint",
+        }
+    }
+
+    const record: CheckpointRecord = {
+        dispatchId: pending.dispatchId,
+        capability: pending.capability,
+        purpose: pending.purpose,
+        action: pending.action,
+        artifacts: pending.artifacts,
+        policyHash: pending.policyHash,
+        implementationDiffHash: pending.implementationDiffHash,
+        bindingHash: pending.bindingHash,
+        raisedAt: pending.raisedAt,
+        resolvedAt: now,
+        outcome,
+        feedback,
+        feedbackHash,
+        invalidatedArtifacts,
+    }
+    state.checkpointHistory ??= []
+    state.checkpointHistory.push(record)
+    state.pendingCheckpoint = undefined
+    state.status = "running"
+    state.pauseReason = undefined
+    state.resumable = undefined
+
+    await writeArtifactIndex(directory, change, state)
+    await writeRun(directory, change, state)
+    return state
+}
+
+/**
  * Record cancellation only while a run is active and leave issued work retryable as failed.
  *
  * Marks any in-flight dispatches as `failed` (so they may be re-issued), flushes
@@ -542,6 +729,27 @@ export async function cancelRun(
     }
     state.pendingRepair = undefined
     flushPendingQuestionOnCancel(state)
+    // Flush any pending checkpoint into history as cancelled so the terminal
+    // state is consistent and the pause reason is never left dangling.
+    if (state.pendingCheckpoint) {
+        const pending = state.pendingCheckpoint
+        state.checkpointHistory ??= []
+        state.checkpointHistory.push({
+            dispatchId: pending.dispatchId,
+            capability: pending.capability,
+            purpose: pending.purpose,
+            action: pending.action,
+            artifacts: pending.artifacts,
+            policyHash: pending.policyHash,
+            implementationDiffHash: pending.implementationDiffHash,
+            bindingHash: pending.bindingHash,
+            raisedAt: pending.raisedAt,
+            resolvedAt: new Date().toISOString(),
+            outcome: "cancelled",
+            invalidatedArtifacts: [],
+        })
+        state.pendingCheckpoint = undefined
+    }
     setOutcome(state, "cancelled", "cancelled", reason)
     await writeRun(directory, change, state)
     return state
@@ -568,7 +776,7 @@ export async function finalizeRun(
 ): Promise<RunState> {
     const state = await readRun(directory, change)
 
-    if (state.status === "paused" && state.pendingQuestion) {
+    if (state.status === "paused" && (state.pendingQuestion || state.pendingCheckpoint)) {
         await writeRun(directory, change, state)
         return state
     }
@@ -673,6 +881,7 @@ export async function finalizeRun(
         repairTasks: state.repairTasks,
         decisions: state.decisions,
         questionHistory: state.questionHistory,
+        checkpointHistory: state.checkpointHistory ?? [],
         frontierUsage: state.frontierUsage,
         frontierHistory: state.frontierHistory,
     }
@@ -1975,11 +2184,17 @@ async function writeArtifactIndex(
  * @returns Record of question id to answer hash.
  */
 function answerHashes(state: RunState): Record<string, string> {
-    return Object.fromEntries(
-        state.questionHistory
-            .filter(record => record.outcome === "answered" && record.answerHash)
-            .map(record => [record.id, record.answerHash]),
-    )
+    const questionHashes = state.questionHistory
+        .filter(record => record.outcome === "answered" && record.answerHash)
+        .map(record => [record.id, record.answerHash] as [string, string])
+    const checkpointHashes = (state.checkpointHistory ?? [])
+        .filter(record => record.outcome === "feedback" && record.feedbackHash)
+        .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
+    const result: Record<string, string> = {}
+    for (const [k, v] of [...questionHashes, ...checkpointHashes]) {
+        result[k] = v
+    }
+    return result
 }
 
 /**

@@ -10,7 +10,7 @@
 export const TOOL_IDS = {
     /** Create a final-format deterministic run from a strict assessment. */
     startRun: "specops_start_run",
-    /** Return the next controller directive (dispatch, ask-question, block, finalize). */
+    /** Return the next controller directive (dispatch, ask-question, checkpoint, block, finalize). */
     nextAction: "specops_next_action",
     /** Validate and persist an issued deterministic worker result. */
     completeAction: "specops_complete_action",
@@ -18,6 +18,8 @@ export const TOOL_IDS = {
     answerQuestion: "specops_answer_question",
     /** Record that the user dismissed the native question UI without answering. */
     dismissQuestion: "specops_dismiss_question",
+    /** Resolve a pending checkpoint and resume scheduling. */
+    resumeCheckpoint: "specops_resume_checkpoint",
     /** Read bounded, scheduler-safe run context and persisted artifacts. */
     requestContext: "specops_request_context",
     /** Execute a registered arbitrary validation command without a shell. */

@@ -16,11 +16,12 @@ import {
     completeAction,
     finalizeRun,
     issueDirective,
+    resumeCheckpointAction,
     startRun,
     answerQuestionAction,
     dismissQuestionAction,
 } from "./workflow/engine.js"
-import { pendingQuestionBlockView } from "./workflow/questions.js"
+import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js"
 
 /** Validated change-name pattern used by every tool that accepts a `change` argument. */
 const CHANGE_NAME = /^[a-z0-9][a-z0-9-]*$/
@@ -88,7 +89,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         }),
         [TOOL_IDS.nextAction]: tool({
             description:
-                "Return the next controller directive (dispatch, ask-question, block, finalize).",
+                "Return the next controller directive (dispatch, ask-question, checkpoint, block, finalize).",
             args: { change: tool.schema.string().regex(CHANGE_NAME) },
             async execute(args, context) {
                 return JSON.stringify(
@@ -178,6 +179,28 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     state,
                 )
                 return summarize(state, args.change, "Question dismissed")
+            },
+        }),
+        [TOOL_IDS.resumeCheckpoint]: tool({
+            description: "Resolve a pending interactive checkpoint and resume scheduling.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                feedback: tool.schema.string().optional(),
+            },
+            async execute(args, context) {
+                const state = await resumeCheckpointAction(
+                    context.directory,
+                    args.change,
+                    args.feedback,
+                    await readConfig(context.directory),
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return summarize(state, args.change, "Checkpoint resolved")
             },
         }),
         [TOOL_IDS.requestContext]: tool({
@@ -298,9 +321,13 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     await readConfig(context.directory),
                 )
-                const dto = pendingQuestionBlockView(state, args.change)
-                if (dto) {
-                    return JSON.stringify(dto, null, 2)
+                const questionDto = pendingQuestionBlockView(state, args.change)
+                if (questionDto) {
+                    return JSON.stringify(questionDto, null, 2)
+                }
+                const checkpointDto = pendingCheckpointBlockView(state, args.change)
+                if (checkpointDto) {
+                    return JSON.stringify(checkpointDto, null, 2)
                 }
                 await publishProgress(
                     context as MetadataContext,

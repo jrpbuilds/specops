@@ -123,6 +123,26 @@ for (const id of ALL_AGENT_IDS) {
     assert(config.agent[id].prompt, `packed runtime omitted the prompt for ${id}`)
 }
 
+const interactive = config.agent[AGENT_IDS.controller.interactive]
+assert(interactive.permission.todowrite === "deny", "interactive controller must deny todowrite")
+assert(interactive.permission.read === "deny", "interactive controller must deny read")
+assert(interactive.permission.glob === "deny", "interactive controller must deny glob")
+assert(interactive.permission.grep === "deny", "interactive controller must deny grep")
+assert(
+    interactive.prompt.includes("FIRST action"),
+    "controller prompt lacks first-action guardrail",
+)
+assert(
+    interactive.prompt.includes("specops-assessor"),
+    "controller prompt lacks assessor reference",
+)
+assert(interactive.prompt.includes("Never do"), "controller prompt lacks self-work guardrail")
+assert(
+    interactive.prompt.includes("collapse, simulate"),
+    "controller prompt lacks no-simulation guardrail",
+)
+assert(!interactive.model, "interactive controller should use OpenCode global default model")
+
 const persistedManifest = manifestModule.validateManifest(
     JSON.parse(await readFile(manifestPath, "utf8")),
 )
@@ -150,10 +170,18 @@ assert(
     doctorOutput.includes(`PASS /specops-auto resolves ${AGENT_IDS.controller.automatic}`),
     "doctor missed automatic resolution",
 )
-assert(
-    doctorOutput.includes("PASS CLI auto available: opencode run --command specops-auto"),
-    "doctor missed the supported OpenCode CLI adapter",
-)
+const opencodePresent = spawnSync("opencode", ["--version"], {
+    encoding: "utf8",
+    detached: true,
+})
+if (opencodePresent.status === 0) {
+    assert(
+        doctorOutput.includes("PASS CLI auto available: opencode run --command specops-auto"),
+        "doctor missed the supported OpenCode CLI adapter",
+    )
+}
+// else: opencode isn't installed (cloud CI) — skip the opencode-relying
+// assertion; the doctor's CLI-adapter FAIL is the correct behaviour there.
 
 const smokeProjectDirectory = path.join(temporaryRoot, "smoke-project")
 await mkdir(smokeProjectDirectory, { recursive: true })

@@ -38,8 +38,11 @@ function agentDocumentation() {
                 ? "Code mutation"
                 : agent.permission.bash === "allow"
                   ? "Command execution"
-                  : "Read-only reasoning"
-        return `| \`${id}\` | ${agent.mode} | ${agent.role} | ${authority} | \`${agent.model}\` |`
+                  : agent.permission.read === "deny"
+                    ? "Scheduler only"
+                    : "Read-only reasoning"
+        const modelCell = agent.model.trim() ? `\`${agent.model}\`` : "*Default*"
+        return `| \`${id}\` | ${agent.mode} | ${agent.role} | ${authority} | ${modelCell} |`
     }).join("\n")
 
     return `# Agent catalogue
@@ -51,6 +54,9 @@ The ${CONTROLLER_AGENT_IDS.length} controllers are primary agents. All capabilit
 workers are subagents and have recursive task dispatch disabled. Model and provider
 options are user-tunable through the materialised manifest; mode, prompts, tools,
 and permissions remain registry-controlled.
+
+A *Default* model means the agent inherits OpenCode's configured global default
+model until the user selects a provider/model mapping.
 
 | Agent ID | Mode | Distinct role | Maximum authority | Default model |
 | --- | --- | --- | --- | --- |

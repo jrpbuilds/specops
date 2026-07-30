@@ -476,7 +476,7 @@ type FrontierResumeTarget = {
     consumed?: boolean
 }
 
-export type PauseReason = "pending-question" | "question-dismissed"
+export type PauseReason = "pending-question" | "question-dismissed" | "checkpoint"
 
 /** Detailed reason for a non-resumable blocked outcome. */
 export type BlockReason = "budget-exhausted" | "policy-rejected" | "validation-failed"
@@ -520,11 +520,15 @@ export type DispatchRecord = {
     at: string
     /** Resume metadata when this dispatch re-issues a paused phase after an answer. */
     resume?: {
+        sourceId: string
         questionId: string
         originalDispatchId: string
         answerHash: string
         phase: ArtifactId
         capability: CapabilityId
+        purpose: DispatchPurpose
+        action: string
+        origin: "question" | "checkpoint"
     }
     /** Resume metadata when frontier advice replays the originating phase. */
     frontierResume?: {
@@ -654,13 +658,68 @@ export type QuestionBudgetUsage = {
     fingerprintCounts: Record<string, number>
 }
 
+/** A live, unanswered checkpoint paused between dispatch phases. */
+export type PendingCheckpoint = {
+    dispatchId: string
+    /** Capability of the producing dispatch; replay targets must match exactly. */
+    capability: CapabilityId
+    /** Purpose of the producing dispatch; replay targets must match exactly. */
+    purpose: DispatchPurpose
+    /** Action mode (or capability) of the producing dispatch; replay must match. */
+    action: string
+    /** Immutable snapshot of the checkpoint artifacts and their output hashes. */
+    artifacts: CheckpointArtifactSnapshot[]
+    /** Policy hash at the moment the checkpoint was queued. */
+    policyHash: string
+    /** Implementation diff hash at the moment the checkpoint was queued. */
+    implementationDiffHash?: string
+    /** Stable binding hash over the snapshot, dispatch, policy, and diff hashes. */
+    bindingHash: string
+    raisedAt: string
+}
+
+/** Immutable snapshot of one artifact and its output hash at checkpoint time. */
+export type CheckpointArtifactSnapshot = {
+    artifact: ArtifactId
+    outputHash: string
+}
+
+/** Immutable record of a resolved checkpoint. */
+export type CheckpointRecord = {
+    dispatchId: string
+    capability: CapabilityId
+    purpose: DispatchPurpose
+    action: string
+    /** Immutable snapshot of the checkpoint artifacts at the time the checkpoint was raised. */
+    artifacts: CheckpointArtifactSnapshot[]
+    policyHash: string
+    implementationDiffHash?: string
+    bindingHash: string
+    raisedAt: string
+    resolvedAt: string
+    outcome: "continued" | "feedback" | "cancelled" | "stale"
+    feedback?: string
+    feedbackHash?: string
+    invalidatedArtifacts: ArtifactId[]
+}
+
 /** Stable target describing the phase that must be redispatched after an answer. */
 export type ResumeTarget = {
+    /** Source record id (worker question or checkpoint) being replayed. */
+    sourceId: string
+    /** Worker question id, kept for backward-compatible readers; equals sourceId. */
     questionId: string
     originalDispatchId: string
     phase: ArtifactId
     capability: CapabilityId
+    /** Purpose of the originating dispatch; the replay must match exactly. */
+    purpose: DispatchPurpose
+    /** Action (mode or capability) of the originating dispatch; the replay must match exactly. */
+    action: string
+    /** Hash of the answer/feedback that drives the fresh dispatch. */
     answerHash: string
+    /** Whether the replay follows a worker question (legacy) or checkpoint. */
+    origin: "question" | "checkpoint"
     consumed?: boolean
 }
 
@@ -721,6 +780,10 @@ export type RunState = {
     questionHistory: QuestionRecord[]
     /** Question budget accounting. */
     questionBudgetUsage?: QuestionBudgetUsage
+    /** A live, unresolved interactive checkpoint between dispatch phases. */
+    pendingCheckpoint?: PendingCheckpoint
+    /** Immutable history of resolved interactive checkpoints. */
+    checkpointHistory?: CheckpointRecord[]
     /** Explicit target for the fresh dispatch issued after an answer. */
     resumeTarget?: ResumeTarget
     implementationDiffHash?: string

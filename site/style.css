@@ -265,18 +265,19 @@ blockquote {
     align-items: center;
     margin-left: auto;
     order: 1;
+    margin-top: -0.35rem;
 }
 
 .github-button {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.3rem 0.65rem;
+    padding: 0.15rem 0.65rem;
     color: var(--color-black);
     background-color: var(--color-paper);
     border: 1px solid var(--color-paper);
     border-radius: 999px;
-    font-size: 0.95rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
@@ -764,9 +765,14 @@ blockquote {
 }
 
 .workflow-badges .tier-badge {
-    padding: 0.3em 0.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9em;
+    height: 1.9em;
+    padding: 0;
     font-size: 0.65rem;
-    min-width: 2em;
+    border-radius: 50%;
     text-align: center;
 }
 
@@ -808,6 +814,14 @@ blockquote {
     font-size: 1.1rem;
 }
 
+.capability-card h3 i {
+    font-size: 2rem;
+    color: var(--color-accent);
+    line-height: 1;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+}
+
 .capability-card p {
     margin: 0;
     font-size: 0.98rem;
@@ -819,7 +833,7 @@ blockquote {
 }
 
 .product-proof {
-    width: min(100%, 900px);
+    width: min(100%, 620px);
     margin: 2rem auto 2.5rem;
 }
 
@@ -1006,7 +1020,6 @@ blockquote {
     .tier-card.full {
         grid-column: span 2;
     }
-
     .capability-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -1051,13 +1064,7 @@ blockquote {
     }
 
     .capability-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
-@media (min-width: 1200px) {
-    .capability-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 

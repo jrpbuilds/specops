@@ -2,7 +2,8 @@
 
 Interactive, visible automatic, and non-interactive CLI entrypoints use the
 same scheduler. Execution mode changes only how unresolved questions are
-presented or paused; it does not change routing, stages, or assurance.
+presented or paused, and whether phase-boundary checkpoints are emitted; it
+does not change routing, stages, or assurance.
 
 Scope tier, risk facets, and uncertainty are separate dimensions. A small security-sensitive change
 may require a specialist while remaining Standard; a large low-risk refactor may require Full
@@ -242,3 +243,104 @@ Configured budgets prevent unbounded question loops:
 Fingerprints include the normalised prompt, option ids and labels, phase, capability, and binding
 hash. Budget exhaustion produces a non-resumable `blocked` outcome with
 `blockReason: "budget-exhausted"`.
+
+## Phase checkpoints
+
+Interactive runs pause once after each checkpoint-eligible phase artifact group
+is produced, so the user may continue or provide feedback before the next phase.
+Automatic runs never checkpoint and run start to finish.
+
+### Checkpoint boundaries
+
+A checkpoint is queued when a completed dispatch produces one of the following
+artifact groups and it remains valid after any scope escalation:
+
+| Dispatch                             | Checkpoint artifacts |
+| ------------------------------------ | -------------------- |
+| Lean planner (`lean-plan`)           | `tasks`              |
+| Standard planner (`standard-bundle`) | `proposal`, `tasks`  |
+| Full planner (`requirements-bundle`) | `proposal`           |
+| Full designer                        | `design`             |
+| Full planner (`task-refinement`)     | `tasks`              |
+| Implementer                          | `implementation`     |
+| Verifier                             | `verification`       |
+
+Exploration, specs alone, judgments, reviews, refutation, repairs, and frontier
+work are never checkpoint boundaries.
+
+### Interactive flow
+
+1. A worker dispatch completes and its phase artifacts are persisted.
+2. The engine queues a pending checkpoint and moves the run to `paused` with
+   `pauseReason: "checkpoint"` and `resumable: true`.
+3. `specops_next_action` returns a `checkpoint` directive naming the completed
+   artifacts.
+4. The interactive controller presents a native question with a `Continue`
+   option and an `Other / provide feedback` option.
+5. On Continue (or dismissal) the controller calls `specops_resume_checkpoint`
+   with no feedback; the run resumes scheduling.
+6. On Other text the controller calls `specops_resume_checkpoint` with the
+   user's feedback. The checkpoint artifact group and its downstream closure are
+   invalidated, and the phase is re-dispatched with the feedback injected as
+   untrusted task content.
+7. A regenerated phase produces a fresh checkpoint for its new output, even if
+   it is the same phase as before.
+
+### Automatic and CLI execution
+
+Automatic runs never queue checkpoints. A persisted checkpoint-paused state in
+an automatic run indicates a mode mismatch and is surfaced as a non-resumable
+block for diagnosis.
+
+### Feedback invalidation
+
+Checkpoint feedback invalidates the just-completed artifact group and every
+transitively dependent artifact via the shared dependency graph. For example,
+feeding back on `proposal` invalidates `specs`, `design`, `tasks`,
+`implementation`, and all assurance artifacts, exactly like a worker-question
+answer with `requirements` impact.
+
+Implementation-phase feedback re-dispatches the implementer under a fresh
+writer guard. The new diff is measured against the post-first-implementation
+state, and `implementationDiffHash` is recomputed so verification and review
+phases are correctly invalidated and re-run.
+
+### Resume provenance
+
+Checkpoint feedback is recorded in `checkpointHistory` with a `feedbackHash`
+that enters dispatch hashes, artifact `inputHashes`, and the final receipt, so
+a changed feedback makes dependent artifacts stale exactly like a changed
+question answer. The resume target's `origin: "checkpoint"` distinguishes it
+from a worker-question resume (`origin: "question"`).
+
+### Exact replay routing
+
+Checkpoint feedback and worker-question answers are injected only into a
+dispatch whose capability, purpose, and action mode exactly match the
+originating dispatch. This prevents a pending repair, frontier, consultation,
+or review dispatch from consuming feedback meant for a prior phase.
+
+### Stale checkpoint fallback
+
+When a checkpoint is resolved (Continue or feedback) after the authoritative
+run inputs have changed (policy hash, implementation diff, or artifact output
+hashes), the checkpoint is recorded with `outcome: "stale"` and the run
+resumes normal scheduling without applying the feedback. The user's feedback
+is retained in the record for audit but is not replayed against invalidated
+outputs.
+
+### Repair exclusion
+
+Checkpoint detection requires `purpose: "workflow"`. Repair dispatches
+(`purpose: "repair"`) never checkpoint, even when they share a capability and
+mode with a workflow dispatch (e.g. `planning/repair/lean-plan` or
+`design/repair/artifact-repair`).
+
+### Checkpoint outcomes
+
+Each resolved checkpoint is recorded in `checkpointHistory` with one of:
+
+- `continued`: the user chose Continue or dismissed the native UI.
+- `feedback`: the user provided feedback that invalidated and re-ran the phase.
+- `cancelled`: the run was cancelled while the checkpoint was pending.
+- `stale`: the checkpoint binding no longer matched the authoritative inputs.

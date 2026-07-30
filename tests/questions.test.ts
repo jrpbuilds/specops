@@ -630,8 +630,31 @@ describe("scheduler directives", () => {
 describe("resume target and fresh dispatch", () => {
     it("consumes the resume target exactly once", () => {
         const state = automaticState()
-        const d = dispatch("d1", "planning")
+        // Use a dispatch whose action matches what nextAction will produce.
+        const d: DispatchRecord = {
+            id: "d1",
+            action: "lean-plan",
+            agent: AGENT_IDS.core.planner,
+            capability: "planning",
+            purpose: "workflow",
+            independent: false,
+            inputHash: "input",
+            status: "issued",
+            at: "now",
+        }
         state.dispatches.push(d)
+        // Mark exploration as complete so the scheduler dispatches planning next.
+        state.artifacts.exploration = {
+            artifact: "exploration",
+            producer: "test",
+            purpose: "workflow",
+            generatedAt: "now",
+            inputHashes: {},
+            outputHash: "exploration",
+            scopeTier: state.scopeTier,
+            capabilities: state.requirements.requiredCapabilities,
+            validity: "valid",
+        }
         const q: WorkerQuestion = {
             prompt: "p",
             options: [
@@ -642,22 +665,15 @@ describe("resume target and fresh dispatch", () => {
         }
         const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
         answerQuestion(state, pending.id, "a", undefined, DEFAULT_CONFIG)
-        // The resume target exists but is not yet consumed (nextDirective uses
-        // read-only getResumeTarget; consumption happens in issueDirective).
         expect(state.resumeTarget?.consumed).toBeUndefined()
-        // First directive after answer should dispatch with the resume prompt.
         const directive = nextDirective(state)
         expect(directive.type).toBe("dispatch")
         expect(
             (directive as { type: "dispatch"; action: { prompt: string } }).action.prompt,
         ).toContain("Recorded user answer")
-        // The resume target is still not consumed (pure read).
         expect(state.resumeTarget?.consumed).toBeUndefined()
-        // Simulate issueDirective: consume the target after dispatch persistence.
         consumeResumeTarget(state)
         expect(state.resumeTarget?.consumed).toBe(true)
-        // A second directive (after completing the fresh dispatch) should not
-        // reapply the resume prompt.
         const second = nextDirective(state)
         if (second.type === "dispatch") {
             expect(second.action.prompt).not.toContain("Recorded user answer")

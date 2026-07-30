@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { RunState } from "../types.js"
+import type { DispatchRecord, RunState } from "../types.js"
 
 /**
  * Return the controller-owned directory for one OpenSpec change.
@@ -96,6 +96,49 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     raw.frontierHistory ??= []
     raw.reviewSubmissions ??= []
     raw.repairTasks ??= []
+    // v2 back-compat: runs persisted before checkpoints have no checkpoint
+    // history; default it so existing runs load and run unchanged.
+    raw.checkpointHistory ??= []
+
+    // v2 back-compat: resume targets persisted before the origin/sourceId
+    // fields were introduced. Normalize the legacy shape so a worker-question
+    // answer still drives the fresh dispatch instead of being silently dropped.
+    // If the originating dispatch cannot be resolved the target is abandoned
+    // rather than replayed against an unknown action.
+    if (raw.resumeTarget) {
+        const target = raw.resumeTarget
+        target.sourceId ??= target.questionId
+        target.origin ??= "question"
+        if (target.purpose === undefined || target.action === undefined) {
+            const origin = (raw.dispatches as DispatchRecord[]).find(
+                dispatch => dispatch.id === target.originalDispatchId,
+            )
+            if (origin) {
+                target.purpose ??= origin.purpose
+                target.action ??= origin.action
+            } else {
+                // The originating dispatch is gone; drop the stale target
+                // so deterministic scheduling re-derives the next action.
+                delete raw.resumeTarget
+            }
+        }
+    }
+
+    // v2 back-compat: dispatch resume metadata persisted before the
+    // purpose/action fields were introduced. Normalize from the originating
+    // dispatch when possible; otherwise leave the metadata for audit only.
+    for (const dispatch of (raw.dispatches as DispatchRecord[]) ?? []) {
+        if (dispatch.resume && dispatch.resume.purpose === undefined) {
+            const origin = (raw.dispatches as DispatchRecord[]).find(
+                candidate => candidate.id === dispatch.resume!.originalDispatchId,
+            )
+            if (origin) {
+                dispatch.resume.purpose ??= origin.purpose
+                dispatch.resume.action ??= origin.action
+            }
+        }
+    }
+
     if (raw.pendingRepair && !raw.pendingRepair.taskId) {
         const taskId = `legacy-${String(raw.updatedAt ?? "repair")}`
         raw.repairTasks.push({
@@ -133,7 +176,7 @@ export async function readRun(directory: string, change: string): Promise<RunSta
         throw new Error("invalid SpecOps run state")
     }
 
-    const validPauseReasons = new Set(["pending-question", "question-dismissed"])
+    const validPauseReasons = new Set(["pending-question", "question-dismissed", "checkpoint"])
 
     switch (value.status) {
         case "running":
@@ -146,23 +189,38 @@ export async function readRun(directory: string, change: string): Promise<RunSta
             if (value.outcome !== undefined) {
                 throw new Error("running state must not have a terminal outcome")
             }
+            if (value.pendingCheckpoint) {
+                throw new Error("running state must not have a pending checkpoint")
+            }
             break
 
         case "paused":
             if (!value.pauseReason || !validPauseReasons.has(value.pauseReason)) {
                 throw new Error(
                     "paused state requires a valid pause reason: " +
-                        "pending-question or question-dismissed",
+                        "pending-question, question-dismissed, or checkpoint",
                 )
             }
             if (value.resumable !== true) {
                 throw new Error("paused state must be resumable")
             }
-            if (!value.pendingQuestion) {
-                throw new Error("paused state requires a pending question")
-            }
             if (value.outcome !== undefined) {
                 throw new Error("paused state must not have a terminal outcome")
+            }
+            if (value.pauseReason === "checkpoint") {
+                if (!value.pendingCheckpoint) {
+                    throw new Error("checkpoint-paused state requires a pending checkpoint")
+                }
+                if (value.pendingQuestion) {
+                    throw new Error("checkpoint-paused state must not also have a pending question")
+                }
+            } else {
+                if (!value.pendingQuestion) {
+                    throw new Error("question-paused state requires a pending question")
+                }
+                if (value.pendingCheckpoint) {
+                    throw new Error("question-paused state must not also have a pending checkpoint")
+                }
             }
             break
 
@@ -170,6 +228,11 @@ export async function readRun(directory: string, change: string): Promise<RunSta
         case "cancelled":
             if (value.pendingQuestion) {
                 throw new Error(`terminal state (${value.status}) must not have a pending question`)
+            }
+            if (value.pendingCheckpoint) {
+                throw new Error(
+                    `terminal state (${value.status}) must not have a pending checkpoint`,
+                )
             }
             if (value.resumable === true) {
                 throw new Error(`terminal state (${value.status}) must not be resumable`)
@@ -190,6 +253,11 @@ export async function readRun(directory: string, change: string): Promise<RunSta
         case "failed":
             if (value.pendingQuestion) {
                 throw new Error(`terminal state (${value.status}) must not have a pending question`)
+            }
+            if (value.pendingCheckpoint) {
+                throw new Error(
+                    `terminal state (${value.status}) must not have a pending checkpoint`,
+                )
             }
             if (value.resumable === true) {
                 throw new Error(`terminal state (${value.status}) must not be resumable`)

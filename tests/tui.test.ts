@@ -126,7 +126,7 @@ describe.sequential("SpecOps model settings TUI", () => {
         await harness.layer.commands[0].run()
 
         const newer = structuredClone(DEFAULT_MANIFEST)
-        newer.agents[ALL_AGENT_IDS[1]].variant = "high"
+        newer.agents[ALL_AGENT_IDS[1]] = { model: "configured/custom", variant: "high" }
         const newerBytes = `${JSON.stringify(newer, null, 2)}\n`
         await writeFile(harness.manifestPath, newerBytes)
 
@@ -230,7 +230,7 @@ function legacyManifest(): unknown {
             ALL_AGENT_IDS.map(id => [
                 id,
                 {
-                    model: DEFAULT_MANIFEST.agents[id].model,
+                    model: "configured/custom",
                     steps: 48,
                     reasoningEffort: "high",
                 },
@@ -239,9 +239,13 @@ function legacyManifest(): unknown {
     }
 }
 
-/** Expose every packaged default plus one editable model with two variants. */
+/** Expose every configured packaged default plus one editable model with two variants. */
 function configuredProviders(): unknown[] {
-    const modelIDs = new Set(ALL_AGENT_IDS.map(id => DEFAULT_MANIFEST.agents[id].model))
+    const modelIDs = new Set(
+        ALL_AGENT_IDS.map(id => DEFAULT_MANIFEST.agents[id].model).filter(
+            (model): model is string => Boolean(model),
+        ),
+    )
     modelIDs.add("configured/custom")
     const providers = new Map<string, Record<string, unknown>>()
     for (const fullID of modelIDs) {

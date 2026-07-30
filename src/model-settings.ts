@@ -74,8 +74,9 @@ export function configuredModels(
  * Build an editable complete mapping from a v1 or v2 manifest.
  *
  * Legacy model values are retained only when OpenCode currently exposes them.
- * Otherwise the registry default is used when available; agents for which
- * neither exists are intentionally left unresolved for visible user action.
+ * The registry default may now be blank (meaning "use OpenCode's global
+ * default model"), so a missing/blank model is valid and not unresolved; only
+ * a non-blank model that is not currently available is flagged unresolved.
  */
 export function createManifestDraft(
     source: { version: 1; agents: Record<string, unknown> } | SpecOpsManifest,
@@ -87,14 +88,17 @@ export function createManifestDraft(
 
     for (const id of ALL_AGENT_IDS) {
         const sourceEntry = source.agents[id]
-        const sourceModel =
+        const rawSourceModel =
             sourceEntry &&
             typeof sourceEntry === "object" &&
             !Array.isArray(sourceEntry) &&
             typeof (sourceEntry as { model?: unknown }).model === "string"
                 ? (sourceEntry as { model: string }).model
                 : undefined
-        const defaultModel = DEFAULT_MANIFEST.agents[id].model
+        const sourceModel = rawSourceModel?.trim() ? rawSourceModel : undefined
+        const defaultModel = DEFAULT_MANIFEST.agents[id].model?.trim()
+            ? DEFAULT_MANIFEST.agents[id].model
+            : undefined
         const sourceVariant =
             source.version === 2 &&
             sourceEntry &&
@@ -103,6 +107,7 @@ export function createManifestDraft(
             typeof (sourceEntry as { variant?: unknown }).variant === "string"
                 ? (sourceEntry as { variant: string }).variant
                 : undefined
+
         const model =
             source.version === 2
                 ? (sourceModel ?? defaultModel)
@@ -110,18 +115,13 @@ export function createManifestDraft(
                   ? sourceModel
                   : defaultModel
 
-        if (!available.has(model)) {
-            unresolved.push(id)
-            agents[id] = {
-                model,
-                ...(sourceVariant ? { variant: sourceVariant } : {}),
-            }
-            continue
+        agents[id] = {
+            ...(model ? { model } : {}),
+            ...(sourceVariant ? { variant: sourceVariant } : {}),
         }
 
-        agents[id] = {
-            model,
-            ...(sourceVariant ? { variant: sourceVariant } : {}),
+        if (model && !available.has(model)) {
+            unresolved.push(id)
         }
     }
 
@@ -143,6 +143,19 @@ export function selectConfiguredModel(
     }
 }
 
+/**
+ * Clear the agent-specific model so OpenCode's configured global default is
+ * used. The variant is retained as a staging preference: it is re-applied (or
+ * dropped) when the user next selects a model via {@link selectConfiguredModel},
+ * and a modelless entry carrying a variant cannot be saved because
+ * {@link validateManifestSelections} rejects it.
+ */
+export function clearConfiguredModel(
+    entry: SpecOpsManifest["agents"][AgentId],
+): SpecOpsManifest["agents"][AgentId] {
+    return entry.variant ? { variant: entry.variant } : {}
+}
+
 /** Return the functional section used by the agent mapping screen. */
 export function agentSettingsCategory(id: AgentId): string {
     if (CONTROLLER_SETTINGS_IDS.has(id)) return "Controllers"
@@ -161,11 +174,19 @@ export function validateManifestSelections(
     const issues: string[] = []
     for (const id of ALL_AGENT_IDS) {
         const entry = manifest.agents[id]
-        const model = available.get(entry.model)
+        const modelId = entry.model?.trim()
+        // A blank model means "use OpenCode's global default"; it is always valid.
+        if (!modelId) {
+            if (entry.variant?.trim()) {
+                issues.push(`${id}: variant ${entry.variant} requires a model`)
+            }
+            continue
+        }
+        const model = available.get(modelId)
         if (!model) {
-            issues.push(`${id}: model ${entry.model} is not currently configured`)
+            issues.push(`${id}: model ${modelId} is not currently configured`)
         } else if (entry.variant && !model.variants.includes(entry.variant)) {
-            issues.push(`${id}: variant ${entry.variant} is unavailable for ${entry.model}`)
+            issues.push(`${id}: variant ${entry.variant} is unavailable for ${modelId}`)
         }
     }
     return issues
