@@ -95,7 +95,14 @@ state.
 Verification is followed by independent correctness judgment, compliance judgment when required,
 general risk review, selected specialist review, and refutation.
 
-The refuter returns a structured ledger. A blocking finding selects one repair mode:
+Judgments and reviewers return the same evidence-backed finding shape. The controller verifies
+repository paths and registered command evidence, assigns source ids, and retains each normalized
+submission against the exact implementation diff, policy, and artifact inputs it reviewed. The
+refuter receives only submissions for the current binding and accounts for every source finding as
+either sustained or dismissed.
+
+The refuter returns the OpenSpec `review-ledger.json`. A blocking sustained finding selects one
+repair mode:
 
 - implementation defect;
 - specification mismatch;
@@ -108,8 +115,17 @@ repair applies. In that case the run terminates with a `review-failed`
 outcome rather than entering a repair cycle.
 
 Specification/design repair is reasoned about by planner or designer and persisted by the
-controller. Code repair is performed only by implementer or repairer. Downstream evidence is then
-invalidated and regenerated against the new diff.
+controller. Compatible findings are grouped by target, with specification work before design and
+code/test work. Code repair is performed only by implementer or repairer. The repairer receives a
+controller-built task containing the exact finding ids, evidence, and acceptance criteria; it
+cannot close its own findings.
+
+Downstream command evidence, judgments, general-risk review, specialist review, and refutation are
+then regenerated against the new diff. Historical successful commands or completed reviews cannot
+satisfy a repaired implementation. A repair that produces no implementation diff is a terminal
+validation failure; a repair task is marked verified only after a fresh ledger no longer sustains
+its semantic findings. Finalization rejects any repair task that is not verified or explicitly
+superseded, and the controller refuses to issue a second dispatch while another is still active.
 
 ## Adaptive frontier escalation
 

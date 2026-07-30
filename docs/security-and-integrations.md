@@ -40,6 +40,22 @@ Dispatch provenance records `consultation`, `independent-review`, `judgment`, `r
 `workflow`. The scheduler checks both capability and purpose. A specialist who influenced planning
 must be dispatched again independently to satisfy post-implementation review.
 
+Completed assurance is additionally bound to the current implementation diff, requirements policy,
+answers, frontier advice, contract version, and relevant artifact hashes. Registered command
+evidence carries the current diff and policy hashes, so evidence collected before a repair cannot
+satisfy finalization afterward.
+
+Writer dispatches capture the baseline Git commit and the complete immutable portion of the
+controller-owned change tree. Completion is policy-blocked if an implementer or repairer changes
+`HEAD`, alters an existing protected OpenSpec file, or adds a file or symbolic link under that
+tree. The mutable run, progress, and command-evidence records are excluded because controller tools
+legitimately update them while a writer is active. SpecOps records violations and leaves the
+worktree untouched for diagnosis rather than attempting an automatic revert.
+
+If the implementation diff changes between workflow phases, SpecOps invalidates the implementation
+and all downstream assurance before issuing more work. A repair that reports completion without
+changing the implementation diff terminates as `validation-failed`.
+
 ## External integrations
 
 The non-interactive adapter is OpenCode's own `run --command` process, so it uses the same provider

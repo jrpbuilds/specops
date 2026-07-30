@@ -26,7 +26,8 @@ agent catalogue so existing model choices survive the addition of the two fronti
   with answer-bound provenance and deterministic invalidation.
 - Optional adaptive Luna/Sol frontier escalation for evidence-backed workflow blockers.
 - Independent correctness and specification-compliance judgments.
-- A refuted review ledger and bounded repair cycles.
+- Evidence-backed review submissions, a refuted OpenSpec ledger, and bounded repair tasks.
+- Diff-bound command evidence and independent re-review after every accepted repair.
 - A strict, user-editable model manifest generated from the canonical capability registry.
 
 ## Installation
@@ -188,7 +189,10 @@ OpenCode and the variants each model actually exposes:
 `variant` is optional; selecting **Default** omits it. All canonical agent IDs must be present.
 Unknown fields, empty values, partial catalogues, and unsupported variants are rejected. Restart
 or reload OpenCode after saving, then run `/specops-doctor`. The complete generated catalogue and
-role descriptions are in [Agents](docs/agents.md).
+role descriptions are in [Agents](docs/agents.md). Clean installs use the free
+`opencode/north-mini-code-free` model for the repairer. For the most reliable review-fixing
+results, configure that role with a frontier-capability coding model through the same settings
+command. Existing manifests preserve their current selection.
 
 ## Development and verification
 

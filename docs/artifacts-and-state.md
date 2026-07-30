@@ -35,6 +35,13 @@ The controller writes these files atomically after validating complete worker ou
 State format version 2 is current. Earlier supported state is normalized when
 safe defaults can be supplied; incompatible paused legacy state is rejected.
 
+Version-2 state also retains normalized review submissions and repair-task history. Review
+submissions are immutable, source-id-addressable inputs to refutation; repair tasks record the
+selected target, evidence, acceptance criteria, semantic finding fingerprints, source ledger/diff
+hashes, and observed before/after diff hashes. Only submissions whose originating dispatch
+completed successfully remain eligible for refutation. These are orchestration records rather than
+additional OpenSpec workflow artifacts.
+
 ## Provenance
 
 Every artifact records:
@@ -80,5 +87,5 @@ OpenCode owns the CLI process exit code, so a CI job using `--format json` must 
 ## Completion receipt
 
 The receipt contains baseline commit, current diff hash, requirements hash, dispatches, artifacts,
-invalidations, repairs, and escalation decisions. It is produced only after scheduler, artifact,
+invalidations, normalized review submissions, repair tasks, repairs, and escalation decisions. It is produced only after scheduler, artifact,
 registered command-evidence, and OpenSpec validation gates pass.
