@@ -71,6 +71,9 @@
     "knip": {
         "ignoreBinaries": [
             "opencode"
+        ],
+        "ignore": [
+            "site/**"
         ]
     },
     "dependencies": {

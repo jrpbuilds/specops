@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta
+            name="description"
+            content="SpecOps is an OpenCode-native workflow engine for evidence-bound planning, implementation, review, repair, and completion."
+        />
+        <title>SpecOps — Evidence-bound software changes for OpenCode</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <a class="skip-link" href="#main-content">Skip to main content</a>
+
+        <header class="site-header" role="banner">
+            <div class="header-inner">
+                <a class="logo" href="#hero" aria-label="SpecOps home">SpecOps</a>
+                <button
+                    class="nav-toggle"
+                    id="nav-toggle"
+                    aria-expanded="false"
+                    aria-controls="primary-nav"
+                    aria-label="Toggle navigation menu"
+                >
+                    <span class="hamburger" aria-hidden="true"></span>
+                </button>
+                <nav class="primary-nav" id="primary-nav" aria-label="Primary navigation">
+                    <ul class="nav-list">
+                        <li><a href="#why" data-nav>Why SpecOps</a></li>
+                        <li><a href="#tiers" data-nav>Scope Tiers</a></li>
+                        <li><a href="#workflow" data-nav>Workflow</a></li>
+                        <li><a href="#capabilities" data-nav>Capabilities</a></li>
+                        <li><a href="#commands" data-nav>Commands</a></li>
+                        <li><a href="#cta" data-nav>Get Started</a></li>
+                    </ul>
+                </nav>
+                <div class="header-actions">
+                    <a
+                        class="github-button"
+                        href="https://github.com/jrpbuilds/specops"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <svg
+                            class="github-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <path
+                                d="M12 2.5a9.5 9.5 0 0 0-3 18.51c.48.09.65-.21.65-.46v-1.68c-2.65.58-3.21-1.13-3.21-1.13-.44-1.12-1.08-1.42-1.08-1.42-.88-.6.07-.59.07-.59.97.07 1.48 1 1.48 1 .87 1.48 2.28 1.05 2.84.8.09-.62.34-1.05.62-1.29-2.12-.24-4.35-1.06-4.35-4.72 0-1.04.37-1.89.99-2.56-.1-.24-.43-1.21.09-2.52 0 0 .81-.26 2.62.98a9.1 9.1 0 0 1 4.76 0c1.81-1.24 2.62-.98 2.62-.98.52 1.31.19 2.28.09 2.52.62.67.99 1.52.99 2.56 0 3.67-2.23 4.48-4.36 4.72.35.3.66.87.66 1.76v2.61c0 .25.17.55.66.46A9.5 9.5 0 0 0 12 2.5Z"
+                            />
+                        </svg>
+                        <span>GitHub</span>
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main id="main-content">
+            <section
+                id="hero"
+                class="hero"
+                aria-labelledby="hero-title"
+                style="background-image: url(&quot;assets/specops-bg.webp&quot;)"
+            >
+                <div class="hero-overlay" aria-hidden="true"></div>
+                <div class="hero-content">
+                    <h1 id="hero-title" class="hero-title">SPECOPS</h1>
+                    <p class="hero-subtitle">
+                        Evidence-bound planning, review, and repair for OpenCode
+                    </p>
+                    <div class="install-block" role="group" aria-label="Install command">
+                        <code class="install-command" id="hero-command"
+                            >opencode plugin @jrpbuilds/specops -g</code
+                        >
+                        <button
+                            class="copy-button"
+                            type="button"
+                            data-copy-target="hero-command"
+                            aria-label="Copy install command to clipboard"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <p class="hero-prereq">Requires OpenCode 1.16.2+ and Node.js 20.19+</p>
+                </div>
+            </section>
+
+            <section id="why" class="section why" aria-labelledby="why-title">
+                <div class="container">
+                    <div class="section-lead">
+                        <h2 id="why-title">Why SpecOps</h2>
+                        <blockquote class="pull-quote">
+                            Broad agent toolkits can add memory, skills, integrations, and optional
+                            SDD conventions. SpecOps has a narrower job: enforce one inspect, plan,
+                            implement, review, repair, and completion lifecycle inside OpenCode.
+                            Models do the reasoning; deterministic TypeScript decides what may run,
+                            what evidence counts, and whether the change is complete.
+                        </blockquote>
+                    </div>
+
+                    <h3 class="table-heading">What the workflow enforces</h3>
+                    <div class="table-wrap">
+                        <table class="ownership-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Decision</th>
+                                    <th scope="col">Enforced by</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Scope, risk, and required specialists</td>
+                                    <td>Assessment policy and the observed implementation diff</td>
+                                </tr>
+                                <tr>
+                                    <td>Next action</td>
+                                    <td>One scheduler with at most one active dispatch</td>
+                                </tr>
+                                <tr>
+                                    <td>Planning and design artifacts</td>
+                                    <td>
+                                        Strict contracts, controller validation, and atomic writes
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Validation results</td>
+                                    <td>
+                                        Registered commands bound to the current diff and policy
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Review findings</td>
+                                    <td>
+                                        Independent submissions with evidence and acceptance
+                                        criteria
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Finding disposition</td>
+                                    <td>
+                                        A refuter that must sustain or dismiss every source finding
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Repair work</td>
+                                    <td>
+                                        Controller-built tasks grouped by planning, design, or code
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Frontier assistance</td>
+                                    <td>Opt-in evidence checks, tier policy, and hard budgets</td>
+                                </tr>
+                                <tr>
+                                    <td>Completion</td>
+                                    <td>
+                                        Fresh evidence, valid artifacts, and verified repair tasks
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p class="section-note">
+                        Prompts, models, and prose cannot mark work complete. The receipt is created
+                        only after the current diff passes every required artifact, evidence,
+                        review, repair, and OpenSpec gate.
+                    </p>
+                </div>
+            </section>
+
+            <section id="tiers" class="section tiers" aria-labelledby="tiers-title">
+                <div class="container">
+                    <div class="section-lead">
+                        <h2 id="tiers-title">Scope Tiers</h2>
+                        <p>
+                            SpecOps chooses the smallest safe route from repository evidence, risk,
+                            and uncertainty. Known risk sets the initial floor; newly discovered
+                            risk or an implementation that outgrows its estimate raises the tier
+                            before final assurance.
+                        </p>
+                    </div>
+
+                    <div class="tier-grid">
+                        <article class="tier-card lean" aria-labelledby="tier-lean-title">
+                            <h3 id="tier-lean-title">
+                                Lean <span class="tier-abbr lean-abbr">L</span>
+                            </h3>
+                            <p>
+                                Small, bounded changes with no requirement, public-contract, or
+                                identified risk expansion.
+                            </p>
+                            <ul>
+                                <li>Four calls on the successful normal path.</li>
+                                <li>Assessor, compact plan, implementation, and assurance.</li>
+                                <li>
+                                    Verification, correctness judgment, and review ledger remain
+                                    controller-validated completion gates.
+                                </li>
+                            </ul>
+                        </article>
+
+                        <article class="tier-card standard" aria-labelledby="tier-standard-title">
+                            <h3 id="tier-standard-title">
+                                Standard <span class="tier-abbr standard-abbr">S</span>
+                            </h3>
+                            <p>
+                                Features, behavioral changes, bounded refactors, compatible public
+                                contracts, and detected risk that does not require Full.
+                            </p>
+                            <ul>
+                                <li>
+                                    One validated planning bundle contains the proposal, normative
+                                    specifications, and implementation tasks.
+                                </li>
+                                <li>
+                                    Risk facets select focused consultations and fresh independent
+                                    post-implementation reviews.
+                                </li>
+                                <li>
+                                    Every blocking finding enters the same evidence-bound repair
+                                    policy.
+                                </li>
+                            </ul>
+                        </article>
+
+                        <article class="tier-card full" aria-labelledby="tier-full-title">
+                            <h3 id="tier-full-title">
+                                Full <span class="tier-abbr full-abbr">F</span>
+                            </h3>
+                            <p>
+                                Broad changes, migrations, infrastructure work, breaking contracts,
+                                configured high-risk facets, or low requirements/design confidence.
+                            </p>
+                            <ul>
+                                <li>Requirements are persisted before design begins.</li>
+                                <li>
+                                    An independent designer produces the technical design from those
+                                    requirements.
+                                </li>
+                                <li>
+                                    Tasks are refined only after the proposal, specifications, and
+                                    design are valid.
+                                </li>
+                            </ul>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section id="workflow" class="section workflow" aria-labelledby="workflow-title">
+                <div class="container">
+                    <div class="section-lead">
+                        <h2 id="workflow-title">Workflow</h2>
+                        <p>
+                            Interactive, automatic, and CLI runs share one scheduler and one
+                            persisted state. Each stage must satisfy its contract before the next
+                            action can be issued.
+                        </p>
+                    </div>
+
+                    <ol class="workflow-list" aria-label="SpecOps workflow stages">
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Assessment</h3>
+                                <p>
+                                    Repository evidence sets scope, risk facets, required
+                                    capabilities, validations, and review policy.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Compact plan</h3>
+                                <p>
+                                    Lean keeps bounded work to a four-call normal path without
+                                    removing assurance or receipt gates.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Exploration and planning bundle</h3>
+                                <p>
+                                    Standard and Full persist repository-grounded exploration,
+                                    proposals, and normative specifications.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Independent design</h3>
+                                <p>
+                                    Full adds an independent design stage produced from persisted
+                                    requirements before tasks are refined.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Task refinement</h3>
+                                <p>
+                                    Tasks are refined from the persisted proposal, specifications,
+                                    and design. Standard tasks are bundled.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Specialist consultations</h3>
+                                <p>
+                                    Specialist consultations are selected during planning based on
+                                    detected risk facets.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Implementation</h3>
+                                <p>
+                                    Only implementer and repairer agents mutate code; writer guards
+                                    protect the baseline and controller-owned artifacts.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Registered verification</h3>
+                                <p>
+                                    Declared project commands run without a shell and record results
+                                    bound to the current implementation diff and policy.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Independent judgments</h3>
+                                <p>
+                                    Correctness and compliance judges return strict verdicts plus
+                                    evidence-backed findings and acceptance criteria.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Cross-cutting risk scan</h3>
+                                <p>
+                                    A general reviewer finds cross-cutting risk and can add a
+                                    specialist route, but cannot satisfy that specialist review.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Independent specialist reviews</h3>
+                                <p>
+                                    Each selected risk facet receives a fresh review bound to the
+                                    exact diff, policy, inputs, and independent dispatch.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Refutation ledger</h3>
+                                <p>
+                                    The refuter must sustain or dismiss every current source finding
+                                    exactly once, with duplicate and unsupported findings accounted
+                                    for.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Adaptive frontier adjudication</h3>
+                                <p>
+                                    When adaptive mode is enabled, verified blockers can spend a
+                                    bounded low-tier call; high-tier models are reserved for
+                                    critical or repeated evidence.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Repair and re-verification</h3>
+                                <p>
+                                    The controller groups findings into scoped repair tasks. Fresh
+                                    assurance—not the repairer—decides whether each task is
+                                    verified.
+                                </p>
+                            </div>
+                        </li>
+                        <li class="workflow-step">
+                            <span class="workflow-badges">
+                                <span class="tier-badge lean">L</span>
+                                <span class="tier-badge standard">S</span>
+                                <span class="tier-badge full">F</span>
+                            </span>
+                            <div class="workflow-body">
+                                <h3>Completion receipt</h3>
+                                <p>
+                                    Completion requires current command evidence, valid artifacts,
+                                    fully accounted findings, and no unresolved repair task.
+                                </p>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </section>
+
+            <section
+                id="capabilities"
+                class="section capabilities"
+                aria-labelledby="capabilities-title"
+            >
+                <div class="container">
+                    <div class="section-lead">
+                        <h2 id="capabilities-title">Key Capabilities</h2>
+                        <p>Concrete guarantees enforced across the complete change lifecycle.</p>
+                    </div>
+
+                    <ul class="capability-grid">
+                        <li class="capability-card">
+                            <h3>Evidence-led scope</h3>
+                            <p>
+                                Lean, Standard, and Full routes selected from repository evidence,
+                                risk, uncertainty, and the actual changed paths.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>One scheduler</h3>
+                            <p>
+                                Interactive, automatic, and CLI entrypoints share the same ordered
+                                actions, budgets, persistence, and completion policy.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Validated OpenSpec planning</h3>
+                            <p>
+                                Proposals, normative specs, design, and tasks are contract-checked
+                                before controller-owned atomic persistence.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Risk-specific specialists</h3>
+                            <p>
+                                Ten risk facets can add focused planning consultation and a distinct
+                                independent post-implementation review.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Safe command evidence</h3>
+                            <p>
+                                Registered executable and argument arrays run without a shell, with
+                                confined paths, timeouts, bounded output, and immutable hashes.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Exact-diff provenance</h3>
+                            <p>
+                                Artifacts, commands, judgments, and review submissions are bound to
+                                the implementation diff and policy they evaluated.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Bounded material questions</h3>
+                            <p>
+                                Workers may pause for a genuinely unresolved user decision; answers
+                                are hashed into provenance and stale dependent work.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Evidence-backed findings</h3>
+                            <p>
+                                Judges and reviewers submit severity, repair mode, repository or
+                                command evidence, and observable acceptance criteria.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Complete refutation</h3>
+                            <p>
+                                Every current source finding must be sustained or dismissed exactly
+                                once before the review ledger is accepted.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Controller-built repair tasks</h3>
+                            <p>
+                                Compatible findings are grouped by planning, design, or
+                                implementation with exact evidence and acceptance criteria.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Fresh repair assurance</h3>
+                            <p>
+                                No-op code repairs fail, downstream assurance is invalidated, and a
+                                fresh ledger must stop sustaining the finding.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Adaptive low/high frontier</h3>
+                            <p>
+                                Optional, evidence-gated escalation spends bounded low/high model
+                                calls and returns advice to a fresh originating dispatch.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Native model mapping</h3>
+                            <p>
+                                Choose a configured OpenCode model and variant for every controller,
+                                workflow, review, frontier, repair, and specialist role.
+                            </p>
+                        </li>
+                        <li class="capability-card">
+                            <h3>Completion receipts</h3>
+                            <p>
+                                Machine-readable receipts retain baseline, diff, requirements,
+                                dispatches, artifacts, findings, repairs, and frontier history.
+                            </p>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="commands" class="section commands" aria-labelledby="commands-title">
+                <div class="container">
+                    <div class="section-lead">
+                        <h2 id="commands-title">Commands</h2>
+                        <p>
+                            SpecOps registers the same controllers and protocol tools for visible
+                            OpenCode sessions and non-interactive automation.
+                        </p>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="command-table">
+                            <caption class="visually-hidden">
+                                SpecOps public command reference
+                            </caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Command</th>
+                                    <th scope="col">Purpose</th>
+                                    <th scope="col">Runtime target</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>/specops-auto</code></td>
+                                    <td>Run visible deterministic SpecOps workflow</td>
+                                    <td>primary agent <code>specops-auto-controller</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>/specops</code></td>
+                                    <td>Run deterministic SpecOps workflow with checkpoints</td>
+                                    <td>
+                                        primary agent <code>specops-interactive-controller</code>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><code>/specops-onboard</code></td>
+                                    <td>Install final SpecOps OpenSpec assets</td>
+                                    <td>protocol tool <code>specops_onboard</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>/specops-status</code></td>
+                                    <td>Show final SpecOps run status</td>
+                                    <td>protocol tool <code>specops_get_status</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>/specops-doctor</code></td>
+                                    <td>Diagnose final SpecOps installation</td>
+                                    <td>protocol tool <code>specops_doctor</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="subsection-title">Map models in OpenCode</h3>
+                    <p>
+                        Press <kbd>Ctrl</kbd> + <kbd>P</kbd> and select
+                        <strong>SpecOps: Configure agent models</strong>. Choose any model already
+                        configured in OpenCode—and an exposed variant—for each of the 24 controller
+                        and worker roles. For dependable remediation, assign a strong coding model
+                        to <code>specops-repairer</code>; adaptive escalation uses the separate
+                        <code>specops-frontier-low</code> and
+                        <code>specops-frontier-high</code> mappings.
+                    </p>
+                    <figure class="product-proof">
+                        <img
+                            src="assets/model-mappings.png"
+                            alt="SpecOps agent model mappings dialog in OpenCode, grouped by controllers, core workflow, review and repair, frontier escalation, and specialists"
+                            width="1051"
+                            height="816"
+                            loading="lazy"
+                        />
+                        <figcaption>
+                            Example mappings from a configured OpenCode installation. Your available
+                            providers, models, and variants may differ. SpecOps continues to own
+                            each role's prompt, tools, permissions, and workflow authority.
+                        </figcaption>
+                    </figure>
+
+                    <h3 class="subsection-title">Prerequisites</h3>
+                    <ul class="prereq-list">
+                        <li>OpenCode 1.16.2 or newer</li>
+                        <li>Node.js 20.19 or newer</li>
+                        <li>A Git repository with at least one baseline commit</li>
+                        <li>
+                            OpenSpec assets installed by SpecOps (<code>/specops-onboard</code>)
+                        </li>
+                    </ul>
+
+                    <h3 class="subsection-title">CLI adapter</h3>
+                    <p>
+                        The same automatic workflow is available without opening the TUI through
+                        OpenCode's supported CLI adapter:
+                    </p>
+                    <div class="code-block-wrap">
+                        <pre><code id="cli-command">opencode run --command specops-auto --dir /path/to/project \
+  "add a health endpoint with tests"</code></pre>
+                        <button
+                            class="copy-button small"
+                            type="button"
+                            data-copy-target="cli-command"
+                            aria-label="Copy CLI adapter command"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <p>
+                        Use <code>--format json</code> for raw NDJSON events suitable for CI. Do not
+                        add OpenCode's unrelated <code>--auto</code> permission flag.
+                    </p>
+                </div>
+            </section>
+
+            <section id="cta" class="section cta" aria-labelledby="cta-title">
+                <div class="container">
+                    <h2 id="cta-title">Get Started</h2>
+                    <p>
+                        Install the plugin, map your models, onboard the repository, and run an
+                        evidence-bound change.
+                    </p>
+                    <div class="install-block large" role="group" aria-label="Install command">
+                        <code class="install-command" id="cta-command"
+                            >opencode plugin @jrpbuilds/specops -g</code
+                        >
+                        <button
+                            class="copy-button"
+                            type="button"
+                            data-copy-target="cta-command"
+                            aria-label="Copy install command to clipboard"
+                        >
+                            Copy
+                        </button>
+                    </div>
+
+                    <p class="cta-note">
+                        Restart OpenCode, then use <kbd>Ctrl</kbd> + <kbd>P</kbd> →
+                        <strong>SpecOps: Configure agent models</strong>. Onboard and verify the
+                        project when the mappings are ready:
+                    </p>
+                    <div class="code-block-wrap">
+                        <pre><code>/specops-onboard
+/specops-doctor</code></pre>
+                    </div>
+                    <p class="cta-note">
+                        Adaptive frontier routing is opt-in. Set
+                        <code>frontier.mode</code> to <code>adaptive</code> in
+                        <code>.opencode/specops.json</code> when you want evidence-gated low/high
+                        escalation.
+                    </p>
+
+                    <nav class="doc-links" aria-label="Documentation links">
+                        <a
+                            class="doc-link"
+                            href="https://github.com/jrpbuilds/specops/blob/master/docs/getting-started.md"
+                            >Getting started</a
+                        >
+                        <a
+                            class="doc-link"
+                            href="https://github.com/jrpbuilds/specops/blob/master/docs/architecture.md"
+                            >Architecture</a
+                        >
+                        <a
+                            class="doc-link"
+                            href="https://github.com/jrpbuilds/specops/blob/master/docs/workflows.md"
+                            >Workflows and scope tiers</a
+                        >
+                        <a
+                            class="doc-link"
+                            href="https://github.com/jrpbuilds/specops/blob/master/docs/commands.md"
+                            >Commands</a
+                        >
+                        <a
+                            class="doc-link"
+                            href="https://github.com/jrpbuilds/specops/blob/master/docs/configuration.md"
+                            >Configuration</a
+                        >
+                    </nav>
+                </div>
+            </section>
+        </main>
+
+        <footer class="site-footer" role="contentinfo">
+            <div class="container">
+                <p>
+                    SpecOps is an OpenCode plugin by
+                    <a href="https://github.com/jrpbuilds">jrpbuilds</a>. Released under the
+                    <a href="https://github.com/jrpbuilds/specops/blob/master/LICENSE"
+                        >MIT License</a
+                    >.
+                </p>
+            </div>
+        </footer>
+
+        <script src="script.js"></script>
+    </body>
+</html>
