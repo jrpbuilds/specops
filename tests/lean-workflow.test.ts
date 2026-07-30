@@ -340,6 +340,49 @@ describe("compact Lean workflow", () => {
         expect(recovered.dispatches.at(-1)?.status).toBe("failed")
     })
 
+    it("guides the controller to call nextAction after a failed completeAction", async () => {
+        const { directory, change } = await persistedLeanVerification("lean-retry-guidance")
+
+        // First submission fails with a malformed bundle, marking the dispatch failed.
+        await expect(
+            completeAction(
+                directory,
+                change,
+                "verification",
+                JSON.stringify({
+                    verification: "# Verification",
+                    correctnessJudgment: { verdict: "PASS", summary: "Valid.", findings: [] },
+                }),
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("reviewLedger")
+
+        // Re-submitting the SAME failed dispatchId must throw a clear,
+        // controller-actionable error rather than the old opaque message.
+        await expect(
+            completeAction(directory, change, "verification", "{}", DEFAULT_CONFIG),
+        ).rejects.toThrow(/already failed and cannot be re-submitted/)
+
+        // An unknown dispatchId must also point the controller at nextAction.
+        await expect(
+            completeAction(directory, change, "does-not-exist", "{}", DEFAULT_CONFIG),
+        ).rejects.toThrow(/call specops_next_action to obtain a fresh dispatch/)
+
+        // The scheduler must still be able to issue a fresh dispatch for the
+        // same capability after the failure, since failed dispatches do not
+        // satisfy the completion gate. This is the recovery path the prompt
+        // tells the controller to take.
+        const recovered = await readRun(directory, change)
+        expect(
+            recovered.dispatches.some(
+                d => d.capability === "verification" && d.status === "failed",
+            ),
+        ).toBe(true)
+        const next = nextAction(recovered)
+        expect(next?.capability).toBe("verification")
+        expect(next?.id).not.toBe("verification")
+    })
+
     it("turns a failed bundled judgment into the existing bounded repair path", async () => {
         const { directory, change } = await persistedLeanVerification("lean-failure")
 

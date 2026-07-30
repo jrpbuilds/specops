@@ -34,6 +34,18 @@ describe("controller guardrails", () => {
         expect(promptText(id)).toContain("collapse, simulate")
     })
 
+    it.each(CONTROLLER_AGENT_IDS)(
+        "%s prompt instructs controller on completeAction failure",
+        id => {
+            const text = promptText(id)
+            // Controllers must not retry a failed dispatchId; they must call
+            // next_action to obtain a fresh dispatch for the same capability.
+            expect(text).toContain("FAILURE HANDLING")
+            expect(text).toContain("do NOT retry the same dispatchId")
+            expect(text).toMatch(/[Cc]all specops_next_action again/)
+        },
+    )
+
     it.each(CONTROLLER_AGENT_IDS)("%s is denied exploration and editing tools", id => {
         const permission = AGENT_REGISTRY[id].permission
         expect(permission.bash).toBe("deny")
@@ -63,4 +75,51 @@ describe("controller guardrails", () => {
             expect(read, id).not.toBe("deny")
         }
     })
+})
+
+/**
+ * Agents whose prompts are allowed to teach the question/frontier marker
+ * syntax. Must match the set in `prompts.generated.ts`.
+ */
+const QUESTION_ELIGIBLE_IDS: ReadonlySet<string> = new Set<string>([
+    AGENT_IDS.core.assessor,
+    AGENT_IDS.core.explorer,
+    AGENT_IDS.core.planner,
+    AGENT_IDS.core.designer,
+    AGENT_IDS.core.implementer,
+    AGENT_IDS.core.verifier,
+    AGENT_IDS.core.repairer,
+    AGENT_IDS.review.risk,
+])
+
+describe("control-marker policy exposure", () => {
+    /**
+     * Regression for a run failure where the infrastructure specialist echoed
+     * the literal `<!-- specops-question: ... -->` marker in explanatory prose
+     * and the validator rejected it as an inline marker. Specialists, judges,
+     * refuter, and frontier workers must never receive the marker syntax in
+     * their prompt, so they have nothing to echo back.
+     */
+    it.each(
+        ALL_AGENT_IDS.filter(
+            id =>
+                !QUESTION_ELIGIBLE_IDS.has(id) &&
+                !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
+        ),
+    )("%s prompt does not teach the question/frontier marker syntax", id => {
+        const text = promptText(id as (typeof ALL_AGENT_IDS)[number])
+        expect(text).not.toContain("specops-question:")
+        expect(text).not.toContain("specops-frontier:")
+        expect(text).not.toContain("QUESTION_POLICY")
+        expect(text).not.toContain("You may emit exactly one")
+    })
+
+    it.each([...QUESTION_ELIGIBLE_IDS])(
+        "%s prompt teaches the question marker policy so genuine blockers surface",
+        id => {
+            const text = promptText(id as (typeof ALL_AGENT_IDS)[number])
+            expect(text).toContain("specops-question:")
+            expect(text).toContain("You may emit exactly one")
+        },
+    )
 })

@@ -33,6 +33,27 @@ const ROLE_INSTRUCTIONS: Partial<Record<AgentId, string>> = {
         "Repair only the assigned implementation defect or review finding. Never edit OpenSpec artifacts or Git history.",
 }
 
+/**
+ * Agents permitted to emit a question or frontier control marker.
+ *
+ * Only the core phase workers that produce authoritative artifacts may raise
+ * a genuine blocker. Specialist consultations, judges, refuter, frontier
+ * workers, and controllers must never learn the marker syntax — the fallback
+ * prompt for those agents omits {@link QUESTION_POLICY} and
+ * {@link FRONTIER_POLICY} so they cannot repeat a literal marker in prose and
+ * trip the validator.
+ */
+const QUESTION_ELIGIBLE_AGENTS: ReadonlySet<AgentId> = new Set<AgentId>([
+    AGENT_IDS.core.assessor,
+    AGENT_IDS.core.explorer,
+    AGENT_IDS.core.planner,
+    AGENT_IDS.core.designer,
+    AGENT_IDS.core.implementer,
+    AGENT_IDS.core.verifier,
+    AGENT_IDS.core.repairer,
+    AGENT_IDS.review.risk,
+])
+
 /** Strict policy for when a worker may raise a question marker. */
 const QUESTION_POLICY = [
     "You may emit exactly one `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` marker, and only when ALL of the following hold:",
@@ -88,6 +109,10 @@ export function promptText(id: AgentId): string {
             "- block: stop; resumable true means the run is paused, resumable false means terminal.",
             `- finalize: call ${TOOL_IDS.finalize} and report its persisted outcome.`,
             `If cancellation is requested while tools remain available, call ${TOOL_IDS.cancelRun} once for the active change.`,
+            "FAILURE HANDLING:",
+            `- If ${TOOL_IDS.completeAction} throws, do NOT retry the same dispatchId; the dispatch is marked ` +
+                `failed and cannot be re-submitted. Call ${TOOL_IDS.nextAction} again to obtain a fresh dispatch ` +
+                "for the same capability, then submit the corrected output through the new dispatchId.",
             "Stream one concise progress line per issued and completed action. Do not choose phases, capabilities, or completion decisions yourself.",
         ].join("\n")
     }
@@ -121,6 +146,10 @@ export function promptText(id: AgentId): string {
             "- block: resumable true means the run is paused; present the next directive on the following call. " +
                 "resumable false means the run is terminal.",
             `- finalize: call ${TOOL_IDS.finalize}.`,
+            "FAILURE HANDLING:",
+            `- If ${TOOL_IDS.completeAction} throws, do NOT retry the same dispatchId; the dispatch is marked ` +
+                `failed and cannot be re-submitted. Call ${TOOL_IDS.nextAction} again to obtain a fresh dispatch ` +
+                "for the same capability, then submit the corrected output through the new dispatchId.",
             "Do not choose phases, capabilities, or completion decisions yourself.",
         ].join("\n")
     }
@@ -129,6 +158,7 @@ export function promptText(id: AgentId): string {
         ROLE_INSTRUCTIONS[id] ??
         "Perform the assigned SpecOps capability and return the required structured result. Do not edit files."
     const isFrontier = id === AGENT_IDS.review.frontierLow || id === AGENT_IDS.review.frontierHigh
+    const canRaiseControl = QUESTION_ELIGIBLE_AGENTS.has(id)
     return [
         `# ${id}`,
         "",
@@ -137,6 +167,11 @@ export function promptText(id: AgentId): string {
         instruction,
         "",
         "Escalate only with typed, evidence-backed JSON when current requirements are insufficient.",
-        ...(isFrontier ? [] : [QUESTION_POLICY, FRONTIER_POLICY]),
+        // Only core phase workers ever receive the question/frontier marker
+        // policy. Specialists, judges, refuter, and frontier workers are
+        // excluded so the literal marker syntax never appears in their prompt
+        // and cannot be echoed back into prose where the validator would
+        // reject it as an inline marker.
+        ...(isFrontier || !canRaiseControl ? [] : [QUESTION_POLICY, FRONTIER_POLICY]),
     ].join("\n")
 }

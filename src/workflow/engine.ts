@@ -323,8 +323,10 @@ export async function issueDirective(
  * @param output - The raw text output from the worker.
  * @param config - Configuration subset carrying marker bounds and review limits.
  * @returns The updated {@link RunState}.
- * @throws When the dispatch is unknown or already completed, or when parsing
- *   fails, or when both an escalation and a question marker are present.
+ * @throws When the dispatch is unknown, already completed, or already failed
+ *   (in which case the controller must call `specops_next_action` to obtain a
+ *   fresh dispatch), when parsing fails, or when both an escalation and a
+ *   question marker are present.
  */
 export async function completeAction(
     directory: string,
@@ -335,8 +337,19 @@ export async function completeAction(
 ): Promise<RunState> {
     const state = await readRun(directory, change)
     const dispatch = state.dispatches.find(record => record.id === dispatchId)
-    if (!dispatch || dispatch.status !== "issued") {
-        throw new Error("unknown or completed SpecOps dispatch")
+    if (!dispatch) {
+        throw new Error(
+            "unknown SpecOps dispatch; call specops_next_action to obtain a fresh dispatch",
+        )
+    }
+    if (dispatch.status === "failed") {
+        throw new Error(
+            `SpecOps dispatch ${dispatchId} already failed and cannot be re-submitted; ` +
+                "call specops_next_action to obtain a fresh dispatch for the same capability",
+        )
+    }
+    if (dispatch.status !== "issued") {
+        throw new Error(`SpecOps dispatch ${dispatchId} is already ${dispatch.status}`)
     }
 
     const action = actionFromDispatch(dispatch)
