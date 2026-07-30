@@ -401,6 +401,13 @@ describe("interactive mode queuing", () => {
         expect(directive.type).toBe("checkpoint")
         if (directive.type !== "checkpoint") return
         expect(directive.checkpoint.artifacts.map(s => s.artifact)).toEqual(["tasks"])
+        expect(directive.questionTool).toBeDefined()
+        expect(directive.questionTool.question).toBeTruthy()
+        expect(directive.questionTool.header).toBeTruthy()
+        expect(directive.questionTool.header.length).toBeLessThanOrEqual(30)
+        expect(directive.questionTool.options).toHaveLength(2)
+        expect(directive.questionTool.options[0].label).toBe("Continue")
+        expect(directive.questionTool.custom).toBe(true)
     })
 
     it("does not queue a duplicate checkpoint for the same dispatch and outputs", async () => {

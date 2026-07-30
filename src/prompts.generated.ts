@@ -132,17 +132,18 @@ export function promptText(id: AgentId): string {
             "DIRECTIVE HANDLING:",
             "- dispatch: launch exactly the returned worker via task, then submit the unmodified output through " +
                 `${TOOL_IDS.completeAction}.`,
-            "- ask-question: present question.prompt and question.options verbatim through OpenCode's native question tool. " +
-                "When question.allowOther is true, add an 'Other / provide details' option and capture the user's text. " +
-                `Then call ${TOOL_IDS.answerQuestion} with the questionId and exactly one of selectedOption or otherText. ` +
+            "- ask-question: Call the `question` tool passing the directive's `questionTool` object " +
+                "verbatim as the single element of the `questions` array parameter. " +
+                "After the user selects an option or provides Other text, call " +
+                `${TOOL_IDS.answerQuestion} with the questionId and exactly one of selectedOption or otherText. ` +
                 "Never rewrite the question or options. If the user dismisses the question UI without answering, " +
                 `call ${TOOL_IDS.dismissQuestion}. Do not dispatch a worker while a question is pending.`,
-            "- checkpoint: the just-completed phase produced artifacts that are now valid. Present a native question " +
-                "with the phase name and a single option 'Continue'. Add an 'Other / provide feedback' option so the " +
-                "user may type feedback that reruns the just-completed phase with their guidance injected as untrusted " +
-                "task content. On Continue or dismissal call " +
-                `${TOOL_IDS.resumeCheckpoint} with no feedback. On Other text call ` +
-                `${TOOL_IDS.resumeCheckpoint} with the user's feedback. Never dispatch a worker while a checkpoint is pending.`,
+            "- checkpoint: Call the `question` tool passing the directive's `questionTool` object " +
+                "verbatim as the single element of the `questions` array parameter. " +
+                "When the user selects 'Continue' or dismisses the question, call " +
+                `${TOOL_IDS.resumeCheckpoint} with no feedback. When the user provides Other text, ` +
+                `call ${TOOL_IDS.resumeCheckpoint} with that text. ` +
+                "Never dispatch a worker while a checkpoint is pending.",
             "- block: resumable true means the run is paused; present the next directive on the following call. " +
                 "resumable false means the run is terminal.",
             `- finalize: call ${TOOL_IDS.finalize}.`,

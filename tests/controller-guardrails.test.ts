@@ -66,6 +66,12 @@ describe("controller guardrails", () => {
         }
     })
 
+    it("interactive controller prompt instructs passing questionTool verbatim", () => {
+        const text = promptText(AGENT_IDS.controller.interactive)
+        expect(text).toContain("questionTool")
+        expect(text).toContain("questions` array parameter")
+    })
+
     it("non-controller agents retain repository read access", () => {
         for (const id of ALL_AGENT_IDS) {
             if (CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {

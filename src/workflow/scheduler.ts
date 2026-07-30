@@ -9,6 +9,7 @@ import type {
     PauseReason,
     PendingCheckpoint,
     PendingQuestion,
+    QuestionToolPayload,
     ResumeTarget,
     RunState,
     FrontierTier,
@@ -244,8 +245,19 @@ export function isCheckpointBindingCurrent(state: RunState, pending: PendingChec
  */
 export type ControllerDirective =
     | { type: "dispatch"; action: WorkflowAction }
-    | { type: "ask-question"; question: PendingQuestion; bindingHash: string }
-    | { type: "checkpoint"; checkpoint: PendingCheckpoint }
+    | {
+          type: "ask-question"
+          question: PendingQuestion
+          bindingHash: string
+          /** Pre-mapped QuestionToolPayload for the native question tool. */
+          questionTool: QuestionToolPayload
+      }
+    | {
+          type: "checkpoint"
+          checkpoint: PendingCheckpoint
+          /** Pre-mapped QuestionToolPayload for the native question tool. */
+          questionTool: QuestionToolPayload
+      }
     | {
           type: "block"
           reason: BlockReason | PauseReason
@@ -449,6 +461,82 @@ export function nextAction(
 }
 
 /**
+ * Build a {@link QuestionToolPayload} for a pending worker-raised question.
+ *
+ * Maps the SpecOps {@link PendingQuestion} fields to OpenCode's native
+ * question-tool shape so the controller can pass the directive's
+ * `questionTool` object verbatim to the `question` tool without inferring
+ * any field mapping.
+ *
+ * @param question - The pending worker-raised question.
+ * @returns A payload shaped exactly like OpenCode's `QuestionInfo`.
+ */
+function questionToolForPending(question: PendingQuestion): QuestionToolPayload {
+    return {
+        question: question.prompt,
+        header: headerForPhase(question.phase),
+        options: question.options.map(option => ({
+            label: option.id,
+            description: option.label,
+        })),
+        custom: question.allowOther,
+    }
+}
+
+/**
+ * Build a {@link QuestionToolPayload} for an interactive checkpoint.
+ *
+ * Checkpoints always present two options: "Continue" (accept artifacts and
+ * proceed) and "Other / provide feedback" (re-run the just-completed phase
+ * with the user's guidance injected as untrusted prompt content).
+ *
+ * @param checkpoint - The pending interactive checkpoint.
+ * @returns A payload shaped exactly like OpenCode's `QuestionInfo`.
+ */
+function questionToolForCheckpoint(checkpoint: PendingCheckpoint): QuestionToolPayload {
+    const phase = checkpoint.capability
+    return {
+        question: `${phase} checkpoint: the just-completed phase produced artifacts that are now valid. Continue, or provide feedback to re-run this phase with your guidance.`,
+        header: `${phase} checkpoint`,
+        options: [
+            {
+                label: "Continue",
+                description: "Accept these artifacts and continue to the next phase.",
+            },
+            {
+                label: "Other / provide feedback",
+                description: "Provide feedback to re-run this phase with your guidance.",
+            },
+        ],
+        custom: true,
+    }
+}
+
+/**
+ * Derive a short header label (max 30 chars) for an artifact phase.
+ *
+ * @param phase - The artifact id representing the phase.
+ * @returns A concise human-readable label suitable for the question-tool header.
+ */
+function headerForPhase(phase: ArtifactId): string {
+    const labels: Record<ArtifactId, string> = {
+        routing: "Routing",
+        exploration: "Exploration",
+        proposal: "Proposal",
+        specs: "Specs",
+        design: "Design",
+        tasks: "Tasks",
+        implementation: "Implementation",
+        verification: "Verification",
+        "correctness-judgment": "Correctness judgment",
+        "compliance-judgment": "Compliance judgment",
+        "review-ledger": "Review ledger",
+        receipt: "Receipt",
+    }
+    return labels[phase] ?? "SpecOps question"
+}
+
+/**
  * Return the next controller directive for the current run.
  *
  * This is a pure read over the run state; it does not persist any issued
@@ -477,6 +565,7 @@ export function nextDirective(state: RunState): ControllerDirective {
                 type: "ask-question",
                 question: state.pendingQuestion,
                 bindingHash: state.pendingQuestion.bindingHash,
+                questionTool: questionToolForPending(state.pendingQuestion),
             }
         }
         if (state.pendingCheckpoint) {
@@ -490,7 +579,11 @@ export function nextDirective(state: RunState): ControllerDirective {
                     resumable: false,
                 }
             }
-            return { type: "checkpoint", checkpoint: state.pendingCheckpoint }
+            return {
+                type: "checkpoint",
+                checkpoint: state.pendingCheckpoint,
+                questionTool: questionToolForCheckpoint(state.pendingCheckpoint),
+            }
         }
         return {
             type: "block",
@@ -521,6 +614,7 @@ export function nextDirective(state: RunState): ControllerDirective {
             type: "ask-question",
             question: state.pendingQuestion,
             bindingHash: state.pendingQuestion.bindingHash,
+            questionTool: questionToolForPending(state.pendingQuestion),
         }
     }
 

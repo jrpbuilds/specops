@@ -564,6 +564,56 @@ describe("scheduler directives", () => {
         expect(directive.type).toBe("ask-question")
         if (directive.type === "ask-question") {
             expect(directive.question.prompt).toBe("p")
+            // The questionTool payload must match the OpenCode question-tool shape
+            // so the controller can pass it verbatim without field mapping.
+            expect(directive.questionTool).toBeDefined()
+            expect(directive.questionTool.question).toBe("p")
+            expect(directive.questionTool.header).toBeTruthy()
+            expect(directive.questionTool.header.length).toBeLessThanOrEqual(30)
+            expect(directive.questionTool.options).toHaveLength(2)
+            expect(directive.questionTool.options[0]).toMatchObject({
+                label: "a",
+                description: "A",
+            })
+            expect(directive.questionTool.options[1]).toMatchObject({
+                label: "b",
+                description: "B",
+            })
+            expect(directive.questionTool.custom).toBe(false)
+        }
+    })
+
+    it("includes questionTool in the inline ask-question directive", () => {
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const q: WorkerQuestion = {
+            prompt: "Which design should we use?",
+            options: [
+                { id: "option-1", label: "Monolithic" },
+                { id: "option-2", label: "Microservices" },
+                { id: "option-3", label: "Event-driven" },
+            ],
+            impact: "design",
+            allowOther: true,
+        }
+        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        const directive = nextDirective(state)
+        expect(directive.type).toBe("ask-question")
+        if (directive.type === "ask-question") {
+            // The questionTool maps WorkerQuestionOption.id -> label
+            // and WorkerQuestionOption.label -> description for the native tool.
+            expect(directive.questionTool.options).toHaveLength(3)
+            expect(directive.questionTool.options[0]).toMatchObject({
+                label: "option-1",
+                description: "Monolithic",
+            })
+            expect(directive.questionTool.options[2]).toMatchObject({
+                label: "option-3",
+                description: "Event-driven",
+            })
+            // allowOther: true must surface as custom: true
+            expect(directive.questionTool.custom).toBe(true)
         }
     })
 

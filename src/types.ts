@@ -565,6 +565,25 @@ export type CommandEvidence = {
 /** Constrained impact category a worker question may request. */
 export type QuestionImpact = "requirements" | "design" | "implementation" | "validation"
 
+/** Payload shaped exactly like OpenCode's QuestionInfo for the native question tool. */
+export type QuestionToolPayload = {
+    /** The complete question text presented to the user. */
+    question: string
+    /** Very short label displayed in the question header (max 30 chars). */
+    header: string
+    /** Available choices presented to the user. */
+    options: Array<{
+        /** Display text (1-5 words, concise). */
+        label: string
+        /** Explanation of the choice. */
+        description: string
+    }>
+    /** Whether the user can select multiple options. Always false for SpecOps. */
+    multiple?: boolean
+    /** Whether the user can provide free-form text as an alternative to options. */
+    custom?: boolean
+}
+
 /** A single validated choice presented to the user. */
 export type WorkerQuestionOption = {
     id: string
