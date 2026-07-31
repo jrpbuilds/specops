@@ -112,14 +112,27 @@
                 <div class="container">
                     <div class="section-lead">
                         <h2 id="why-title">Why SpecOps</h2>
-                        <blockquote class="pull-quote">
-                            Broad agent toolkits can add memory, skills, integrations, and optional
-                            SDD conventions. SpecOps has a narrower job: enforce one inspect, plan,
-                            implement, review, repair, and completion lifecycle inside OpenCode.
+                    </div>
+
+                    <blockquote class="pull-quote why-hero-card">
+                        <p class="why-hero-body">
+                            Broad agent toolkits add memory, skills, and integrations. SpecOps has a
+                            narrower job: route a distinct model to every inspect, plan, implement,
+                            review, repair, and completion task — one lifecycle inside OpenCode,
+                            powered by
+                            <a
+                                href="https://openspec.dev/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                >OpenSpec</a
+                            >.
+                        </p>
+                        <hr class="why-hero-rule" />
+                        <p class="why-hero-money">
                             Models do the reasoning; deterministic TypeScript decides what may run,
                             what evidence counts, and whether the change is complete.
-                        </blockquote>
-                    </div>
+                        </p>
+                    </blockquote>
 
                     <h3 class="table-heading">What the workflow enforces</h3>
                     <div class="table-wrap">
@@ -210,14 +223,14 @@
                                 Lean <span class="tier-abbr lean-abbr">L</span>
                             </h3>
                             <p>
-                                Small, bounded changes with no requirement, public-contract, or
-                                identified risk expansion.
+                                Small, bounded changes with no requirement, public-contract, or risk
+                                expansion.
                             </p>
                             <ul>
-                                <li>Four calls on the successful normal path.</li>
-                                <li>Assessor, compact plan, implementation, and assurance.</li>
+                                <li>Four calls on the happy path.</li>
+                                <li>Assessor, compact plan, implementation, assurance.</li>
                                 <li>
-                                    Verification, correctness judgment, and review ledger remain
+                                    Verification, correctness, and review remain
                                     controller-validated completion gates.
                                 </li>
                             </ul>
@@ -228,22 +241,13 @@
                                 Standard <span class="tier-abbr standard-abbr">S</span>
                             </h3>
                             <p>
-                                Features, behavioral changes, bounded refactors, compatible public
-                                contracts, and detected risk that does not require Full.
+                                Features, behavioral changes, refactors, compatible contracts, and
+                                risk that does not require Full.
                             </p>
                             <ul>
-                                <li>
-                                    One validated planning bundle contains the proposal, normative
-                                    specifications, and implementation tasks.
-                                </li>
-                                <li>
-                                    Risk facets select focused consultations and fresh independent
-                                    post-implementation reviews.
-                                </li>
-                                <li>
-                                    Every blocking finding enters the same evidence-bound repair
-                                    policy.
-                                </li>
+                                <li>One planning bundle: proposal, specs, and tasks.</li>
+                                <li>Risk facets drive focused consultations and fresh reviews.</li>
+                                <li>Blocking findings enter evidence-bound repair.</li>
                             </ul>
                         </article>
 
@@ -252,19 +256,13 @@
                                 Full <span class="tier-abbr full-abbr">F</span>
                             </h3>
                             <p>
-                                Broad changes, migrations, infrastructure work, breaking contracts,
-                                configured high-risk facets, or low requirements/design confidence.
+                                Broad changes, migrations, breaking contracts, high-risk facets, or
+                                low requirements and design confidence.
                             </p>
                             <ul>
-                                <li>Requirements are persisted before design begins.</li>
-                                <li>
-                                    An independent designer produces the technical design from those
-                                    requirements.
-                                </li>
-                                <li>
-                                    Tasks are refined only after the proposal, specifications, and
-                                    design are valid.
-                                </li>
+                                <li>Requirements persist before design.</li>
+                                <li>An independent designer writes the design.</li>
+                                <li>Tasks refine after proposal, specs, and design validate.</li>
                             </ul>
                         </article>
                     </div>
@@ -502,7 +500,6 @@
                             class="demo-video"
                             width="1158"
                             height="472"
-                            autoplay
                             muted
                             loop
                             playsinline
@@ -880,7 +877,13 @@
         <footer class="site-footer" role="contentinfo">
             <div class="container">
                 <p>
-                    SpecOps is an OpenCode plugin by
+                    SpecOps is an OpenCode plugin powered by
+                    <a href="https://openspec.dev/" target="_blank" rel="noopener noreferrer"
+                        >OpenSpec</a
+                    >.
+                </p>
+                <p>
+                    Built by
                     <a href="https://github.com/jrpbuilds">jrpbuilds</a>. Released under the
                     <a href="https://github.com/jrpbuilds/specops/blob/master/LICENSE"
                         >MIT License</a

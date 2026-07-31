@@ -260,6 +260,41 @@
 
     /**
      * ------------------------------------------------------------------------
+     * Demo video: play on scroll into view
+     * ------------------------------------------------------------------------
+     */
+    const demoVideo = document.querySelector(".demo-video")
+
+    if (demoVideo && "IntersectionObserver" in window) {
+        if (prefersReducedMotion.matches) {
+            // Leave the poster visible; do not autoplay the loop.
+            demoVideo.removeAttribute("loop")
+        } else {
+            const demoObserver = new IntersectionObserver(
+                function (entries) {
+                    entries.forEach(function (entry) {
+                        if (entry.isIntersecting) {
+                            const playPromise = demoVideo.play()
+                            if (playPromise && typeof playPromise.catch === "function") {
+                                playPromise.catch(function () {
+                                    // Autoplay can be blocked; the poster remains.
+                                })
+                            }
+                        } else {
+                            demoVideo.pause()
+                        }
+                    })
+                },
+                {
+                    threshold: 0.25,
+                },
+            )
+            demoObserver.observe(demoVideo)
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * IntersectionObserver reveal
      * ------------------------------------------------------------------------
      */
