@@ -183,6 +183,58 @@ if (opencodePresent.status === 0) {
 // else: opencode isn't installed (cloud CI) — skip the opencode-relying
 // assertion; the doctor's CLI-adapter FAIL is the correct behaviour there.
 
+// Verify global + project configuration merging in isolation so the main
+// smoke project is unaffected by any global settings.
+const mergeConfigHome = path.join(temporaryRoot, "merge-config")
+const mergeProjectDirectory = path.join(temporaryRoot, "merge-project")
+await mkdir(path.join(mergeConfigHome, "opencode"), { recursive: true })
+await mkdir(path.join(mergeProjectDirectory, ".opencode"), { recursive: true })
+await writeFile(
+    path.join(mergeConfigHome, "opencode", "specops.json"),
+    `${JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }, null, 2)}\n`,
+)
+await writeFile(
+    path.join(mergeProjectDirectory, ".opencode", "specops.json"),
+    `${JSON.stringify(
+        {
+            version: 1,
+            workflow: { onboarding: "always" },
+            automation: { requireCleanWorktree: false },
+        },
+        null,
+        2,
+    )}\n`,
+)
+const openspecModule = await import(
+    `${pathToFileURL(path.join(packageDirectory, "dist", "openspec.js")).href}?${randomUUID()}`
+)
+const previousXdg = process.env.XDG_CONFIG_HOME
+process.env.XDG_CONFIG_HOME = mergeConfigHome
+let mergedConfig
+
+try {
+    mergedConfig = await openspecModule.readConfig(mergeProjectDirectory)
+} finally {
+    if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME
+    } else {
+        process.env.XDG_CONFIG_HOME = previousXdg
+    }
+}
+assert(
+    mergedConfig.workflow.defaultTier === "standard",
+    "global workflow defaultTier not inherited",
+)
+assert(
+    mergedConfig.workflow.onboarding === "always",
+    "project workflow onboarding override not applied",
+)
+assert(
+    mergedConfig.automation.requireCleanWorktree === false,
+    "project automation override not applied",
+)
+assert(mergedConfig.openspec.command === null, "default openspec command not preserved")
+
 const smokeProjectDirectory = path.join(temporaryRoot, "smoke-project")
 await mkdir(smokeProjectDirectory, { recursive: true })
 await writeFile(path.join(smokeProjectDirectory, "README.md"), "# Packed smoke project\n")
