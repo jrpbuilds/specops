@@ -627,6 +627,44 @@ describe("compact Lean workflow", () => {
         expect((await readRun(directory, change)).status).toBe("blocked")
     })
 
+    it("blocks writer completion after a worker creates a stash", async () => {
+        const directory = await initializedRepository()
+        const change = "writer-guard-stash"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = leanState("automatic")
+        state.baseline = execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: directory,
+            encoding: "utf8",
+        }).trim()
+        for (const artifact of ["routing", "exploration", "tasks"] as ArtifactId[]) {
+            state.artifacts[artifact] = validArtifact(state, artifact)
+            await writeFile(
+                path.join(changeRoot(directory, change), `${artifact}.md`),
+                `${artifact}\n`,
+            )
+        }
+        await writeRun(directory, change, state)
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        if (directive.type !== "dispatch") throw new Error("expected implementation dispatch")
+
+        // Worker stashes an unrelated tracked change. The captured writer guard
+        // recorded an empty stash list, so completion must reject the mutation.
+        await writeFile(path.join(directory, "README.md"), "# Tampered\n")
+        execFileSync("git", ["stash", "push", "--quiet", "--", "README.md"], { cwd: directory })
+
+        await expect(
+            completeAction(
+                directory,
+                change,
+                directive.action.id,
+                "Implementation complete.",
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow("changed Git stash list")
+        expect((await readRun(directory, change)).status).toBe("blocked")
+    })
+
     it("invalidates assurance when the implementation diff changes between phases", async () => {
         const directory = await initializedRepository()
         const change = "stale-implementation-binding"
@@ -718,17 +756,19 @@ describe("compact Lean workflow", () => {
 
         const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
         if (directive.type !== "dispatch") throw new Error("expected repair dispatch")
-        const completed = await completeAction(
-            directory,
-            change,
-            directive.action.id,
-            "No changes were necessary.",
-            DEFAULT_CONFIG,
-        )
+        await expect(
+            completeAction(
+                directory,
+                change,
+                directive.action.id,
+                "No changes were necessary.",
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/without producing an implementation diff/)
 
-        expect(completed.status).toBe("failed")
-        expect(completed.outcome?.category).toBe("validation-failed")
-        expect(completed.repairTasks?.[0]?.status).toBe("failed")
+        const failed = await readRun(directory, change)
+        expect(failed.dispatches.at(-1)?.status).toBe("failed")
+        expect(failed.repairTasks?.[0]?.status).toBe("queued")
     })
 
     it("rebuilds complete Standard requirements when Lean discovers a risk facet", () => {

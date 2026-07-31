@@ -247,7 +247,8 @@ hash. Budget exhaustion produces a non-resumable `blocked` outcome with
 ## Phase checkpoints
 
 Interactive runs pause once after each checkpoint-eligible phase artifact group
-is produced, so the user may continue or provide feedback before the next phase.
+is produced, so the user may continue, re-run the phase with feedback, or apply
+verification findings through the implementer before the next phase.
 Automatic runs never checkpoint and run start to finish.
 
 ### Checkpoint boundaries
@@ -276,14 +277,19 @@ work are never checkpoint boundaries.
 3. `specops_next_action` returns a `checkpoint` directive naming the completed
    artifacts.
 4. The interactive controller presents a native question with a `Continue`
-   option and an `Other / provide feedback` option.
+   option and an `Other / provide feedback` option. Verification checkpoints
+   also provide `Apply implementation fixes`.
 5. On Continue (or dismissal) the controller calls `specops_resume_checkpoint`
    with no feedback; the run resumes scheduling.
 6. On Other text the controller calls `specops_resume_checkpoint` with the
    user's feedback. The checkpoint artifact group and its downstream closure are
    invalidated, and the phase is re-dispatched with the feedback injected as
    untrusted task content.
-7. A regenerated phase produces a fresh checkpoint for its new output, even if
+7. On `Apply implementation fixes`, the controller calls
+   `specops_resume_checkpoint` with `resolution: "apply-implementation-fixes"`.
+   The implementation dispatch receives the feedback, and verification and all
+   downstream assurance are re-run after the diff changes.
+8. A regenerated phase produces a fresh checkpoint for its new output, even if
    it is the same phase as before.
 
 ### Automatic and CLI execution
@@ -301,9 +307,11 @@ feeding back on `proposal` invalidates `specs`, `design`, `tasks`,
 answer with `requirements` impact.
 
 Implementation-phase feedback re-dispatches the implementer under a fresh
-writer guard. The new diff is measured against the post-first-implementation
-state, and `implementationDiffHash` is recomputed so verification and review
-phases are correctly invalidated and re-run.
+writer guard. Verification-fix feedback uses the same path explicitly, rather
+than being routed through planning consultations. The new diff is measured
+against the post-first-implementation state, and `implementationDiffHash` is
+recomputed so verification and review phases are correctly invalidated and
+re-run.
 
 ### Resume provenance
 
@@ -317,8 +325,10 @@ from a worker-question resume (`origin: "question"`).
 
 Checkpoint feedback and worker-question answers are injected only into a
 dispatch whose capability, purpose, and action mode exactly match the
-originating dispatch. This prevents a pending repair, frontier, consultation,
-or review dispatch from consuming feedback meant for a prior phase.
+targeted replay. Implementation-fix feedback intentionally targets the
+implementation workflow action. Resume targets are consumed only after that
+exact action is issued, preventing consultations from consuming feedback meant
+for a prior phase.
 
 ### Stale checkpoint fallback
 

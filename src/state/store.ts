@@ -54,7 +54,7 @@ export async function writeRun(directory: string, change: string, state: RunStat
  * Read and validate the only supported run-state format.
  *
  * Reads `specops-run.json` from the change directory, parses it, and validates
- * all version-3 state invariants including consistency between `status`,
+ * all current state invariants including consistency between `status`,
  * `pauseReason`, `resumable`, `pendingQuestions`, and `outcome`. Only the
  * current run-state version is accepted; superseded versions and legacy field
  * shapes are rejected rather than migrated.

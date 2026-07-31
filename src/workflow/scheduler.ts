@@ -332,6 +332,14 @@ export function nextAction(
         return repair
     }
 
+    // A checkpoint answer is an explicit replay intent. It must outrank the
+    // normal consultation queue or feedback can be consumed by an unrelated
+    // specialist before the targeted phase is re-run.
+    if (resumeTarget) {
+        const resumed = resumeAction(state, resumeTarget)
+        if (resumed) return resumed
+    }
+
     if (requiresArtifact(state, "exploration") && !isComplete(state, "exploration")) {
         return createAction(state, "exploration", "workflow", {
             artifact: "exploration.md",
@@ -502,28 +510,36 @@ function questionToolsForPending(questions: PendingQuestion[]): QuestionToolPayl
 /**
  * Build a {@link QuestionToolPayload} for an interactive checkpoint.
  *
- * Checkpoints always present two options: "Continue" (accept artifacts and
- * proceed) and "Other / provide feedback" (re-run the just-completed phase
- * with the user's guidance injected as untrusted prompt content).
+ * Checkpoints present Continue and feedback options. Verification checkpoints
+ * also offer an explicit implementation-fix replay so user intent cannot be
+ * mistaken for another consultation.
  *
  * @param checkpoint - The pending interactive checkpoint.
  * @returns A payload shaped exactly like OpenCode's `QuestionInfo`.
  */
 function questionToolForCheckpoint(checkpoint: PendingCheckpoint): QuestionToolPayload {
     const phase = checkpoint.capability
+    const options = [
+        {
+            label: "Continue",
+            description: "Accept these artifacts and continue to the next phase.",
+        },
+        {
+            label: "Other / provide feedback",
+            description: "Provide feedback to re-run this phase with your guidance.",
+        },
+    ]
+    if (phase === "verification") {
+        options.push({
+            label: "Apply implementation fixes",
+            description:
+                'Re-dispatch the implementer with this feedback. Pass resolution="apply-implementation-fixes".',
+        })
+    }
     return {
-        question: `${phase} checkpoint: the just-completed phase produced artifacts that are now valid. Continue, or provide feedback to re-run this phase with your guidance.`,
+        question: `${phase} checkpoint: the just-completed phase produced artifacts that are now valid. Continue, re-run the phase with feedback, or apply implementation fixes.`,
         header: `${phase} checkpoint`,
-        options: [
-            {
-                label: "Continue",
-                description: "Accept these artifacts and continue to the next phase.",
-            },
-            {
-                label: "Other / provide feedback",
-                description: "Provide feedback to re-run this phase with your guidance.",
-            },
-        ],
+        options,
         custom: true,
     }
 }
@@ -635,7 +651,22 @@ export function nextDirective(state: RunState): ControllerDirective {
     }
 
     const resumeTarget = getResumeTarget(state)
+    if (!resumeTarget && consultationCycleIsStalled(state)) {
+        return {
+            type: "block",
+            reason: "workflow-stalled",
+            resumable: false,
+        }
+    }
     const action = nextAction(state, resumeTarget)
+
+    if (resumeTarget && (!action || !matchesResumeTarget(action, resumeTarget))) {
+        return {
+            type: "block",
+            reason: "workflow-stalled",
+            resumable: false,
+        }
+    }
 
     // Inject resume feedback only into an action whose capability, purpose,
     // and action exactly match the originating dispatch. This prevents a
@@ -689,6 +720,23 @@ export function nextDirective(state: RunState): ControllerDirective {
     }
 
     return { type: "finalize" }
+}
+
+/** Detect an impossible consultation-only tail before it becomes an endless run. */
+function consultationCycleIsStalled(state: RunState): boolean {
+    const lastImplementation = Math.max(
+        -1,
+        ...state.dispatches.reduce<number[]>((indices, dispatch, index) => {
+            if (dispatch.capability === "implementation" || dispatch.capability === "repair") {
+                indices.push(index)
+            }
+            return indices
+        }, []),
+    )
+    const consultations = state.dispatches
+        .slice(lastImplementation + 1)
+        .filter(dispatch => dispatch.purpose === "consultation")
+    return consultations.length >= 12
 }
 
 /**
@@ -863,7 +911,12 @@ function hasCompletedDispatch(
     if (!completed) return false
     // The resume target overrides "already completed" when the answer requires
     // the same capability to be re-dispatched.
-    if (resumeTarget && resumeTarget.capability === capability) {
+    if (
+        resumeTarget &&
+        resumeTarget.capability === capability &&
+        resumeTarget.purpose === purpose &&
+        resumeTarget.action === (candidate.mode ?? candidate.capability)
+    ) {
         return false
     }
     if (
@@ -875,6 +928,137 @@ function hasCompletedDispatch(
         return false
     }
     return true
+}
+
+/**
+ * Reconstruct the exact workflow action requested by a checkpoint or question
+ * answer. This is intentionally separate from normal progression so a replay
+ * cannot be displaced by consultations whose input hash changed as a result of
+ * the answer.
+ *
+ * @param state - Current run state.
+ * @param target - Unconsumed replay target.
+ * @returns The targeted action, or undefined for an unsupported target.
+ */
+function resumeAction(state: RunState, target: ResumeTarget): WorkflowAction | undefined {
+    if (target.purpose === "workflow") {
+        switch (target.capability) {
+            case "exploration":
+                if (target.action === "exploration") {
+                    return createAction(state, "exploration", "workflow", {
+                        artifact: "exploration.md",
+                        prompt: "Explore the repository and return complete Markdown evidence. Do not edit files.",
+                    })
+                }
+                break
+            case "planning":
+                if (target.action === "lean-plan") {
+                    return createAction(state, "planning", "workflow", {
+                        mode: "lean-plan",
+                        artifact: "tasks.md",
+                        prompt:
+                            "Return concise implementation tasks Markdown from the persisted assessment and exploration. " +
+                            "Do not produce proposal/spec artifacts or edit files.",
+                    })
+                }
+                if (target.action === "task-refinement") {
+                    return createAction(state, "planning", "workflow", {
+                        mode: "task-refinement",
+                        artifact: "tasks.md",
+                        prompt: "Return tasks Markdown from persisted proposal, specs, and design. Do not edit files.",
+                    })
+                }
+                if (
+                    target.action === "requirements-bundle" ||
+                    target.action === "standard-bundle"
+                ) {
+                    return createAction(state, "planning", "workflow", {
+                        mode: target.action,
+                        artifact: "bundle",
+                        prompt:
+                            target.action === "requirements-bundle"
+                                ? `${PLANNING_BUNDLE_CONTRACT} Return proposal and specs only. Do not write files.`
+                                : `${PLANNING_BUNDLE_CONTRACT} ${STANDARD_BUNDLE_TASKS_CONTRACT} Return proposal, specs, and tasks. Do not write files.`,
+                    })
+                }
+                break
+            case "design":
+                if (target.action === "design") {
+                    return createAction(state, "design", "workflow", {
+                        artifact: "design.md",
+                        prompt: "Return independent design Markdown. Do not write files.",
+                    })
+                }
+                break
+            case "implementation":
+                if (target.action === "implementation") {
+                    return createAction(state, "implementation", "workflow", {
+                        prompt: "Implement approved artifacts and tests. Do not alter OpenSpec artifacts or Git history.",
+                    })
+                }
+                break
+            case "verification":
+                if (target.action === "verification" || target.action === "lean-assurance-bundle") {
+                    return createAction(state, "verification", "workflow", {
+                        mode: target.action === "lean-assurance-bundle" ? target.action : undefined,
+                        artifact: "verification.md",
+                        prompt:
+                            target.action === "lean-assurance-bundle"
+                                ? "Return only JSON { verification, correctnessJudgment, reviewLedger }. " +
+                                  "verification is Markdown. " +
+                                  `correctnessJudgment: ${JUDGMENT_CONTRACT} ` +
+                                  `reviewLedger: ${ASSURANCE_FINDINGS_CONTRACT}`
+                                : "Verify requirements using registered command evidence. Return verification Markdown only.",
+                    })
+                }
+                break
+            case "refutation":
+                if (target.action === "refutation") {
+                    return createAction(state, "refutation", "workflow", {
+                        artifact: "review-ledger.json",
+                        prompt: `${REVIEW_LEDGER_CONTRACT}\n\nCurrent normalized review submissions:\n${JSON.stringify(
+                            currentReviewSubmissions(state),
+                        )}`,
+                    })
+                }
+                break
+            default:
+                break
+        }
+    }
+
+    if (target.purpose === "consultation" && SPECIALIST_CAPABILITIES.has(target.capability)) {
+        return createAction(state, target.capability, "consultation", {
+            prompt: "Provide focused planning consultation with evidence. Do not edit files.",
+        })
+    }
+
+    if (target.purpose === "independent-review") {
+        return createAction(state, target.capability, "independent-review", {
+            independent: true,
+            prompt:
+                "Perform an independent post-implementation specialist review. Do not rely on consultation. " +
+                ASSURANCE_FINDINGS_CONTRACT,
+        })
+    }
+
+    if (target.purpose === "judgment" && target.capability === "correctness-judgment") {
+        return createAction(state, "correctness-judgment", "judgment", {
+            independent: true,
+            artifact: "judgment-correctness.json",
+            prompt: `${JUDGMENT_CONTRACT} Return an independent structured correctness judgment for the current diff.`,
+        })
+    }
+
+    if (target.purpose === "judgment" && target.capability === "compliance-judgment") {
+        return createAction(state, "compliance-judgment", "judgment", {
+            independent: true,
+            artifact: "judgment-compliance.json",
+            prompt: `${JUDGMENT_CONTRACT} Return an independent structured specification-compliance judgment for the current diff.`,
+        })
+    }
+
+    return undefined
 }
 
 /**

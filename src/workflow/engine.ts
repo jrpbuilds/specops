@@ -4,13 +4,20 @@ import path from "node:path"
 import type { SpecOpsConfig } from "../config.js"
 import { AGENT_IDS } from "../capabilities/ids.js"
 import { applyEscalation, decideEscalation } from "../escalation/policy.js"
-import { assertCleanWorktree, baseCommit, collectChangedPaths, collectDiff } from "../git.js"
+import {
+    assertCleanWorktree,
+    baseCommit,
+    collectChangedPaths,
+    collectDiff,
+    stashFingerprint,
+} from "../git.js"
 import { createChange, openSpecOrThrow, uniqueChangeName, writeArtifact } from "../openspec.js"
 import { parseAssessment } from "../routing/assessment.js"
 import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
 import { changeRoot, readMachine, readRun, writeMachine, writeRun } from "../state/store.js"
 import type {
     ArtifactId,
+    CheckpointResolution,
     BlockReason,
     CheckpointRecord,
     CommandEvidence,
@@ -265,7 +272,15 @@ export async function issueDirective(
         }
 
         // Persist resume target metadata on the dispatch before consuming it.
-        const resume = consumeResumeTarget(state)
+        const resumeTarget = state.resumeTarget
+        const resume =
+            resumeTarget &&
+            directive.type === "dispatch" &&
+            resumeTarget.capability === directive.action.capability &&
+            resumeTarget.purpose === directive.action.purpose &&
+            resumeTarget.action === (directive.action.mode ?? directive.action.capability)
+                ? consumeResumeTarget(state)
+                : undefined
         if (resume) {
             record.resume = {
                 sourceId: resume.sourceId,
@@ -300,6 +315,16 @@ export async function issueDirective(
         if (directive.action.capability === "frontier") {
             recordFrontierDispatch(state)
         }
+    } else if (directive.type === "block" && directive.reason === "workflow-stalled") {
+        setOutcome(
+            state,
+            "blocked",
+            "policy-blocked",
+            state.resumeTarget
+                ? "SpecOps could not reconstruct the exact action targeted by the pending resume request."
+                : "SpecOps detected a repeated consultation cycle without implementation progress.",
+            "workflow-stalled",
+        )
     }
 
     await writeRun(directory, change, state)
@@ -360,6 +385,7 @@ export async function completeAction(
             await assertWriterGuards(directory, change, state, dispatch)
         }
         const parsed = parseWorkerOutput(output, config, phase, dispatch.capability)
+        assertWorkerResult(action, parsed)
 
         const scopeBeforeCompletion = state.scopeTier
         applyClaim(state, parsed.escalation, config)
@@ -671,6 +697,7 @@ export async function dismissQuestionAction(
  * @param change - The change name.
  * @param feedback - User feedback text, or `undefined` for Continue/dismissal.
  * @param config - Configuration carrying feedback length bounds.
+ * @param resolution - Explicit replay intent for feedback checkpoints.
  * @returns The updated {@link RunState}.
  * @throws When no checkpoint is pending or the feedback exceeds bounds.
  */
@@ -679,6 +706,7 @@ export async function resumeCheckpointAction(
     change: string,
     feedback: string | undefined,
     config: Pick<SpecOpsConfig, "questions" | "review">,
+    resolution: CheckpointResolution | undefined = undefined,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
     const pending = state.pendingCheckpoint
@@ -727,6 +755,14 @@ export async function resumeCheckpointAction(
     }
 
     const outcome: CheckpointRecord["outcome"] = feedback === undefined ? "continued" : "feedback"
+    if (resolution !== undefined && feedback === undefined) {
+        throw new Error("SpecOps checkpoint resolution requires non-empty feedback")
+    }
+    if (resolution === "apply-implementation-fixes" && pending.capability !== "verification") {
+        throw new Error(
+            "SpecOps implementation fixes can only be selected from a verification checkpoint",
+        )
+    }
     let feedbackHash: string | undefined
     let invalidatedArtifacts: ArtifactId[] = []
 
@@ -736,7 +772,9 @@ export async function resumeCheckpointAction(
             throw new Error("SpecOps checkpoint feedback must be non-empty")
         }
         if (feedback.length > config.questions.maxOtherTextLength) {
-            throw new Error("SpecOps checkpoint feedback exceeds maximum length")
+            throw new Error(
+                `SpecOps checkpoint feedback exceeds maximum length of ${config.questions.maxOtherTextLength} characters (received ${feedback.length})`,
+            )
         }
         feedbackHash = createHash("sha256")
             .update(
@@ -752,10 +790,14 @@ export async function resumeCheckpointAction(
         state.resumeTarget = {
             sourceId: pending.dispatchId,
             originalDispatchId: pending.dispatchId,
-            phase: pending.artifacts[0]?.artifact ?? "proposal",
-            capability: pending.capability,
-            purpose: pending.purpose,
-            action: pending.action,
+            phase:
+                resolution === "apply-implementation-fixes"
+                    ? "implementation"
+                    : (pending.artifacts[0]?.artifact ?? "proposal"),
+            capability:
+                resolution === "apply-implementation-fixes" ? "implementation" : pending.capability,
+            purpose: "workflow",
+            action: resolution === "apply-implementation-fixes" ? "implementation" : pending.action,
             answerHash: feedbackHash,
             origin: "checkpoint",
         }
@@ -773,6 +815,7 @@ export async function resumeCheckpointAction(
         raisedAt: pending.raisedAt,
         resolvedAt: now,
         outcome,
+        resolution: feedback === undefined ? undefined : (resolution ?? "rerun-phase"),
         feedback,
         feedbackHash,
         invalidatedArtifacts,
@@ -1110,9 +1153,16 @@ async function persistActionResult(
             return
         case "implementation":
         case "repair":
-            state.implementationDiffHash = hash(
-                await collectDiff(directory, config.review.maxDiffBytes),
-            )
+            {
+                const diff = await collectDiff(directory, config.review.maxDiffBytes)
+                const changedPaths = await collectChangedPaths(directory)
+                if (diff === "(no implementation diff)" || changedPaths.length === 0) {
+                    throw new Error(
+                        `${action.capability} worker completed without producing an implementation diff`,
+                    )
+                }
+                state.implementationDiffHash = hash(diff)
+            }
             recordArtifact(
                 state,
                 "implementation",
@@ -1220,6 +1270,18 @@ async function persistActionResult(
             // Consultation prose remains captured in dispatch provenance only.
             return
     }
+}
+
+/** Reject silent or status-only worker results before they become evidence. */
+function assertWorkerResult(
+    action: WorkflowAction,
+    parsed: { prose: string; questions?: unknown[]; escalation?: unknown; frontier?: unknown },
+): void {
+    if (parsed.questions?.length || parsed.escalation || parsed.frontier) return
+    if (parsed.prose.trim()) return
+    throw new Error(
+        `SpecOps ${action.capability} worker returned empty output; return the required artifact or structured result`,
+    )
 }
 
 /**
@@ -1435,6 +1497,14 @@ async function assertWriterGuards(
             throw new Error("Writer guard rejected a changed Git HEAD")
         }
     }
+    if (
+        dispatch.writerGuard.stashFingerprint !== undefined &&
+        (await stashFingerprint(directory)) !== dispatch.writerGuard.stashFingerprint
+    ) {
+        throw new Error(
+            "Writer guard detected a changed Git stash list; workers must not stash changes",
+        )
+    }
 
     const currentArtifacts = await protectedControllerTree(directory, change)
     const expectedFiles = Object.keys(dispatch.writerGuard.artifacts).sort()
@@ -1472,7 +1542,13 @@ async function captureWriterGuard(
             throw new Error("Writer guard cannot issue with missing controller specifications")
         }
     }
-    return { baseline: state.baseline, artifacts }
+    return {
+        baseline: state.baseline,
+        artifacts,
+        stashFingerprint: /^[0-9a-f]{40}$/i.test(state.baseline)
+            ? await stashFingerprint(directory)
+            : undefined,
+    }
 }
 
 /**

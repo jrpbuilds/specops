@@ -110,6 +110,14 @@ dispatch of the original phase.
 | `commandTimeoutSeconds` | Registered validation command deadline.            |
 | `commandOutputBytes`    | Combined bounded stdout/stderr capture.            |
 
+The default `maxDiffBytes` is 1,000,000 bytes. The limit remains a hard safety
+bound and may be raised for unusually large changes. SpecOps never stashes,
+resets, commits, or pushes to work around this limit. When the limit is reached,
+the error reports the measured size and changed-path count.
+
+Implementation workers must produce a real repository diff. A status-only
+response or a changed local stash list is rejected by the writer guard.
+
 ## Command evidence
 
 The assessment registers arbitrary legitimate project executables, argument arrays, and optional

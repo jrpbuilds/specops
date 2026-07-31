@@ -44,7 +44,7 @@ export function summarize(state: RunState, change: string, label?: string): stri
     }
     line += ")"
 
-    if (state.status === "failed" && state.outcome?.message) {
+    if ((state.status === "failed" || state.status === "blocked") && state.outcome?.message) {
         line += `\nFailed: ${state.outcome.message}`
     } else if (state.status === "passed" && state.outcome?.message) {
         line += `\n${state.outcome.message}`

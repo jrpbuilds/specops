@@ -339,6 +339,34 @@ describe("planning bundle contract", () => {
     })
 })
 
+describe("worker result integrity", () => {
+    it("rejects empty artifact output without publishing a valid artifact", async () => {
+        const run = await persistedRun()
+        run.state.dispatches.push(dispatch("design", "design", "workflow", "design"))
+        await writeRun(run.directory, run.change, run.state)
+
+        await expect(
+            completeAction(run.directory, run.change, "design", "   ", DEFAULT_CONFIG),
+        ).rejects.toThrow(/worker returned empty output/)
+
+        const failed = await readRun(run.directory, run.change)
+        expect(failed.dispatches[0]?.status).toBe("failed")
+        expect(failed.artifacts.design).toBeUndefined()
+    })
+
+    it("rejects an empty consultation result", async () => {
+        const run = await persistedRun()
+        run.state.dispatches.push(
+            dispatch("consultation", "public-contract", "consultation", "public-contract"),
+        )
+        await writeRun(run.directory, run.change, run.state)
+
+        await expect(
+            completeAction(run.directory, run.change, "consultation", "", DEFAULT_CONFIG),
+        ).rejects.toThrow(/worker returned empty output/)
+    })
+})
+
 describe("judgment contract", () => {
     it("rejects an invalid verdict with the allowed values", async () => {
         const run = await persistedRun()

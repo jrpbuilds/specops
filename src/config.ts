@@ -134,7 +134,7 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     review: {
         /** Block on BLOCKER and HIGH findings only. */
         blockingSeverities: ["BLOCKER", "HIGH"],
-        maxDiffBytes: 200_000,
+        maxDiffBytes: 1_000_000,
         maxContextBytes: 50_000,
         transientRetries: 1,
         agentTimeoutSeconds: 300,

@@ -160,6 +160,21 @@ export function requirementsFor(
 ): { requirements: WorkflowRequirements; reasons: string[] } {
     const thresholds = config.workflow.scopeThresholds
     const reasons = [...assessment.facts]
+    const fullReasons: string[] = []
+    if (assessment.publicContract === "breaking") fullReasons.push("breaking public contract")
+    if (assessment.changeKind === "migration") fullReasons.push("migration change")
+    if (assessment.changeKind === "infrastructure") fullReasons.push("infrastructure change")
+    if (assessment.expectedFiles >= thresholds.fullMinFiles) {
+        fullReasons.push(`expected files ${assessment.expectedFiles} >= ${thresholds.fullMinFiles}`)
+    }
+    if (assessment.expectedModules >= thresholds.fullMinModules) {
+        fullReasons.push(
+            `expected modules ${assessment.expectedModules} >= ${thresholds.fullMinModules}`,
+        )
+    }
+    if (assessment.uncertainty.requirements === "low")
+        fullReasons.push("low requirements uncertainty")
+    if (assessment.uncertainty.design === "low") fullReasons.push("low design uncertainty")
     const requiresFull =
         assessment.publicContract === "breaking" ||
         assessment.changeKind === "migration" ||
@@ -194,6 +209,9 @@ export function requirementsFor(
     const configuredFloor =
         config.workflow.defaultTier === "auto" ? "lean" : config.workflow.defaultTier
     const scopeTier = higherTier(higherTier(floor, requestedFloor), configuredFloor)
+    if (scopeTier === "full" && fullReasons.length > 0) {
+        reasons.push(`Full tier selected because ${fullReasons.join(", ")}.`)
+    }
     const specialists = [...new Set<CapabilityId>(assessment.riskFacets)]
 
     const requirements: WorkflowRequirements = {

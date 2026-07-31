@@ -693,6 +693,11 @@ function parseQuestionPayload(
         }
         const parsed = option as Record<string, unknown>
         for (const key of Object.keys(parsed)) {
+            if (key === "impact") {
+                throw new Error(
+                    "SpecOps question option contains misplaced field: impact belongs at the question marker root",
+                )
+            }
             if (key !== "id" && key !== "label" && key !== "recommended") {
                 throw new Error(`SpecOps question option contains unknown field: ${key}`)
             }

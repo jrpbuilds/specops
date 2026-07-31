@@ -50,6 +50,15 @@ export async function publishProgress(
                 repairTasks: state.repairTasks?.length ?? 0,
                 budgetUsage: state.budgetUsage,
                 frontierUsage: state.frontierUsage,
+                pendingCheckpoint: state.pendingCheckpoint
+                    ? {
+                          dispatchId: state.pendingCheckpoint.dispatchId,
+                          capability: state.pendingCheckpoint.capability,
+                      }
+                    : undefined,
+                lastFailure: state.dispatches
+                    .filter(dispatch => dispatch.status === "failed")
+                    .at(-1)?.failureReason,
             },
         },
     })
@@ -63,6 +72,8 @@ export async function publishProgress(
                 dispatches: state.dispatches,
                 pendingRepairTaskId: state.pendingRepair?.taskId,
                 repairTasks: state.repairTasks,
+                pendingCheckpoint: state.pendingCheckpoint,
+                checkpointHistory: state.checkpointHistory,
                 updatedAt: state.updatedAt,
             },
             null,

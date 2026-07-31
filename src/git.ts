@@ -100,6 +100,16 @@ export async function baseCommit(directory: string): Promise<string> {
 }
 
 /**
+ * Return the current local stash list for writer-side-effect detection.
+ *
+ * @param directory - Repository working directory.
+ * @returns A stable newline-delimited stash fingerprint.
+ */
+export async function stashFingerprint(directory: string): Promise<string> {
+    return git(directory, ["stash", "list", "--format=%H"])
+}
+
+/**
  * Refuse automation if user code changes already exist outside OpenSpec
  * metadata.
  * @param directory - Repository working directory.
@@ -161,8 +171,13 @@ export async function collectDiff(directory: string, maxBytes: number): Promise<
     }
 
     const diff = sections.join("") || "(no implementation diff)"
-    if (Buffer.byteLength(diff) > maxBytes) {
-        throw new Error(`review diff exceeds configured maximum of ${maxBytes} bytes`)
+    const bytes = Buffer.byteLength(diff)
+    if (bytes > maxBytes) {
+        const changedPaths = await collectChangedPaths(directory)
+        throw new Error(
+            `review diff exceeds configured maximum of ${maxBytes} bytes (actual ${bytes} bytes across ${changedPaths.length} changed paths); ` +
+                "run from a clean worktree, reduce the implementation scope, or raise review.maxDiffBytes",
+        )
     }
     return diff
 }

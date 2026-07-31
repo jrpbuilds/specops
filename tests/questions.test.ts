@@ -268,6 +268,19 @@ describe("worker question marker parsing", () => {
         expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(/unknown field/)
     })
 
+    it("explains that impact belongs at the question marker root", () => {
+        const out = `<!-- specops-question: ${JSON.stringify({
+            prompt: "p",
+            options: [
+                { id: "a", label: "A", impact: "requirements" },
+                { id: "b", label: "B" },
+            ],
+        })} -->`
+        expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(
+            /impact belongs at the question marker root/,
+        )
+    })
+
     it("rejects an invalid impact for the phase", () => {
         const out = QUESTION_MARKER({ impact: "implementation" })
         // proposal phase allows requirements/design, not implementation

@@ -215,10 +215,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             },
         }),
         [TOOL_IDS.resumeCheckpoint]: tool({
-            description: "Resolve a pending interactive checkpoint and resume scheduling.",
+            description:
+                "Resolve a pending interactive checkpoint and resume scheduling. Use resolution=apply-implementation-fixes for verification findings that require code changes.",
             args: {
                 change: tool.schema.string().regex(CHANGE_NAME),
                 feedback: tool.schema.string().optional(),
+                resolution: tool.schema
+                    .enum(["rerun-phase", "apply-implementation-fixes"])
+                    .optional(),
             },
             async execute(args, context) {
                 const state = await resumeCheckpointAction(
@@ -226,6 +230,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     args.feedback,
                     await readConfig(context.directory),
+                    args.resolution,
                 )
                 await publishProgress(
                     context as MetadataContext,

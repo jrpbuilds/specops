@@ -478,8 +478,12 @@ type FrontierResumeTarget = {
 
 export type PauseReason = "pending-question" | "question-dismissed" | "checkpoint"
 
+/** Explicit action selected when resolving an interactive checkpoint. */
+export type CheckpointResolution = "rerun-phase" | "apply-implementation-fixes"
+
 /** Detailed reason for a non-resumable blocked outcome. */
-export type BlockReason = "budget-exhausted" | "policy-rejected" | "validation-failed"
+export type BlockReason =
+    "budget-exhausted" | "policy-rejected" | "validation-failed" | "workflow-stalled"
 
 /**
  * Stable workflow-level result consumed from JSON events or persisted state
@@ -515,7 +519,11 @@ export type DispatchRecord = {
     /** One-based attempt number for this capability/input binding. */
     attempt?: number
     /** Controller-issued integrity guard for repository-mutating work. */
-    writerGuard?: { baseline: string; artifacts: Record<string, string> }
+    writerGuard?: {
+        baseline: string
+        artifacts: Record<string, string>
+        stashFingerprint?: string
+    }
     status: "issued" | "completed" | "failed"
     at: string
     /** Resume metadata when this dispatch re-issues a paused phase after an answer. */
@@ -718,6 +726,8 @@ export type CheckpointRecord = {
     raisedAt: string
     resolvedAt: string
     outcome: "continued" | "feedback" | "cancelled" | "stale"
+    /** Explicit replay intent when feedback was supplied. */
+    resolution?: CheckpointResolution
     feedback?: string
     feedbackHash?: string
     invalidatedArtifacts: ArtifactId[]

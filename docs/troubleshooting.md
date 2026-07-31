@@ -99,9 +99,21 @@ rerunning the original worker.
 
 ### Budget exhaustion, policy rejection, validation failure (non-resumable)
 
-When `blockReason` is `budget-exhausted`, `policy-rejected`, or `validation-failed`, the run is
+When `blockReason` is `budget-exhausted`, `policy-rejected`, `validation-failed`, or
+`workflow-stalled`, the run is
 terminal. Do not edit machine state to bypass the gate. Correct the underlying artifact, command
 registration, implementation, or configuration and start a fresh run.
+
+### Verification findings need implementation changes
+
+At an interactive verification checkpoint, choose `Apply implementation fixes` when the findings
+require repository changes. The controller must call `specops_resume_checkpoint` with the recorded
+feedback and `resolution: "apply-implementation-fixes"`. This dispatches the implementer directly;
+it does not re-run planning consultations.
+
+If an implementation worker returns only a status report, produces no repository diff, changes Git
+`HEAD`, or changes the stash list, the dispatch is rejected and the run remains available for a
+fresh retry or explicit diagnosis.
 
 ### CLI pending-question output
 

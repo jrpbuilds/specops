@@ -91,7 +91,7 @@ const QUESTION_ELIGIBLE_AGENTS: ReadonlySet<AgentId> = new Set<AgentId>([
 
 /** Strict policy for when a worker may raise a question marker. */
 const QUESTION_POLICY = [
-    "You may emit up to three `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` markers, and only when ALL of the following hold for each question:",
+    "You may emit up to three `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` markers. `impact` is a top-level question field, never an option field, and only when ALL of the following hold for each question:",
     "(a) the choice cannot be resolved by inspecting the repository or repository conventions;",
     "(b) at least two remaining outcomes are materially different;",
     "(c) choosing incorrectly would alter requirements, public behaviour, safety, validation, or an irreversible design decision;",

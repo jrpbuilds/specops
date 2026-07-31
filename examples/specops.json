@@ -43,7 +43,7 @@
     },
     "review": {
         "blockingSeverities": ["BLOCKER", "HIGH"],
-        "maxDiffBytes": 200000,
+        "maxDiffBytes": 1000000,
         "maxContextBytes": 50000,
         "transientRetries": 1,
         "agentTimeoutSeconds": 300,

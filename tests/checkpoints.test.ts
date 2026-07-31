@@ -25,6 +25,7 @@ import {
     hasCheckpointFor,
     isCheckpointBindingCurrent,
     nextAction,
+    nextDirective,
     snapshotCheckpointArtifacts,
 } from "../src/workflow/scheduler.js"
 import {
@@ -141,6 +142,20 @@ function planningDispatch(): DispatchRecord {
         independent: false,
         inputHash: "input",
         status: "issued",
+        at: "now",
+    }
+}
+
+function verificationDispatch(): DispatchRecord {
+    return {
+        id: "verification",
+        action: "verification",
+        agent: AGENT_IDS.core.verifier,
+        capability: "verification" as never,
+        purpose: "workflow",
+        independent: false,
+        inputHash: "input",
+        status: "completed",
         at: "now",
     }
 }
@@ -451,6 +466,90 @@ describe("interactive mode queuing", () => {
 })
 
 describe("checkpoint resume", () => {
+    it("routes explicit implementation-fix feedback directly to the implementer", async () => {
+        const directory = await initializedRepository()
+        const change = "resume-implementation-fixes"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+
+        const state = leanState("interactive")
+        const dispatch = verificationDispatch()
+        state.dispatches.push(dispatch)
+        state.artifacts.implementation = validArtifact(state, "implementation")
+        state.artifacts.verification = validArtifact(state, "verification")
+        const artifacts = snapshotCheckpointArtifacts(state, ["verification"])
+        state.pendingCheckpoint = {
+            dispatchId: dispatch.id,
+            capability: dispatch.capability,
+            purpose: dispatch.purpose,
+            action: dispatch.action,
+            artifacts,
+            policyHash: state.requirements.policyHash,
+            implementationDiffHash: state.implementationDiffHash,
+            bindingHash: computeCheckpointBindingHash(state, dispatch, artifacts),
+            raisedAt: "now",
+        }
+        state.status = "paused"
+        state.pauseReason = "checkpoint"
+        state.resumable = true
+        await writeRun(directory, change, state)
+
+        await resumeCheckpointAction(
+            directory,
+            change,
+            "Fix the five verification findings in the working tree.",
+            DEFAULT_CONFIG,
+            "apply-implementation-fixes",
+        )
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        expect(directive.type).toBe("dispatch")
+        if (directive.type !== "dispatch") return
+        expect(directive.action.capability).toBe("implementation")
+        expect(directive.action.purpose).toBe("workflow")
+        expect(directive.action.prompt).toContain("Fix the five verification findings")
+
+        const persisted = await readRun(directory, change)
+        expect(persisted.resumeTarget?.consumed).toBe(true)
+        expect(persisted.checkpointHistory.at(-1)?.resolution).toBe("apply-implementation-fixes")
+    })
+
+    it("blocks a consultation-only cycle instead of dispatching indefinitely", () => {
+        const state = leanState("interactive")
+        state.requirements.requiredCapabilities.push(
+            "public-contract" as never,
+            "maintainability" as never,
+            "usability" as never,
+        )
+        for (let index = 0; index < 12; index += 1) {
+            const capability = (["public-contract", "maintainability", "usability"] as const)[
+                index % 3
+            ]
+            state.dispatches.push({
+                id: `consultation-${index}`,
+                action: capability,
+                agent:
+                    capability === "public-contract"
+                        ? AGENT_IDS.specialist.contract
+                        : capability === "maintainability"
+                          ? AGENT_IDS.specialist.maintainability
+                          : AGENT_IDS.specialist.usability,
+                capability,
+                purpose: "consultation",
+                independent: false,
+                inputHash: `input-${index}`,
+                status: "completed",
+                at: "now",
+            })
+        }
+
+        const directive = nextDirective(state)
+        expect(directive).toEqual({
+            type: "block",
+            reason: "workflow-stalled",
+            resumable: false,
+        })
+    })
+
     it("continues without invalidating anything when no feedback is provided", async () => {
         const directory = await initializedRepository()
         const change = "resume-1"
