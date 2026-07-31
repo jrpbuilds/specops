@@ -5,20 +5,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
     DEFAULT_CONFIG,
     deepMergeConfig,
+    materializeGlobalConfig,
     resolveConfig,
+    SPECOPS_CONFIG_SCHEMA_URL,
     validateConfig,
     validatePartialConfig,
 } from "../src/config.js"
+import { resolveGlobalConfigPath } from "../src/installation.js"
 
 describe("example configuration", () => {
-    it("matches the strict current configuration format", async () => {
-        const examplePath = path.resolve(import.meta.dirname, "..", "examples", "specops.json")
-        const example = JSON.parse(await readFile(examplePath, "utf8"))
+    it.each(["specops.json", "specops.global.json"])(
+        "%s matches the strict current configuration format",
+        async filename => {
+            const examplePath = path.resolve(import.meta.dirname, "..", "examples", filename)
+            const example = JSON.parse(await readFile(examplePath, "utf8"))
 
-        expect(validateConfig(example)).toMatchObject({
-            version: 2,
-            workflow: { defaultTier: example.workflow.defaultTier },
-        })
+            expect(validateConfig(example)).toEqual(DEFAULT_CONFIG)
+        },
+    )
+})
+
+describe("global configuration path", () => {
+    it("uses XDG_CONFIG_HOME and falls back to the home config directory", () => {
+        expect(
+            resolveGlobalConfigPath({ XDG_CONFIG_HOME: "/custom/config" }, "/home/example"),
+        ).toBe("/custom/config/opencode/specops.json")
+        expect(resolveGlobalConfigPath({}, "/home/example")).toBe(
+            "/home/example/.config/opencode/specops.json",
+        )
     })
 })
 
@@ -170,6 +184,33 @@ describe("resolveConfig", () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await expect(resolveConfig(projectDirectory)).resolves.toEqual(DEFAULT_CONFIG)
+    })
+
+    it("creates a complete valid global configuration when absent", async () => {
+        const globalPath = resolveGlobalConfigPath()
+        const result = await materializeGlobalConfig()
+        const document = JSON.parse(await readFile(globalPath, "utf8"))
+
+        expect(result).toEqual({ path: globalPath, created: true })
+        expect(document.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(validateConfig(document)).toEqual(DEFAULT_CONFIG)
+        await expect(resolveConfig(path.join(temporaryDirectory, "project"))).resolves.toEqual(
+            DEFAULT_CONFIG,
+        )
+    })
+
+    it.each([
+        ["valid partial", JSON.stringify({ workflow: { defaultTier: "standard" } })],
+        ["malformed", "{ not-json"],
+    ])("preserves an existing %s global configuration", async (_name, content) => {
+        const globalPath = resolveGlobalConfigPath()
+        await writeFile(globalPath, content)
+
+        await expect(materializeGlobalConfig()).resolves.toEqual({
+            path: globalPath,
+            created: false,
+        })
+        await expect(readFile(globalPath, "utf8")).resolves.toBe(content)
     })
 
     it("merges global configuration", async () => {

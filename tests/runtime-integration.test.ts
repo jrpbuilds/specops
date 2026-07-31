@@ -10,7 +10,12 @@ import {
     agentForCapability,
 } from "../src/capabilities/registry.js"
 import { COMMANDS } from "../src/commands.js"
-import { MCP_TOOL_WILDCARD, resolveManifestPath } from "../src/installation.js"
+import { DEFAULT_CONFIG, SPECOPS_CONFIG_SCHEMA_URL, validateConfig } from "../src/config.js"
+import {
+    MCP_TOOL_WILDCARD,
+    resolveGlobalConfigPath,
+    resolveManifestPath,
+} from "../src/installation.js"
 import { validateManifest } from "../src/manifest.js"
 import { SpecOpsPluginWithManifest } from "../src/index.js"
 import { promptText } from "../src/prompts.generated.js"
@@ -62,6 +67,10 @@ describe.sequential("installed runtime contract", () => {
         const hooks = await SpecOpsPluginWithManifest(fakePluginInput())
         const config: Config = {}
         await hooks.config?.(config)
+
+        const globalConfig = JSON.parse(await readFile(resolveGlobalConfigPath(), "utf8"))
+        expect(globalConfig.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(validateConfig(globalConfig)).toEqual(DEFAULT_CONFIG)
 
         const manifest = validateManifest(JSON.parse(await readFile(manifestPath, "utf8")))
         expect(Object.keys(manifest.agents).sort()).toEqual([...ALL_AGENT_IDS].sort())

@@ -4,6 +4,7 @@ import {
     registerManifestAgents,
     resolveManifestPath,
 } from "./installation.js"
+import { materializeGlobalConfig } from "./config.js"
 import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./manifest.js"
 import { readConfig } from "./openspec.js"
 import { SpecOpsPlugin } from "./orchestrator.js"
@@ -29,8 +30,9 @@ export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
 }
 
 /**
- * Runtime plugin wrapper that materialises the manifest and registers every
- * controller and worker in the same config hook that registers commands.
+ * Runtime plugin wrapper that materialises the manifest and global config,
+ * then registers every controller and worker in the same config hook that
+ * registers commands.
  *
  * Composes the inner {@link SpecOpsPlugin} with manifest agent registration so
  * a single `config` callback installs commands, controllers, and workers in
@@ -42,6 +44,7 @@ export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
 export const SpecOpsPluginWithManifest: Plugin = async input => {
     const inner = await SpecOpsPlugin(input)
     const materialisation = await materializeAgentManifest()
+    await materializeGlobalConfig()
 
     return {
         ...inner,

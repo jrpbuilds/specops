@@ -63,6 +63,27 @@ const hooks = await pluginModule.default.server(fakePluginInput(packageDirectory
 const config = {}
 await hooks.config(config)
 
+const globalConfigPath = path.join(isolatedConfigHome, "opencode", "specops.json")
+const globalConfig = JSON.parse(await readFile(globalConfigPath, "utf8"))
+assert(
+    globalConfig.$schema === "https://specops.dev/schemas/specops.schema.json",
+    "packed install global config schema reference drifted",
+)
+assert(
+    [
+        "version",
+        "openspec",
+        "workflow",
+        "routing",
+        "automation",
+        "escalation",
+        "frontier",
+        "review",
+        "integrations",
+    ].every(key => key in globalConfig),
+    "packed install global config is not complete",
+)
+
 const { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } = idsModule
 
 const disabledConfigPath = path.join(packageDirectory, ".opencode", "specops.json")

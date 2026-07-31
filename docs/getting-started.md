@@ -16,8 +16,9 @@ opencode plugin @jrpbuilds/specops -g
 ```
 
 Restart OpenCode after installation. During plugin load, SpecOps automatically materialises
-`specops-manifest.json` in OpenCode's configuration directory and registers all controllers and
-workers in the resolved configuration.
+`specops-manifest.json` and a complete editable `specops.json` in OpenCode's configuration
+directory, then registers all controllers and workers in the resolved configuration. Existing
+configuration files are preserved.
 
 ## Repository onboarding
 
@@ -164,6 +165,7 @@ After clean installation and onboarding, expect:
 
 - OpenCode config containing the plugin package or local packed entry;
 - `specops-manifest.json` in the OpenCode config directory;
+- `specops.json` in the OpenCode config directory containing the complete global defaults;
 - repository `openspec/config.yaml`;
 - repository `openspec/schemas/specops-lean/`;
 - repository `openspec/schemas/specops-standard/`;

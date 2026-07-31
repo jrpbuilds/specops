@@ -14,15 +14,18 @@ merged configuration shape; partial global or project files will show editor war
 missing required sections — this is expected and such files are still valid at runtime via the
 partial validator.
 
-Create `~/.config/opencode/specops.json` (or `$XDG_CONFIG_HOME/opencode/specops.json`) for
-user-wide defaults that apply to every project:
+SpecOps creates a complete editable `~/.config/opencode/specops.json` on first plugin load (or
+`$XDG_CONFIG_HOME/opencode/specops.json` when XDG is configured). Existing files are preserved.
+To create it manually, use the complete project example as a starting point:
 
 ```bash
 mkdir -p ~/.config/opencode
 cp examples/specops.global.json ~/.config/opencode/specops.json
 ```
 
-`specops.global.json` is intentionally partial: only the sections you set are merged.
+The automatically created global file and `specops.global.json` use the published schema URL so
+editor validation works outside a project. You may still delete sections you do not want to
+override; only the sections you set are merged.
 Values are resolved in this order:
 
 1. Built-in defaults (`DEFAULT_CONFIG`).

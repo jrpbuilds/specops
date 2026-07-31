@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { resolveOpenCodeConfigDirectory } from "./installation.js"
+import { resolveGlobalConfigPath } from "./installation.js"
 import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js"
 
 /**
@@ -108,6 +108,45 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     },
     /** Inherit MCP tool availability from the host OpenCode installation. */
     integrations: { mcp: "inherit" },
+}
+
+/** Published JSON Schema used by the global configuration editor. */
+export const SPECOPS_CONFIG_SCHEMA_URL = "https://specops.dev/schemas/specops.schema.json"
+
+/** Result of creating or finding the global user configuration. */
+export type GlobalConfigMaterialisation = {
+    path: string
+    created: boolean
+}
+
+/**
+ * Create the complete global configuration when it does not exist.
+ *
+ * The exclusive file creation preserves user-owned partial or invalid files,
+ * while the generated document exposes every current configuration field.
+ * @param destination - Optional global configuration path, primarily for tests.
+ * @returns The resolved path and whether this call created the file.
+ */
+export async function materializeGlobalConfig(
+    destination: string = resolveGlobalConfigPath(),
+): Promise<GlobalConfigMaterialisation> {
+    await mkdir(path.dirname(destination), { recursive: true })
+    const document = {
+        $schema: SPECOPS_CONFIG_SCHEMA_URL,
+        ...structuredClone(DEFAULT_CONFIG),
+    }
+    try {
+        await writeFile(destination, `${JSON.stringify(document, null, 2)}\n`, {
+            encoding: "utf8",
+            flag: "wx",
+        })
+        return { path: destination, created: true }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+            return { path: destination, created: false }
+        }
+        throw error
+    }
 }
 
 /** Check whether a value is a plain object (not null and not an array). */
@@ -662,7 +701,7 @@ function validateSectionPartial<T>(
  * @throws If any file exists but fails JSON parsing or validation.
  */
 export async function resolveConfig(directory: string): Promise<SpecOpsConfig> {
-    const globalPath = path.join(resolveOpenCodeConfigDirectory(), "specops.json")
+    const globalPath = resolveGlobalConfigPath()
     const projectPath = path.join(directory, ".opencode", "specops.json")
     const [globalPartial, projectPartial] = await Promise.all([
         readPartialConfig(globalPath),

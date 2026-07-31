@@ -27,7 +27,7 @@ Requires [OpenCode](https://opencode.ai) 1.16.2 or newer and [Node.js](https://n
 opencode plugin @jrpbuilds/specops -g
 ```
 
-That's the whole install. On first load SpecOps writes its agent manifest to `$XDG_CONFIG_HOME/opencode/specops-manifest.json` (or `~/.config/opencode/specops-manifest.json` if `XDG_CONFIG_HOME` is unset) — no manual config-file shuffling. Then open OpenCode's command palette and pick `SpecOps: Configure agent models` to map your configured providers to the 24 controller and worker roles. Out of the box everything inherits OpenCode's global default model, so the plugin works immediately; you'll get better results by assigning stronger coding models to the implementer, repairer, and frontier routes.
+That's the whole install. On first load SpecOps writes its agent manifest and a complete editable global configuration to the OpenCode config directory. The paths are `$XDG_CONFIG_HOME/opencode/specops-manifest.json` and `$XDG_CONFIG_HOME/opencode/specops.json` (or the matching `~/.config/opencode/` paths if `XDG_CONFIG_HOME` is unset). Existing files are preserved. Then open OpenCode's command palette and pick `SpecOps: Configure agent models` to map your configured providers to the 24 controller and worker roles. Out of the box everything inherits OpenCode's global default model, so the plugin works immediately; you'll get better results by assigning stronger coding models to the implementer, repairer, and frontier routes.
 
 ## First Run
 

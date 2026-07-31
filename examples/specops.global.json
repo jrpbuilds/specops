@@ -1,10 +1,39 @@
 {
-    "$schema": "./specops.schema.json",
+    "$schema": "https://specops.dev/schemas/specops.schema.json",
     "version": 2,
+    "openspec": { "command": null },
     "workflow": {
-        "defaultTier": "standard"
+        "defaultTier": "auto",
+        "scopeThresholds": {
+            "leanMaxFiles": 2,
+            "leanMaxModules": 1,
+            "fullMinFiles": 9,
+            "fullMinModules": 4
+        }
     },
-    "integrations": {
-        "mcp": "disabled"
-    }
+    "routing": { "forceFullForFacets": [] },
+    "automation": { "requireCleanWorktree": true },
+    "escalation": {
+        "budgets": {
+            "maxScopeEscalations": 2,
+            "maxSpecialistDispatches": 8,
+            "maxRepairCycles": 3,
+            "maxRepeatedFailureFingerprints": 2
+        }
+    },
+    "frontier": {
+        "mode": "disabled",
+        "maxEscalationsPerRun": 2,
+        "maxDispatchesPerRun": 3,
+        "maxHighDispatchesPerRun": 1
+    },
+    "review": {
+        "blockingSeverities": ["BLOCKER", "HIGH"],
+        "maxDiffBytes": 1000000,
+        "maxContextBytes": 50000,
+        "transientRetries": 1,
+        "commandTimeoutSeconds": 300,
+        "commandOutputBytes": 32000
+    },
+    "integrations": { "mcp": "inherit" }
 }

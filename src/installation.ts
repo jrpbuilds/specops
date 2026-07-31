@@ -40,7 +40,7 @@ export class ManifestConflictError extends Error {
 }
 
 /** Resolve OpenCode's configuration directory using its XDG convention. */
-export function resolveOpenCodeConfigDirectory(
+function resolveOpenCodeConfigDirectory(
     environment: NodeJS.ProcessEnv = process.env,
     homeDirectory: string = os.homedir(),
 ): string {
@@ -58,6 +58,14 @@ export function resolveManifestPath(
         resolveOpenCodeConfigDirectory(environment, homeDirectory),
         "specops-manifest.json",
     )
+}
+
+/** Resolve the global user-editable SpecOps configuration path. */
+export function resolveGlobalConfigPath(
+    environment: NodeJS.ProcessEnv = process.env,
+    homeDirectory: string = os.homedir(),
+): string {
+    return path.join(resolveOpenCodeConfigDirectory(environment, homeDirectory), "specops.json")
 }
 
 /**

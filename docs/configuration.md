@@ -1,9 +1,13 @@
 # Configuration
 
 Project policy is read from `.opencode/specops.json`. Copy
-`examples/specops.json` and keep its `$schema` reference for editor validation.
+`examples/specops.json` and keep its `$schema` reference for editor validation. On first plugin
+load, SpecOps also creates a complete editable global file at
+`$XDG_CONFIG_HOME/opencode/specops.json` (or `~/.config/opencode/specops.json`). Existing global
+files are never overwritten.
 
-Configuration version 2 is strict and camelCase. Unknown or missing fields fail startup.
+Configuration version 2 is strict and camelCase. Unknown fields fail validation; missing fields
+in a global or project source are filled by the merged defaults.
 
 ## Configuration sources and precedence
 
@@ -24,8 +28,10 @@ required sections but rejects unknown keys. Error messages include the offending
 The merged result is then validated with the strict complete validator used before a run
 starts.
 
-The project-over-global override warning is emitted only when both the global and project
-files exist. A project-only file that changes defaults is not flagged.
+The first-run global file contains every supported field and current default value, so it can be
+edited directly as a user-wide policy template. The project-over-global override warning is
+emitted only when both the global and project files exist. A project-only file that changes
+defaults is not flagged.
 
 `$schema` is preserved as a local, relative reference in the project file and is ignored by
 the runtime merge. A global file may also contain a `$schema` value; it does not affect

@@ -13,8 +13,8 @@ import { type SpecOpsConfig, validatePartialConfig } from "./config.js"
 import { runProcess } from "./git.js"
 import {
     inspectAgentManifest,
+    resolveGlobalConfigPath,
     resolveManifestPath,
-    resolveOpenCodeConfigDirectory,
 } from "./installation.js"
 import { promptText } from "./prompts.generated.js"
 
@@ -152,7 +152,7 @@ function overridenDottedPaths(
  * @param directory - Project directory where `.opencode/specops.json` is read.
  */
 async function checkConfigSources(diagnostics: Diagnostic[], directory: string): Promise<void> {
-    const globalPath = path.join(resolveOpenCodeConfigDirectory(), "specops.json")
+    const globalPath = resolveGlobalConfigPath()
     const projectPath = path.join(directory, ".opencode", "specops.json")
     const globalPartial = await readPartialDiagnostic(globalPath, diagnostics)
     const projectPartial = await readPartialDiagnostic(projectPath, diagnostics)
