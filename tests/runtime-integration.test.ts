@@ -10,7 +10,7 @@ import {
     agentForCapability,
 } from "../src/capabilities/registry.js"
 import { COMMANDS } from "../src/commands.js"
-import { resolveManifestPath } from "../src/installation.js"
+import { MCP_TOOL_WILDCARD, resolveManifestPath } from "../src/installation.js"
 import { validateManifest } from "../src/manifest.js"
 import { SpecOpsPluginWithManifest } from "../src/index.js"
 import { promptText } from "../src/prompts.generated.js"
@@ -121,6 +121,7 @@ describe.sequential("installed runtime contract", () => {
             expect(config.agent?.[id]?.prompt).toBe(promptText(id))
             if (!CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
                 expect(config.agent?.[id]?.mode).toBe("subagent")
+                expect(config.agent?.[id]?.tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
                 expect(
                     (config.agent?.[id]?.permission as Record<string, string> | undefined)?.task,
                 ).toBe("deny")
@@ -132,6 +133,122 @@ describe.sequential("installed runtime contract", () => {
         }
 
         expect(Object.keys(hooks.tool ?? {}).sort()).toEqual([...ALL_TOOL_IDS].sort())
+    })
+
+    it("applies global MCP policy and project overrides in precedence order", async () => {
+        const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "specops-mcp-precedence-"))
+        const configHome = path.join(temporaryRoot, "config")
+        const projectDirectory = path.join(temporaryRoot, "project")
+        process.env.XDG_CONFIG_HOME = configHome
+        await mkdir(path.join(configHome, "opencode"), { recursive: true })
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        await writeFile(
+            path.join(configHome, "opencode", "specops.json"),
+            `${JSON.stringify({ integrations: { mcp: "disabled" } })}\n`,
+            "utf8",
+        )
+
+        const worker = ALL_AGENT_IDS.find(
+            id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
+        )!
+        const disabledHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        const disabledConfig: Config = {}
+        await disabledHooks.config?.(disabledConfig)
+        expect(disabledConfig.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBe(false)
+
+        await writeFile(
+            path.join(projectDirectory, ".opencode", "specops.json"),
+            `${JSON.stringify({ integrations: { mcp: "inherit" } })}\n`,
+            "utf8",
+        )
+        const inheritedHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        const inheritedConfig: Config = {}
+        await inheritedHooks.config?.(inheritedConfig)
+        expect(inheritedConfig.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
+    })
+
+    it.each(["global", "project"] as const)(
+        "rejects invalid %s MCP configuration before mutating host config",
+        async source => {
+            const temporaryRoot = await mkdtemp(
+                path.join(os.tmpdir(), `specops-mcp-invalid-${source}-`),
+            )
+            const configHome = path.join(temporaryRoot, "config")
+            const projectDirectory = path.join(temporaryRoot, "project")
+            process.env.XDG_CONFIG_HOME = configHome
+            await mkdir(path.join(configHome, "opencode"), { recursive: true })
+            await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+            const configPath =
+                source === "global"
+                    ? path.join(configHome, "opencode", "specops.json")
+                    : path.join(projectDirectory, ".opencode", "specops.json")
+            await writeFile(
+                configPath,
+                `${JSON.stringify({ integrations: { mcp: "invalid" } })}\n`,
+                "utf8",
+            )
+
+            const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+            const config: Config = {}
+            await expect(hooks.config?.(config)).rejects.toThrow(configPath)
+            expect(config).toEqual({})
+        },
+    )
+
+    it("disables MCP tools for subagents without changing host MCP servers", async () => {
+        const projectDirectory = await mkdtemp(path.join(os.tmpdir(), "specops-mcp-disabled-"))
+        process.env.XDG_CONFIG_HOME = path.join(projectDirectory, "config")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        await writeFile(
+            path.join(projectDirectory, ".opencode", "specops.json"),
+            `${JSON.stringify({ integrations: { mcp: "disabled" } })}\n`,
+            "utf8",
+        )
+
+        const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        const worker = ALL_AGENT_IDS.find(
+            id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
+        )!
+        const hostMcp = {
+            example: { type: "remote" as const, url: "https://mcp.example.test", enabled: true },
+        }
+        const config: Config = {
+            mcp: hostMcp,
+            agent: {
+                [worker]: {
+                    tools: { [MCP_TOOL_WILDCARD]: true, bash: true },
+                },
+            },
+        }
+
+        await hooks.config?.(config)
+
+        for (const id of ALL_AGENT_IDS) {
+            const tools = config.agent?.[id]?.tools
+            if (CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
+                expect(tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
+            } else {
+                expect(tools?.[MCP_TOOL_WILDCARD]).toBe(false)
+            }
+        }
+        expect(config.agent?.[worker]?.tools?.bash).toBe(true)
+        expect(config.mcp).toEqual(hostMcp)
+    })
+
+    it("preserves inherited MCP settings on externally registered subagents", async () => {
+        const projectDirectory = await mkdtemp(path.join(os.tmpdir(), "specops-mcp-inherit-"))
+        process.env.XDG_CONFIG_HOME = path.join(projectDirectory, "config")
+        const worker = ALL_AGENT_IDS.find(
+            id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
+        )!
+        const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        const config: Config = {
+            agent: { [worker]: { tools: { [MCP_TOOL_WILDCARD]: true } } },
+        }
+
+        await hooks.config?.(config)
+
+        expect(config.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBe(true)
     })
 
     it("keeps every public command connected to an agent or protocol tool", async () => {
@@ -154,8 +271,7 @@ describe.sequential("installed runtime contract", () => {
     })
 })
 
-function fakePluginInput(): PluginInput {
-    const directory = process.cwd()
+function fakePluginInput(directory = process.cwd()): PluginInput {
     return {
         directory,
         worktree: directory,

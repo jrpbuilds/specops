@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import type { Config } from "@opencode-ai/plugin"
 import { ALL_AGENT_IDS } from "./capabilities/ids.js"
+import { AGENT_REGISTRY } from "./capabilities/registry.js"
+import type { SpecOpsConfig } from "./config.js"
 import {
     DEFAULT_MANIFEST,
     manifestAgentConfig,
@@ -142,11 +144,35 @@ export async function saveAgentManifest(
     await writeManifestAtomically(destination, manifest)
 }
 
-/** Register every canonical agent while preserving external registrations. */
-export function registerManifestAgents(config: Config, manifest: SpecOpsManifest): void {
+/** OpenCode wildcard matching every tool exposed by an MCP server. */
+export const MCP_TOOL_WILDCARD = "mcp_*"
+
+/**
+ * Register canonical agents while preserving external registrations.
+ *
+ * When MCP access is disabled, the policy-owned wildcard is merged into every
+ * canonical subagent. Other agent settings remain user- or host-owned.
+ */
+export function registerManifestAgents(
+    config: Config,
+    manifest: SpecOpsManifest,
+    mcpPolicy: SpecOpsConfig["integrations"]["mcp"] = "inherit",
+): void {
     config.agent ??= {}
     for (const id of ALL_AGENT_IDS) {
-        config.agent[id] ??= manifestAgentConfig(id, manifest.agents[id])
+        const agent = config.agent[id] ?? manifestAgentConfig(id, manifest.agents[id])
+        config.agent[id] =
+            mcpPolicy === "disabled" && AGENT_REGISTRY[id].mode === "subagent"
+                ? {
+                      ...agent,
+                      tools: {
+                          ...(typeof agent === "object" && agent !== null && "tools" in agent
+                              ? agent.tools
+                              : undefined),
+                          [MCP_TOOL_WILDCARD]: false,
+                      },
+                  }
+                : agent
     }
 }
 

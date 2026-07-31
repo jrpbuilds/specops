@@ -101,6 +101,18 @@ describe("doctor config-source warning", () => {
         expect(output).not.toMatch(/^WARN project configuration overrides global/m)
     })
 
+    it("reports the effective MCP subagent policy", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const output = await doctor(projectDirectory, {
+            ...DEFAULT_CONFIG,
+            integrations: { mcp: "disabled" },
+        })
+
+        expect(output).toContain("MCP policy: disabled (mcp_* denied for")
+        expect(output).toContain("SpecOps subagents)")
+    })
+
     it("reports FAIL diagnostic with file path for malformed JSON", async () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })

@@ -27,6 +27,21 @@ describe("validateConfig", () => {
         expect(validateConfig(DEFAULT_CONFIG)).toEqual(DEFAULT_CONFIG)
     })
 
+    it("accepts the disabled MCP policy", () => {
+        expect(
+            validateConfig({ ...DEFAULT_CONFIG, integrations: { mcp: "disabled" } }),
+        ).toMatchObject({ integrations: { mcp: "disabled" } })
+    })
+
+    it("rejects an unknown MCP policy", () => {
+        expect(() =>
+            validateConfig({
+                ...DEFAULT_CONFIG,
+                integrations: { mcp: "prompt" },
+            } as unknown as typeof DEFAULT_CONFIG),
+        ).toThrow("invalid SpecOps configuration field: integrations.mcp")
+    })
+
     it("rejects unknown top-level keys", () => {
         expect(() =>
             validateConfig({ ...DEFAULT_CONFIG, extra: true } as unknown as typeof DEFAULT_CONFIG),

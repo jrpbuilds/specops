@@ -5,6 +5,7 @@ import {
     resolveManifestPath,
 } from "./installation.js"
 import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./manifest.js"
+import { readConfig } from "./openspec.js"
 import { SpecOpsPlugin } from "./orchestrator.js"
 
 /**
@@ -34,7 +35,7 @@ export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
  * Composes the inner {@link SpecOpsPlugin} with manifest agent registration so
  * a single `config` callback installs commands, controllers, and workers in
  * one pass.
- * @param input - OpenCode plugin input (currently unused).
+ * @param input - OpenCode plugin input used to resolve project configuration.
  * @returns A composed {@link Plugin} whose `config` hook also registers
  * manifest-driven agents.
  */
@@ -45,8 +46,9 @@ export const SpecOpsPluginWithManifest: Plugin = async input => {
     return {
         ...inner,
         config: async (config: Config) => {
+            const specOpsConfig = await readConfig(input.directory)
             await inner.config?.(config)
-            registerManifestAgents(config, materialisation.manifest)
+            registerManifestAgents(config, materialisation.manifest, specOpsConfig.integrations.mcp)
         },
     }
 }

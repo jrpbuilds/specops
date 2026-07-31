@@ -42,9 +42,16 @@ type Diagnostic = {
  * hints appended to `FAIL` lines.
  */
 export async function doctor(directory: string, config: SpecOpsConfig): Promise<string> {
+    const subagentCount = ALL_AGENT_IDS.filter(id => AGENT_REGISTRY[id].mode === "subagent").length
     const diagnostics: Diagnostic[] = [
         { status: "PASS", message: `configuration format v${config.version} parsed` },
-        { status: "INFO", message: `MCP policy: ${config.integrations.mcp}` },
+        {
+            status: "INFO",
+            message:
+                config.integrations.mcp === "disabled"
+                    ? `MCP policy: disabled (mcp_* denied for ${subagentCount} SpecOps subagents)`
+                    : "MCP policy: inherit (host MCP access preserved)",
+        },
     ]
 
     await checkConfigSources(diagnostics, directory)

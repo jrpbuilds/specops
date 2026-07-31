@@ -63,7 +63,32 @@ const hooks = await pluginModule.default.server(fakePluginInput(packageDirectory
 const config = {}
 await hooks.config(config)
 
-const { AGENT_IDS, ALL_AGENT_IDS } = idsModule
+const { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } = idsModule
+
+const disabledConfigPath = path.join(packageDirectory, ".opencode", "specops.json")
+await mkdir(path.dirname(disabledConfigPath), { recursive: true })
+await writeFile(
+    disabledConfigPath,
+    `${JSON.stringify({ integrations: { mcp: "disabled" } })}\n`,
+    "utf8",
+)
+const disabledHooks = await pluginModule.default.server(fakePluginInput(packageDirectory))
+const disabledConfig = {}
+await disabledHooks.config(disabledConfig)
+for (const id of ALL_AGENT_IDS) {
+    if (CONTROLLER_AGENT_IDS.includes(id)) {
+        assert(
+            disabledConfig.agent[id]?.tools?.["mcp_*"] === undefined,
+            `packed disabled policy changed controller ${id}`,
+        )
+    } else {
+        assert(
+            disabledConfig.agent[id]?.tools?.["mcp_*"] === false,
+            `packed disabled policy omitted MCP deny for ${id}`,
+        )
+    }
+}
+
 const tuiLayers = []
 await tuiModule.default.tui(
     {

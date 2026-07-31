@@ -55,7 +55,7 @@ export type SpecOpsConfig = {
         /** Maximum bytes of command output retained as evidence. */
         commandOutputBytes: number
     }
-    /** Integration toggles; `mcp` controls whether MCP servers are inherited. */
+    /** Integration toggles; `mcp` controls MCP tool access for SpecOps subagents. */
     integrations: { mcp: "inherit" | "disabled" }
 }
 
@@ -106,7 +106,7 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
         commandTimeoutSeconds: 300,
         commandOutputBytes: 32_000,
     },
-    /** Inherit MCP servers from the host OpenCode installation. */
+    /** Inherit MCP tool availability from the host OpenCode installation. */
     integrations: { mcp: "inherit" },
 }
 
