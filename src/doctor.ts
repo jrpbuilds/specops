@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { isDeepStrictEqual } from "node:util"
 import { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } from "./capabilities/ids.js"
 import {
     AGENT_REGISTRY,
@@ -8,9 +9,13 @@ import {
     agentForCapability,
 } from "./capabilities/registry.js"
 import { COMMANDS } from "./commands.js"
-import type { SpecOpsConfig } from "./config.js"
+import { type SpecOpsConfig, validatePartialConfig } from "./config.js"
 import { runProcess } from "./git.js"
-import { inspectAgentManifest, resolveManifestPath } from "./installation.js"
+import {
+    inspectAgentManifest,
+    resolveManifestPath,
+    resolveOpenCodeConfigDirectory,
+} from "./installation.js"
 import { promptText } from "./prompts.generated.js"
 
 /**
@@ -18,7 +23,7 @@ import { promptText } from "./prompts.generated.js"
  * `message` and an optional `repair` hint shown only on `FAIL`.
  */
 type Diagnostic = {
-    status: "PASS" | "FAIL" | "INFO"
+    status: "PASS" | "FAIL" | "INFO" | "WARN"
     message: string
     repair?: string
 }
@@ -42,6 +47,7 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
         { status: "INFO", message: `MCP policy: ${config.integrations.mcp}` },
     ]
 
+    await checkConfigSources(diagnostics, directory)
     await checkPackageVersion(diagnostics)
     await checkManifest(diagnostics)
     checkCommandMappings(diagnostics)
@@ -59,6 +65,115 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
                 : base
         })
         .join("\n")
+}
+
+/**
+ * Read and partially validate a configuration file, pushing a FAIL diagnostic
+ * when it exists but is invalid.
+ *
+ * @param filePath - Configuration file to read.
+ * @param diagnostics - Shared diagnostic accumulator.
+ * @returns The parsed partial configuration, or `undefined` when the file is
+ *   missing or invalid.
+ */
+async function readPartialDiagnostic(
+    filePath: string,
+    diagnostics: Diagnostic[],
+): Promise<Record<string, unknown> | undefined> {
+    try {
+        const raw = JSON.parse(await readFile(filePath, "utf8"))
+        return validatePartialConfig(raw, filePath) as Record<string, unknown>
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return undefined
+        }
+        if (error instanceof Error) {
+            diagnostics.push({
+                status: "FAIL",
+                message: `in ${filePath}: ${error.message}`,
+                repair: `Fix ${filePath} and rerun /specops-doctor.`,
+            })
+            return undefined
+        }
+        throw error
+    }
+}
+
+/**
+ * Determine whether a value is a plain object (not null and not an array).
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/**
+ * Collect dotted key paths where `override` changes a value that `base` also
+ * sets.
+ *
+ * Plain objects are recursed; arrays, primitives, and explicit `null` are
+ * compared as leaf values. A key that `override` adds but `base` does not have
+ * is not listed (it is an addition, not an override).
+ */
+function overridenDottedPaths(
+    base: Record<string, unknown>,
+    override: Record<string, unknown>,
+    prefix = "",
+): string[] {
+    const paths: string[] = []
+    for (const key of Object.keys(override)) {
+        const full = prefix ? `${prefix}.${key}` : key
+        const baseValue = base[key]
+        const overrideValue = override[key]
+        if (isRecord(baseValue) && isRecord(overrideValue)) {
+            paths.push(...overridenDottedPaths(baseValue, overrideValue, full))
+        } else if (baseValue !== undefined && !isDeepStrictEqual(baseValue, overrideValue)) {
+            paths.push(full)
+        }
+    }
+    return paths
+}
+
+/**
+ * Warn when the project configuration overrides values provided by the global
+ * configuration.
+ *
+ * Pushes a single diagnostic listing the dotted key paths of every value the
+ * project overrides (i.e., changes a key the global file also sets). If either
+ * file is missing, no override comparison is performed.
+ *
+ * @param diagnostics - Shared diagnostic accumulator.
+ * @param directory - Project directory where `.opencode/specops.json` is read.
+ */
+async function checkConfigSources(diagnostics: Diagnostic[], directory: string): Promise<void> {
+    const globalPath = path.join(resolveOpenCodeConfigDirectory(), "specops.json")
+    const projectPath = path.join(directory, ".opencode", "specops.json")
+    const globalPartial = await readPartialDiagnostic(globalPath, diagnostics)
+    const projectPartial = await readPartialDiagnostic(projectPath, diagnostics)
+
+    if (!globalPartial || !projectPartial) {
+        const sources: string[] = []
+        if (globalPartial) sources.push(`global ${globalPath}`)
+        if (projectPartial) sources.push(`project ${projectPath}`)
+        if (!sources.length) sources.push("using defaults")
+        diagnostics.push({
+            status: "INFO",
+            message: `configuration sources: ${sources.join(", ")}`,
+        })
+        return
+    }
+
+    const overridden = overridenDottedPaths(globalPartial, projectPartial)
+    if (overridden.length) {
+        diagnostics.push({
+            status: "WARN",
+            message: `project configuration overrides global at: ${overridden.join(", ")}`,
+        })
+    } else {
+        diagnostics.push({
+            status: "PASS",
+            message: "project configuration does not override global values",
+        })
+    }
 }
 
 /**
