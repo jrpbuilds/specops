@@ -170,6 +170,16 @@
         const headerHeight = header ? header.offsetHeight : 0
         const scrollPos = window.pageYOffset + headerHeight + 48
 
+        // At the bottom of the page the detection line cannot always reach the
+        // last section's top (short final section, tall footer, or a tall
+        // viewport). Force the last section active so its nav entry
+        // highlights, matching the user's actual position.
+        const scrollBottom = window.pageYOffset + window.innerHeight
+        const documentBottom = document.documentElement.scrollHeight
+        if (scrollBottom >= documentBottom - 1) {
+            return sections[sections.length - 1] || null
+        }
+
         let current = null
         for (let i = 0; i < sections.length; i++) {
             const section = sections[i]
@@ -209,6 +219,43 @@
             }
         })
         updateActiveNav()
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Back to top
+     * ------------------------------------------------------------------------
+     */
+    const backToTop = document.getElementById("back-to-top")
+
+    if (backToTop) {
+        function updateBackToTop() {
+            if (window.pageYOffset > 400) {
+                backToTop.classList.add("is-visible")
+                backToTop.hidden = false
+            } else {
+                backToTop.classList.remove("is-visible")
+            }
+        }
+
+        backToTop.addEventListener("click", function () {
+            window.scrollTo({
+                top: 0,
+                behavior: prefersReducedMotion.matches ? "auto" : "smooth",
+            })
+        })
+
+        let backToTopTicking = false
+        window.addEventListener("scroll", function () {
+            if (!backToTopTicking) {
+                window.requestAnimationFrame(function () {
+                    updateBackToTop()
+                    backToTopTicking = false
+                })
+                backToTopTicking = true
+            }
+        })
+        updateBackToTop()
     }
 
     /**
