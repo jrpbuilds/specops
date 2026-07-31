@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises"
+import path from "node:path"
+import { resolveOpenCodeConfigDirectory } from "./installation.js"
 import type { EscalationBudget, QuestionBudgets, RiskFacet, ScopeTier } from "./types.js"
 
 /**
@@ -140,6 +143,62 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     },
     /** Inherit MCP servers from the host OpenCode installation. */
     integrations: { mcp: "inherit" },
+}
+
+/** Check whether a value is a plain object (not null and not an array). */
+function isObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/**
+ * Merge plain objects recursively.
+ *
+ * Arrays, primitives, and explicit `null` replace earlier values. Plain
+ * objects are combined key-by-key. Later sources win over earlier ones.
+ */
+function deepMerge(base: unknown, ...sources: unknown[]): unknown {
+    if (sources.length === 0) {
+        return structuredClone(base)
+    }
+    if (!isObject(base)) {
+        return structuredClone(sources.at(-1) ?? base)
+    }
+    const result = structuredClone(base) as Record<string, unknown>
+    for (const source of sources) {
+        if (!isObject(source)) {
+            return structuredClone(source)
+        }
+        for (const key of Object.keys(source)) {
+            const sourceValue = source[key]
+            const targetValue = result[key]
+            if (key === "$schema") {
+                // $schema is a metadata annotation; keep the most specific source.
+                result[key] = structuredClone(sourceValue)
+                continue
+            }
+            if (isObject(sourceValue) && isObject(targetValue)) {
+                result[key] = deepMerge(targetValue, sourceValue)
+            } else {
+                result[key] = structuredClone(sourceValue)
+            }
+        }
+    }
+    return result
+}
+
+/** Recursive partial type used by {@link deepMergeConfig}. */
+type DeepPartial<T> = { [K in keyof T]?: DeepPartial<T[K]> }
+
+/**
+ * Merge a base configuration with any number of partial overrides.
+ *
+ * Plain objects recurse; arrays, primitives, and explicit `null` replace.
+ */
+export function deepMergeConfig(
+    base: SpecOpsConfig,
+    ...overrides: Array<DeepPartial<SpecOpsConfig>>
+): SpecOpsConfig {
+    return deepMerge(base, ...overrides) as SpecOpsConfig
 }
 
 /** Set of valid {@link RiskFacet} values, used to validate routing overrides. */
@@ -584,6 +643,189 @@ function parseIntegrations(value: unknown): SpecOpsConfig["integrations"] {
         throw new Error("invalid SpecOps configuration field: integrations.mcp")
     }
     return { mcp: source.mcp }
+}
+
+/**
+ * Validate a partial configuration file.
+ *
+ * Allows any section to be omitted, but rejects unknown keys and validates the
+ * type and range of every key that is present. Missing fields are filled from
+ * {@link DEFAULT_CONFIG} only for the purpose of strict validation; the returned
+ * object contains only the keys supplied by the caller.
+ *
+ * @param value - Raw, untyped partial configuration (typically parsed from JSON).
+ * @param sourcePath - Optional absolute path used to make error messages name
+ *   the offending file.
+ * @returns The validated partial configuration.
+ * @throws {Error} If any present field is unknown, mistyped, or out of range.
+ */
+export function validatePartialConfig(value: unknown, sourcePath?: string): Partial<SpecOpsConfig> {
+    const prefix = sourcePath ? `in ${sourcePath}: ` : ""
+    const fail = (error: unknown): never => {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${prefix}${message}`)
+    }
+
+    try {
+        const root = asObject(value, "root")
+        assertKeys(
+            root,
+            [
+                "version",
+                "openspec",
+                "workflow",
+                "routing",
+                "automation",
+                "escalation",
+                "frontier",
+                "questions",
+                "review",
+                "integrations",
+                "$schema",
+            ],
+            "root",
+        )
+
+        const partial: Record<string, unknown> = {}
+        if ("version" in root) {
+            if (root.version !== 1) {
+                throw new Error("invalid SpecOps configuration field: version")
+            }
+            partial.version = 1
+        }
+        if (root.openspec !== undefined) {
+            partial.openspec = validateSectionPartial(
+                root.openspec,
+                "openspec",
+                DEFAULT_CONFIG.openspec,
+                parseOpenSpec,
+            )
+        }
+        if (root.workflow !== undefined) {
+            partial.workflow = validateSectionPartial(
+                root.workflow,
+                "workflow",
+                DEFAULT_CONFIG.workflow,
+                parseWorkflow,
+            )
+        }
+        if (root.routing !== undefined) {
+            partial.routing = validateSectionPartial(
+                root.routing,
+                "routing",
+                DEFAULT_CONFIG.routing,
+                parseRouting,
+            )
+        }
+        if (root.automation !== undefined) {
+            partial.automation = validateSectionPartial(
+                root.automation,
+                "automation",
+                DEFAULT_CONFIG.automation,
+                parseAutomation,
+            )
+        }
+        if (root.escalation !== undefined) {
+            partial.escalation = validateSectionPartial(
+                root.escalation,
+                "escalation",
+                DEFAULT_CONFIG.escalation,
+                parseEscalation,
+            )
+        }
+        if (root.frontier !== undefined) {
+            partial.frontier = validateSectionPartial(
+                root.frontier,
+                "frontier",
+                DEFAULT_CONFIG.frontier,
+                parseFrontier,
+            )
+        }
+        if (root.questions !== undefined) {
+            partial.questions = validateSectionPartial(
+                root.questions,
+                "questions",
+                DEFAULT_CONFIG.questions,
+                parseQuestions,
+            )
+        }
+        if (root.review !== undefined) {
+            partial.review = validateSectionPartial(
+                root.review,
+                "review",
+                DEFAULT_CONFIG.review,
+                parseReview,
+            )
+        }
+        if (root.integrations !== undefined) {
+            partial.integrations = validateSectionPartial(
+                root.integrations,
+                "integrations",
+                DEFAULT_CONFIG.integrations,
+                parseIntegrations,
+            )
+        }
+        return partial as Partial<SpecOpsConfig>
+    } catch (error) {
+        return fail(error)
+    }
+}
+
+/**
+ * Validate one supplied section against its strict parser while allowing the
+ * section itself to omit fields.
+ *
+ * Contract: `parseStrict` validates (throwing on unknown or mistyped keys) but
+ * does not normalize values, so the original partial is returned unchanged. The
+ * runtime parsers are pure validators; if any ever begin coercing values, this
+ * function must return the parsed section rather than the raw input.
+ */
+function validateSectionPartial<T>(
+    value: unknown,
+    name: string,
+    defaultSection: T,
+    parseStrict: (merged: unknown) => T,
+): Partial<T> {
+    const partial = asObject(value, name)
+    parseStrict(deepMerge(defaultSection, partial) as T)
+    return partial as Partial<T>
+}
+
+/**
+ * Resolve configuration from defaults, the global user file, and the project
+ * file, applying deep-merge precedence.
+ *
+ * Each file is independently validated with a partial validator so error
+ * messages name the offending file. The merged result is then validated with
+ * the strict complete validator.
+ *
+ * @param directory - Project root directory (`.opencode/specops.json` is read
+ *   from here).
+ * @returns A validated {@link SpecOpsConfig}.
+ * @throws If any file exists but fails JSON parsing or validation.
+ */
+export async function resolveConfig(directory: string): Promise<SpecOpsConfig> {
+    const globalPath = path.join(resolveOpenCodeConfigDirectory(), "specops.json")
+    const projectPath = path.join(directory, ".opencode", "specops.json")
+    const [globalPartial, projectPartial] = await Promise.all([
+        readPartialConfig(globalPath),
+        readPartialConfig(projectPath),
+    ])
+    return validateConfig(deepMergeConfig(DEFAULT_CONFIG, globalPartial, projectPartial))
+}
+
+/** Read and partially validate a single configuration file, tolerating absence. */
+async function readPartialConfig(filePath: string): Promise<Partial<SpecOpsConfig>> {
+    try {
+        const raw = JSON.parse(await readFile(filePath, "utf8"))
+        return validatePartialConfig(raw, filePath)
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            return {}
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`in ${filePath}: ${message}`)
+    }
 }
 
 /**

@@ -38,7 +38,7 @@ export class ManifestConflictError extends Error {
 }
 
 /** Resolve OpenCode's configuration directory using its XDG convention. */
-function resolveOpenCodeConfigDirectory(
+export function resolveOpenCodeConfigDirectory(
     environment: NodeJS.ProcessEnv = process.env,
     homeDirectory: string = os.homedir(),
 ): string {

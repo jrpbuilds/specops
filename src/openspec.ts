@@ -6,11 +6,11 @@
  * with a deliberately narrow environment.
  */
 
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, readdir, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { type SpecOpsConfig, DEFAULT_CONFIG, validateConfig } from "./config.js"
+import { type SpecOpsConfig, resolveConfig } from "./config.js"
 import { runProcess } from "./git.js"
 import { writeTextAtomic } from "./state/store.js"
 
@@ -31,24 +31,19 @@ export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
 ])
 
 /**
- * Read the strict final configuration or return an isolated copy of defaults.
- * @param directory - Project root directory (`.opencode/specops.json` is
- * read from here).
- * @returns A validated {@link SpecOpsConfig}, or `structuredClone(DEFAULT_CONFIG)`
- * when no config file exists.
- * @throws If the file exists but fails schema validation or JSON parsing.
+ * Resolve the final configuration from defaults, the global user file, and the
+ * project file.
+ *
+ * Values are merged with deep object recursion: plain objects combine, arrays
+ * and primitives replace, and explicit `null` takes precedence.
+ *
+ * @param directory - Project root directory (`.opencode/specops.json` is read
+ * from here).
+ * @returns A validated {@link SpecOpsConfig}.
+ * @throws If any existing file fails JSON parsing or validation.
  */
 export async function readConfig(directory: string): Promise<SpecOpsConfig> {
-    try {
-        return validateConfig(
-            JSON.parse(await readFile(path.join(directory, ".opencode", "specops.json"), "utf8")),
-        )
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return structuredClone(DEFAULT_CONFIG)
-        }
-        throw error
-    }
+    return resolveConfig(directory)
 }
 
 /**
