@@ -71,7 +71,7 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 
     if (
         !isCurrentRunStateShape(raw) ||
-        raw.version !== 3 ||
+        raw.version !== 4 ||
         (raw.mode !== "interactive" && raw.mode !== "automatic") ||
         typeof raw.status !== "string" ||
         !["running", "paused", "passed", "blocked", "failed", "cancelled"].includes(raw.status)
@@ -202,14 +202,12 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         !Array.isArray(value.questionHistory) ||
         !Array.isArray(value.checkpointHistory) ||
         !isRecord(value.frontierPolicy) ||
-        !isRecord(value.frontierUsage) ||
-        !isRecord(value.questionBudgetUsage)
+        !isRecord(value.frontierUsage)
     ) {
         return false
     }
     const policy = value.frontierPolicy
     const usage = value.frontierUsage
-    const questionUsage = value.questionBudgetUsage
     return (
         (policy.mode === "disabled" || policy.mode === "adaptive") &&
         isNonNegativeInteger(policy.maxEscalationsPerRun) &&
@@ -217,10 +215,7 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         isNonNegativeInteger(policy.maxHighDispatchesPerRun) &&
         isNonNegativeInteger(usage.escalations) &&
         isNonNegativeInteger(usage.dispatches) &&
-        isNonNegativeInteger(usage.highDispatches) &&
-        isNonNegativeInteger(questionUsage.questionsRaised) &&
-        isRecord(questionUsage.questionsByDispatch) &&
-        isRecord(questionUsage.fingerprintCounts)
+        isNonNegativeInteger(usage.highDispatches)
     )
 }
 

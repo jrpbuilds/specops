@@ -886,7 +886,6 @@ describe("compact Lean workflow", () => {
         expect(() =>
             parseWorkerOutput(
                 `<!-- specops-escalation: ${JSON.stringify(claim)} -->`,
-                DEFAULT_CONFIG,
                 "implementation",
                 "implementation",
             ),
@@ -1012,7 +1011,7 @@ describe("compact Lean workflow", () => {
 function leanState(mode: RunState["mode"]): RunState {
     const requirements = requirementsFor(assessment, "auto", DEFAULT_CONFIG).requirements
     return {
-        version: 3,
+        version: 4,
         mode,
         goal: "Update README",
         baseline: "baseline",
@@ -1035,11 +1034,6 @@ function leanState(mode: RunState["mode"]): RunState {
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
         questionHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",

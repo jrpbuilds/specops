@@ -14,7 +14,14 @@ import {
 import { createChange, openSpecOrThrow, uniqueChangeName, writeArtifact } from "../openspec.js"
 import { parseAssessment } from "../routing/assessment.js"
 import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
-import { changeRoot, readMachine, readRun, writeMachine, writeRun } from "../state/store.js"
+import {
+    changeRoot,
+    readMachine,
+    readRun,
+    writeMachine,
+    writeRun,
+    writeTextAtomic,
+} from "../state/store.js"
 import type {
     ArtifactId,
     CheckpointResolution,
@@ -135,7 +142,7 @@ export async function startRun(
 
     const now = new Date().toISOString()
     const state: RunState = {
-        version: 3,
+        version: 4,
         mode: input.mode,
         goal: input.goal,
         baseline: "",
@@ -158,11 +165,6 @@ export async function startRun(
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
         questionHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         checkpointHistory: [],
         createdAt: now,
         updatedAt: now,
@@ -358,7 +360,7 @@ export async function completeAction(
     change: string,
     dispatchId: string,
     output: string,
-    config: Pick<SpecOpsConfig, "questions" | "review" | "frontier" | "routing" | "workflow">,
+    config: Pick<SpecOpsConfig, "review" | "frontier" | "routing" | "workflow">,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
     const dispatch = state.dispatches.find(record => record.id === dispatchId)
@@ -384,7 +386,7 @@ export async function completeAction(
         if (action.capability === "implementation" || action.capability === "repair") {
             await assertWriterGuards(directory, change, state, dispatch)
         }
-        const parsed = parseWorkerOutput(output, config, phase, dispatch.capability)
+        const parsed = parseWorkerOutput(output, phase, dispatch.capability)
         assertWorkerResult(action, parsed)
 
         const scopeBeforeCompletion = state.scopeTier
@@ -395,7 +397,7 @@ export async function completeAction(
             // The cleaned prose is retained only as dispatch evidence via the
             // output hash; the phase artefact is intentionally not published.
             dispatch.outputHash = hash(parsed.prose)
-            registerPendingQuestions(state, dispatch, parsed.questions, config)
+            registerPendingQuestions(state, dispatch, parsed.questions)
             dispatch.status = "completed"
         } else if (parsed.frontier) {
             if (state.frontierPolicy?.mode !== "adaptive") {
@@ -539,6 +541,7 @@ export async function completeAction(
     }
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 
@@ -553,6 +556,79 @@ function isAssuranceAction(action: WorkflowAction): boolean {
 }
 
 /**
+ * Persist the human-readable record of worker questions and their resolutions.
+ *
+ * The ledger is a projection of authoritative question history, so it is
+ * rewritten atomically after every question state transition and replay. User
+ * text is HTML-escaped before entering the markdown document.
+ */
+async function writeQuestionLedger(
+    directory: string,
+    change: string,
+    state: RunState,
+): Promise<void> {
+    if (state.questionHistory.length === 0) return
+
+    const sections = state.questionHistory.map(record => {
+        const replay = state.dispatches.find(
+            dispatch =>
+                dispatch.resume?.origin === "question" && dispatch.resume.sourceId === record.id,
+        )
+        const artifact = state.artifacts[record.phase]
+        const answer = record.otherText
+            ? `<pre>${escapeLedgerText(record.otherText)}</pre>`
+            : record.selectedOptionId
+              ? `${escapeLedgerText(record.selectedOptionId)}${
+                    record.selectedOptionLabel
+                        ? ` — ${escapeLedgerText(record.selectedOptionLabel)}`
+                        : ""
+                }`
+              : "Not answered"
+
+        return [
+            `## ${escapeLedgerText(record.phase)} — ${escapeLedgerText(record.id)}`,
+            "",
+            `- **Status:** ${record.outcome}`,
+            `- **Dispatch:** ${escapeLedgerText(record.dispatchId)}`,
+            `- **Raised:** ${record.raisedAt}`,
+            `- **Resolved:** ${record.resolvedAt}`,
+            `- **Impact:** ${record.impact}`,
+            `- **Invalidated artifacts:** ${record.invalidatedArtifacts.join(", ") || "none"}`,
+            `- **Replay dispatch:** ${replay ? escapeLedgerText(replay.id) : "pending"}`,
+            `- **Regenerated artifact:** ${
+                artifact ? `${record.phase} (${artifact.validity})` : `${record.phase} (missing)`
+            }`,
+            "",
+            "### Question",
+            "",
+            `<pre>${escapeLedgerText(record.prompt)}</pre>`,
+            "",
+            "### Answer",
+            "",
+            answer,
+        ].join("\n")
+    })
+
+    await writeTextAtomic(
+        directory,
+        change,
+        "questions.md",
+        [
+            "# SpecOps Questions",
+            "",
+            "Controller-recorded worker questions and the user decisions used to regenerate phases.",
+            "",
+            ...sections,
+        ].join("\n\n"),
+    )
+}
+
+/** Escape untrusted text before placing it inside an HTML block in markdown. */
+function escapeLedgerText(value: string): string {
+    return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+}
+
+/**
  * Record an answer to the run's pending question and resume scheduling.
  *
  * @param directory - Repository root directory.
@@ -560,7 +636,6 @@ function isAssuranceAction(action: WorkflowAction): boolean {
  * @param questionId - ID of the pending question to answer.
  * @param selectedOptionId - Selected option id, if answering with a normal option.
  * @param otherText - User-supplied Other text, if answering with Other.
- * @param config - Configuration carrying Other-text bounds.
  * @returns The updated {@link RunState}.
  * @throws When validation fails or no matching pending question exists.
  */
@@ -570,12 +645,12 @@ export async function answerQuestionAction(
     questionId: string,
     selectedOptionId: string | undefined,
     otherText: string | undefined,
-    config: Pick<SpecOpsConfig, "questions">,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
-    answerQuestion(state, questionId, selectedOptionId, otherText, config)
+    answerQuestion(state, questionId, selectedOptionId, otherText)
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 
@@ -596,7 +671,6 @@ export async function answerQuestionAction(
  * @param directory - Repository root directory.
  * @param change - The change name.
  * @param answers - Array of question answers (questionId + one of option/otherText).
- * @param config - Configuration carrying Other-text bounds.
  * @returns The updated {@link RunState}.
  * @throws When the answer batch is empty, partial, duplicate, unknown,
  *     spans more than the active batch, or any individual answer fails
@@ -606,7 +680,6 @@ export async function answerQuestionsAction(
     directory: string,
     change: string,
     answers: Array<{ questionId: string; selectedOption?: string; otherText?: string }>,
-    config: Pick<SpecOpsConfig, "questions">,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
 
@@ -654,10 +727,11 @@ export async function answerQuestionsAction(
     // The batch answers every pending question exactly once; apply it.
 
     for (const answer of answers) {
-        answerQuestion(state, answer.questionId, answer.selectedOption, answer.otherText, config)
+        answerQuestion(state, answer.questionId, answer.selectedOption, answer.otherText)
     }
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 
@@ -680,6 +754,7 @@ export async function dismissQuestionAction(
     const state = await readRun(directory, change)
     dismissQuestion(state, questionId)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 
@@ -696,16 +771,15 @@ export async function dismissQuestionAction(
  * @param directory - Repository root directory.
  * @param change - The change name.
  * @param feedback - User feedback text, or `undefined` for Continue/dismissal.
- * @param config - Configuration carrying feedback length bounds.
  * @param resolution - Explicit replay intent for feedback checkpoints.
  * @returns The updated {@link RunState}.
- * @throws When no checkpoint is pending or the feedback exceeds bounds.
+ * @throws When no checkpoint is pending or the feedback is invalid.
  */
 export async function resumeCheckpointAction(
     directory: string,
     change: string,
     feedback: string | undefined,
-    config: Pick<SpecOpsConfig, "questions" | "review">,
+    config: Pick<SpecOpsConfig, "review">,
     resolution: CheckpointResolution | undefined = undefined,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
@@ -771,11 +845,6 @@ export async function resumeCheckpointAction(
         if (!trimmed) {
             throw new Error("SpecOps checkpoint feedback must be non-empty")
         }
-        if (feedback.length > config.questions.maxOtherTextLength) {
-            throw new Error(
-                `SpecOps checkpoint feedback exceeds maximum length of ${config.questions.maxOtherTextLength} characters (received ${feedback.length})`,
-            )
-        }
         feedbackHash = createHash("sha256")
             .update(
                 JSON.stringify({
@@ -829,6 +898,7 @@ export async function resumeCheckpointAction(
 
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 
@@ -888,6 +958,7 @@ export async function cancelRun(
     }
     setOutcome(state, "cancelled", "cancelled", reason)
     await writeRun(directory, change, state)
+    await writeQuestionLedger(directory, change, state)
     return state
 }
 

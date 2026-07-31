@@ -49,7 +49,7 @@ Choose an execution experience:
 /specops-auto add a health endpoint with tests
 ```
 
-Interactive mode presents bounded unresolved questions. Automatic mode pauses
+Interactive mode presents unresolved questions. Automatic mode pauses
 the same run instead of asking, but routing and worker stages remain identical.
 A successful Lean run uses four total task calls: assessment, compact planning,
 implementation, and bundled verification.

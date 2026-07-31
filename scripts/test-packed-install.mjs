@@ -191,13 +191,13 @@ await mkdir(path.join(mergeConfigHome, "opencode"), { recursive: true })
 await mkdir(path.join(mergeProjectDirectory, ".opencode"), { recursive: true })
 await writeFile(
     path.join(mergeConfigHome, "opencode", "specops.json"),
-    `${JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }, null, 2)}\n`,
+    `${JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }, null, 2)}\n`,
 )
 await writeFile(
     path.join(mergeProjectDirectory, ".opencode", "specops.json"),
     `${JSON.stringify(
         {
-            version: 1,
+            version: 2,
             workflow: { onboarding: "always" },
             automation: { requireCleanWorktree: false },
         },
@@ -311,7 +311,7 @@ const change = changeMatch[0]
 const state = JSON.parse(
     await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute({ change }, smokeContext),
 )
-assert(state.version === 3, "packed start-run did not persist final state")
+assert(state.version === 4, "packed start-run did not persist final state")
 
 const directive = JSON.parse(
     await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),

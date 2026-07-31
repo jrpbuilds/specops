@@ -228,21 +228,15 @@ without rerunning the original worker.
 ### Dismissal and cancellation
 
 Dismissing the native question UI pauses the run with `pauseReason: "question-dismissed"` and
-retains the pending question for re-presentation. No budget is consumed. To abandon the change,
-cancel the run through `specops_cancel_run`; the pending question is flushed into history with
-`outcome: "cancelled"`.
+retains the pending question for re-presentation. To abandon the change, cancel the run through
+`specops_cancel_run`; the pending question is flushed into history with `outcome: "cancelled"`.
 
-### Question budgets
+### Question validation
 
-Configured budgets prevent unbounded question loops:
-
-- `maxQuestionsPerRun`: total questions raised across the run.
-- `maxQuestionsPerDispatch`: questions per single dispatch (structurally one).
-- `maxRepeatedQuestionFingerprints`: repeated identical questions in the same binding context.
-
-Fingerprints include the normalised prompt, option ids and labels, phase, capability, and binding
-hash. Budget exhaustion produces a non-resumable `blocked` outcome with
-`blockReason: "budget-exhausted"`.
+Question markers are structurally validated without artificial count, size, or repetition limits.
+Prompts, option ids, and option labels must be non-empty; option ids must be unique. A question
+must provide at least one option unless `allowOther` is true. Malformed markers are rejected and do
+not mutate persisted run state.
 
 ## Phase checkpoints
 

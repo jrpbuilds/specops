@@ -83,7 +83,7 @@ function leanState(mode: RunState["mode"]): RunState {
         policyHash: "policy",
     }
     return {
-        version: 3,
+        version: 4,
         mode,
         goal: "Update README",
         baseline: "baseline",
@@ -107,11 +107,6 @@ function leanState(mode: RunState["mode"]): RunState {
         frontierHistory: [],
         questionHistory: [],
         checkpointHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         createdAt: "now",
         updatedAt: "now",
         status: "running",
@@ -621,7 +616,7 @@ describe("checkpoint resume", () => {
         ).rejects.toThrow(/non-empty/)
     })
 
-    it("rejects feedback exceeding the configured bound", async () => {
+    it("accepts unbounded checkpoint feedback", async () => {
         const directory = await initializedRepository()
         const change = "resume-4"
         await mkdir(changeRoot(directory, change), { recursive: true })
@@ -631,10 +626,10 @@ describe("checkpoint resume", () => {
         await writeRun(directory, change, state)
         await completeAction(directory, change, "planning", "# Tasks", DEFAULT_CONFIG)
 
-        const oversized = "x".repeat(DEFAULT_CONFIG.questions.maxOtherTextLength + 1)
-        await expect(
-            resumeCheckpointAction(directory, change, oversized, DEFAULT_CONFIG),
-        ).rejects.toThrow(/maximum length/)
+        const feedback = "x".repeat(10_000)
+        const resumed = await resumeCheckpointAction(directory, change, feedback, DEFAULT_CONFIG)
+        expect(resumed.status).toBe("running")
+        expect(resumed.checkpointHistory[0]?.feedback).toBe(feedback)
     })
 
     it("refuses to resume when no checkpoint is pending", async () => {
@@ -865,7 +860,6 @@ describe("store validator checkpoint invariants", () => {
                 impact: "requirements",
                 policyHash: "p",
                 bindingHash: "b",
-                fingerprint: "f",
                 raisedAt: "now",
                 dismissalCount: 0,
             },

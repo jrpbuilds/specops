@@ -149,11 +149,11 @@ Worker output does not directly mutate requirements or planning artifacts. Plann
 responses are validated, then persisted atomically by the controller. Only implementer and
 repairer agents can modify repository code.
 
-At any worker boundary, a genuinely unresolved material decision may enter a bounded question
-loop. Interactive runs present validated options through OpenCode's native question UI. Answers
-are hashed into dispatch provenance, invalidate affected downstream artifacts, and cause a fresh
+At any worker boundary, a genuinely unresolved material decision may enter a question loop.
+Interactive runs present validated options through OpenCode's native question UI. Answers are
+hashed into dispatch provenance, invalidate affected downstream artifacts, and cause a fresh
 dispatch for the interrupted phase. Dismissing a question leaves the run paused and resumable;
-question budgets prevent unbounded loops.
+structural validation still rejects malformed question markers.
 
 See [Architecture](docs/architecture.md), [Workflows](docs/workflows.md), and
 [Artifacts and state](docs/artifacts-and-state.md).
@@ -167,8 +167,8 @@ the project file overrides them with deep merging. Start from
 [examples/specops.schema.json](examples/specops.schema.json). A minimal global example is
 [examples/specops.global.json](examples/specops.global.json).
 
-Configuration is strict. Unknown fields, invalid thresholds, and incomplete escalation or question
-budget objects fail at startup instead of being ignored. See
+Configuration is strict. Unknown fields and invalid thresholds fail at startup instead of being
+ignored. See
 [Configuration](docs/configuration.md).
 
 ## Agent models

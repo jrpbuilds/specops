@@ -100,7 +100,7 @@ describe("final SpecOps policy", () => {
     it("accepts a bounded escalation only when it adds a new requirement", () => {
         const routed = requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements
         const state = {
-            version: 3 as const,
+            version: 4 as const,
             mode: "automatic" as const,
             goal: "test",
             baseline: "abc",
@@ -123,11 +123,6 @@ describe("final SpecOps policy", () => {
             frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
             frontierHistory: [],
             questionHistory: [],
-            questionBudgetUsage: {
-                questionsRaised: 0,
-                questionsByDispatch: {},
-                fingerprintCounts: {},
-            },
             checkpointHistory: [],
             createdAt: "now",
             updatedAt: "now",
@@ -480,7 +475,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function automaticState(): RunState {
     const assessed = assessment()
     return {
-        version: 3,
+        version: 4,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -503,11 +498,6 @@ function automaticState(): RunState {
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
         questionHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",

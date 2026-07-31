@@ -1,12 +1,11 @@
 /**
  * Worker-raised question policy engine.
  *
- * Validates question markers, enforces question-loop budgets, resolves
- * deterministic invalidation from answer impact, and performs the atomic
+ * Validates question markers, resolves deterministic invalidation from answer
+ * impact, and performs the atomic
  * state transition when a question is answered, dismissed, or cancelled.
  */
 import { createHash, randomUUID } from "node:crypto"
-import type { SpecOpsConfig } from "../config.js"
 import type {
     ArtifactId,
     CapabilityId,
@@ -116,39 +115,6 @@ export function resolveImpact(
 }
 
 /**
- * Compute a stable semantic fingerprint for a worker-raised question.
- *
- * Includes only the normalised prompt, option ids and labels in their
- * validated order, phase, and capability. The fingerprint does not include
- * binding state so that the same semantic question is blocked across
- * answers and re-dispatches.
- *
- * @param question - Validated worker question.
- * @param phase - Artifact the worker was producing.
- * @param capability - Capability that produced the output.
- * @returns A lowercase hex SHA-256 digest.
- */
-export function questionFingerprint(
-    question: WorkerQuestion,
-    phase: ArtifactId,
-    capability: CapabilityId,
-): string {
-    return createHash("sha256")
-        .update(
-            JSON.stringify({
-                prompt: question.prompt.trim(),
-                options: question.options.map(option => ({
-                    id: option.id.trim().toLowerCase(),
-                    label: option.label.trim(),
-                })),
-                phase,
-                capability,
-            }),
-        )
-        .digest("hex")
-}
-
-/**
  * Compute the stable binding hash for a question using the current run state.
  *
  * @param state - Current run state.
@@ -168,30 +134,24 @@ export function computeQuestionBindingHash(state: RunState, dispatch: DispatchRe
 /**
  * Register a batch of validated worker questions as the run's pending questions.
  *
- * Budget checks are applied across the entire batch before any registration.
- * If budget is exhausted mid-batch the run is blocked and no questions are
- * registered (atomic). Each question gets its own id, fingerprint, and binding
- * hash. The run is paused with `pendingQuestions` set to the registered array.
+ * Each question gets its own id and binding hash. The run is paused with
+ * `pendingQuestions` set to the registered array.
  *
  * @param state - Current run state (mutated in place).
  * @param dispatch - Dispatch that produced the questions.
  * @param questions - One or more worker questions to register as a batch.
- * @param config - Configuration carrying question budgets.
- * @returns The registered pending questions, or `undefined` if budget was exhausted.
+ * @returns The registered pending questions, or `undefined` for an empty batch.
  */
 export function registerPendingQuestions(
     state: RunState,
     dispatch: DispatchRecord,
     questions: WorkerQuestion[],
-    config: Pick<SpecOpsConfig, "questions">,
 ): PendingQuestion[] | undefined {
     if (questions.length === 0) return undefined
-    const usage = state.questionBudgetUsage
     const phase = phaseForDispatch(dispatch)
     const batch: PendingQuestion[] = questions.map(question => {
         const impact = resolveImpact(question.impact, phase, dispatch.capability)
         const bindingHash = computeQuestionBindingHash(state, dispatch)
-        const fingerprint = questionFingerprint(question, phase, dispatch.capability)
         return {
             id: randomUUID(),
             dispatchId: dispatch.id,
@@ -203,39 +163,15 @@ export function registerPendingQuestions(
             impact,
             policyHash: state.requirements.policyHash,
             bindingHash,
-            fingerprint,
             raisedAt: new Date().toISOString(),
             dismissalCount: 0,
         }
     })
 
-    const perDispatch = usage.questionsByDispatch[dispatch.id] ?? 0
-    if (perDispatch + batch.length > config.questions.budgets.maxQuestionsPerDispatch) {
-        blockForBudget(state, "Question per-dispatch budget exhausted.")
-        return undefined
-    }
-    if (usage.questionsRaised + batch.length > config.questions.budgets.maxQuestionsPerRun) {
-        blockForBudget(state, "Question per-run budget exhausted.")
-        return undefined
-    }
-    for (const pending of batch) {
-        const fingerprintCount = usage.fingerprintCounts[pending.fingerprint] ?? 0
-        if (fingerprintCount >= config.questions.budgets.maxRepeatedQuestionFingerprints) {
-            blockForBudget(state, "Repeated question fingerprint budget exhausted.")
-            return undefined
-        }
-    }
-
     state.pendingQuestions = batch
     state.status = "paused"
     state.pauseReason = "pending-question"
     state.resumable = true
-    usage.questionsRaised += batch.length
-    usage.questionsByDispatch[dispatch.id] = perDispatch + batch.length
-    for (const pending of batch) {
-        usage.fingerprintCounts[pending.fingerprint] =
-            (usage.fingerprintCounts[pending.fingerprint] ?? 0) + 1
-    }
     return batch
 }
 
@@ -272,7 +208,6 @@ export function invalidationForImpact(state: RunState, impact: QuestionImpact): 
  * @param questionId - ID of the pending question to answer.
  * @param selectedOptionId - Selected option id, if answering with a normal option.
  * @param otherText - User-supplied Other text, if answering with Other.
- * @param config - Configuration carrying Other-text bounds.
  * @returns The immutable answer record.
  * @throws {Error} If validation fails, the question is stale, or both/neither
  *   answer forms are supplied.
@@ -282,7 +217,6 @@ export function answerQuestion(
     questionId: string,
     selectedOptionId: string | undefined,
     otherText: string | undefined,
-    config: Pick<SpecOpsConfig, "questions">,
 ): QuestionRecord {
     const pending = requirePendingQuestion(state, questionId)
     validateBindingHash(state, pending)
@@ -313,9 +247,6 @@ export function answerQuestion(
         const trimmed = original.trim()
         if (!trimmed) {
             throw new Error("SpecOps question Other text must be non-empty")
-        }
-        if (original.length > config.questions.maxOtherTextLength) {
-            throw new Error("SpecOps question Other text exceeds maximum length")
         }
         otherText = original
     }
@@ -438,7 +369,7 @@ export function dismissQuestion(state: RunState, questionId: string): QuestionRe
  * @returns The cancelled record.
  * @throws {Error} If no matching pending question exists.
  */
-export function cancelQuestion(state: RunState, questionId: string): QuestionRecord {
+function cancelQuestion(state: RunState, questionId: string): QuestionRecord {
     const pending = requirePendingQuestion(state, questionId)
 
     const record: QuestionRecord = {
@@ -790,23 +721,6 @@ function phaseForDispatch(dispatch: DispatchRecord): ArtifactId {
             return "review-ledger"
         default:
             return "proposal"
-    }
-}
-
-/**
- * Set the run to a non-resumable blocked state due to a question budget.
- *
- * @param state - Current run state (mutated in place).
- * @param message - Human-readable reason.
- */
-function blockForBudget(state: RunState, message: string): void {
-    state.status = "blocked"
-    state.blockReason = "budget-exhausted"
-    state.resumable = false
-    state.outcome = {
-        category: "policy-blocked",
-        message,
-        at: new Date().toISOString(),
     }
 }
 

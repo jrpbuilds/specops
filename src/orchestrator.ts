@@ -150,7 +150,6 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.questionId,
                     args.selectedOption,
                     args.otherText,
-                    await readConfig(context.directory),
                 )
                 await publishProgress(
                     context as MetadataContext,
@@ -182,7 +181,6 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                         selectedOption: a.selectedOption,
                         otherText: a.otherText,
                     })),
-                    await readConfig(context.directory),
                 )
                 await publishProgress(
                     context as MetadataContext,

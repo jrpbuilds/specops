@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { resolveOpenCodeConfigDirectory } from "./installation.js"
-import type { EscalationBudget, QuestionBudgets, RiskFacet, ScopeTier } from "./types.js"
+import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js"
 
 /**
  * Strict, clean-install configuration for the final SpecOps architecture.
@@ -11,8 +11,8 @@ import type { EscalationBudget, QuestionBudgets, RiskFacet, ScopeTier } from "./
  * surfaced at load time.
  */
 export type SpecOpsConfig = {
-    /** Schema version; currently always `1`. */
-    version: 1
+    /** Schema version; currently always `2`. */
+    version: 2
     /** OpenSpec integration: `command` is the argv used to invoke the OpenSpec CLI, or `null` to disable. */
     openspec: { command: string[] | null }
     /** Workflow routing and scope-tier configuration. */
@@ -42,17 +42,6 @@ export type SpecOpsConfig = {
         maxDispatchesPerRun: number
         maxHighDispatchesPerRun: number
     }
-    /** Worker-raised question loop limits and field-size bounds. */
-    questions: {
-        budgets: QuestionBudgets
-        maxPromptLength: number
-        maxOptionIdLength: number
-        maxOptionLabelLength: number
-        maxOtherTextLength: number
-        maxMarkerBytes: number
-        /** Maximum number of question markers a single worker output may contain. */
-        maxQuestionsPerMarker: number
-    }
     /** Reviewer dispatch and command execution limits. */
     review: {
         /** Severity levels that block a run when raised by a reviewer. */
@@ -81,7 +70,7 @@ export type SpecOpsConfig = {
  * accepts; user configuration overrides these without being merged.
  */
 export const DEFAULT_CONFIG: SpecOpsConfig = {
-    version: 1,
+    version: 2,
     /** OpenSpec CLI disabled by default; users opt in by setting `openspec.command`. */
     openspec: { command: null },
     workflow: {
@@ -113,23 +102,6 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
         maxEscalationsPerRun: 2,
         maxDispatchesPerRun: 3,
         maxHighDispatchesPerRun: 1,
-    },
-    questions: {
-        budgets: {
-            maxQuestionsPerRun: 4,
-            // Default to match maxQuestionsPerMarker so a worker may emit the
-            // full permitted batch under the default configuration. Raising
-            // one without the other would either silently cap the advertised
-            // batch or allow batches the per-dispatch budget blocks.
-            maxQuestionsPerDispatch: 3,
-            maxRepeatedQuestionFingerprints: 1,
-        },
-        maxPromptLength: 500,
-        maxOptionIdLength: 40,
-        maxOptionLabelLength: 120,
-        maxOtherTextLength: 1000,
-        maxMarkerBytes: 8000,
-        maxQuestionsPerMarker: 3,
     },
     review: {
         /** Block on BLOCKER and HIGH findings only. */
@@ -243,14 +215,13 @@ export function validateConfig(value: unknown): SpecOpsConfig {
             "automation",
             "escalation",
             "frontier",
-            "questions",
             "review",
             "integrations",
             "$schema",
         ],
         "root",
     )
-    if (root.version !== 1) {
+    if (root.version !== 2) {
         throw new Error("invalid SpecOps configuration field: version")
     }
 
@@ -260,19 +231,17 @@ export function validateConfig(value: unknown): SpecOpsConfig {
     const automation = parseAutomation(root.automation)
     const escalation = parseEscalation(root.escalation)
     const frontier = parseFrontier(root.frontier ?? {})
-    const questions = parseQuestions(root.questions ?? {})
     const review = parseReview(root.review)
     const integrations = parseIntegrations(root.integrations)
 
     return {
-        version: 1,
+        version: 2,
         openspec,
         workflow,
         routing,
         automation,
         escalation,
         frontier,
-        questions,
         review,
         integrations,
     }
@@ -491,91 +460,6 @@ function parseEscalation(value: unknown): SpecOpsConfig["escalation"] {
 }
 
 /**
- * Parse the `questions` section: validates loop budgets and field-size bounds
- * for worker-raised questions.
- *
- * @param value - Raw `questions` value from the configuration.
- * @returns The parsed {@link SpecOpsConfig}["questions"] object.
- * @throws {Error} If any field is missing, mistyped, or out of range.
- */
-function parseQuestions(value: unknown): SpecOpsConfig["questions"] {
-    const source = asObject(value, "questions")
-    assertKeys(
-        source,
-        [
-            "budgets",
-            "maxPromptLength",
-            "maxOptionIdLength",
-            "maxOptionLabelLength",
-            "maxOtherTextLength",
-            "maxMarkerBytes",
-            "maxQuestionsPerMarker",
-        ],
-        "questions",
-    )
-
-    const budgets =
-        source.budgets !== undefined ? asObject(source.budgets, "questions.budgets") : {}
-    assertKeys(
-        budgets,
-        ["maxQuestionsPerRun", "maxQuestionsPerDispatch", "maxRepeatedQuestionFingerprints"],
-        "questions.budgets",
-    )
-
-    return {
-        budgets: {
-            maxQuestionsPerRun: positiveInteger(
-                budgets.maxQuestionsPerRun ?? DEFAULT_CONFIG.questions.budgets.maxQuestionsPerRun,
-                "questions.budgets.maxQuestionsPerRun",
-                0,
-            ),
-            maxQuestionsPerDispatch: positiveInteger(
-                budgets.maxQuestionsPerDispatch ??
-                    DEFAULT_CONFIG.questions.budgets.maxQuestionsPerDispatch,
-                "questions.budgets.maxQuestionsPerDispatch",
-                0,
-            ),
-            maxRepeatedQuestionFingerprints: positiveInteger(
-                budgets.maxRepeatedQuestionFingerprints ??
-                    DEFAULT_CONFIG.questions.budgets.maxRepeatedQuestionFingerprints,
-                "questions.budgets.maxRepeatedQuestionFingerprints",
-                0,
-            ),
-        },
-        maxPromptLength: positiveInteger(
-            source.maxPromptLength ?? DEFAULT_CONFIG.questions.maxPromptLength,
-            "questions.maxPromptLength",
-            1,
-        ),
-        maxOptionIdLength: positiveInteger(
-            source.maxOptionIdLength ?? DEFAULT_CONFIG.questions.maxOptionIdLength,
-            "questions.maxOptionIdLength",
-            1,
-        ),
-        maxOptionLabelLength: positiveInteger(
-            source.maxOptionLabelLength ?? DEFAULT_CONFIG.questions.maxOptionLabelLength,
-            "questions.maxOptionLabelLength",
-            1,
-        ),
-        maxOtherTextLength: positiveInteger(
-            source.maxOtherTextLength ?? DEFAULT_CONFIG.questions.maxOtherTextLength,
-            "questions.maxOtherTextLength",
-            1,
-        ),
-        maxMarkerBytes: positiveInteger(
-            source.maxMarkerBytes ?? DEFAULT_CONFIG.questions.maxMarkerBytes,
-            "questions.maxMarkerBytes",
-            1,
-        ),
-        maxQuestionsPerMarker: positiveInteger(
-            source.maxQuestionsPerMarker ?? DEFAULT_CONFIG.questions.maxQuestionsPerMarker,
-            "questions.maxQuestionsPerMarker",
-            1,
-        ),
-    }
-}
-
-/**
  * Parse the `review` section: validates all review-related fields including
  * `blockingSeverities`, byte limits, timeouts, and retry count.
  *
@@ -678,7 +562,6 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "automation",
                 "escalation",
                 "frontier",
-                "questions",
                 "review",
                 "integrations",
                 "$schema",
@@ -688,10 +571,10 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
 
         const partial: Record<string, unknown> = {}
         if ("version" in root) {
-            if (root.version !== 1) {
+            if (root.version !== 2) {
                 throw new Error("invalid SpecOps configuration field: version")
             }
-            partial.version = 1
+            partial.version = 2
         }
         if (root.openspec !== undefined) {
             partial.openspec = validateSectionPartial(
@@ -739,14 +622,6 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "frontier",
                 DEFAULT_CONFIG.frontier,
                 parseFrontier,
-            )
-        }
-        if (root.questions !== undefined) {
-            partial.questions = validateSectionPartial(
-                root.questions,
-                "questions",
-                DEFAULT_CONFIG.questions,
-                parseQuestions,
             )
         }
         if (root.review !== undefined) {

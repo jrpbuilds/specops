@@ -1,6 +1,6 @@
 {
     "$schema": "./specops.schema.json",
-    "version": 1,
+    "version": 2,
     "openspec": { "command": null },
     "workflow": {
         "defaultTier": "auto",
@@ -27,19 +27,6 @@
         "maxEscalationsPerRun": 2,
         "maxDispatchesPerRun": 3,
         "maxHighDispatchesPerRun": 1
-    },
-    "questions": {
-        "budgets": {
-            "maxQuestionsPerRun": 4,
-            "maxQuestionsPerDispatch": 3,
-            "maxRepeatedQuestionFingerprints": 1
-        },
-        "maxPromptLength": 500,
-        "maxOptionIdLength": 40,
-        "maxOptionLabelLength": 120,
-        "maxOtherTextLength": 1000,
-        "maxMarkerBytes": 8000,
-        "maxQuestionsPerMarker": 3
     },
     "review": {
         "blockingSeverities": ["BLOCKER", "HIGH"],

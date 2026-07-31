@@ -16,7 +16,7 @@ describe("example configuration", () => {
         const example = JSON.parse(await readFile(examplePath, "utf8"))
 
         expect(validateConfig(example)).toMatchObject({
-            version: 1,
+            version: 2,
             workflow: { defaultTier: example.workflow.defaultTier },
         })
     })
@@ -42,11 +42,11 @@ describe("validatePartialConfig", () => {
     it("allows a minimal partial configuration", () => {
         expect(
             validatePartialConfig({
-                version: 1,
+                version: 2,
                 openspec: { command: ["node", "./tools/openspec.js"] },
             }),
         ).toEqual({
-            version: 1,
+            version: 2,
             openspec: { command: ["node", "./tools/openspec.js"] },
         })
     })
@@ -161,7 +161,7 @@ describe("resolveConfig", () => {
         const configHome = process.env.XDG_CONFIG_HOME!
         await writeFile(
             path.join(configHome, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, openspec: { command: ["node", "./openspec.js"] } }),
+            JSON.stringify({ version: 2, openspec: { command: ["node", "./openspec.js"] } }),
         )
         const config = await resolveConfig(projectDirectory)
         expect(config.openspec.command).toEqual(["node", "./openspec.js"])
@@ -173,7 +173,7 @@ describe("resolveConfig", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 1, openspec: { command: ["node", "./openspec.js"] } }),
+            JSON.stringify({ version: 2, openspec: { command: ["node", "./openspec.js"] } }),
         )
         const config = await resolveConfig(projectDirectory)
         expect(config.openspec.command).toEqual(["node", "./openspec.js"])
@@ -187,7 +187,7 @@ describe("resolveConfig", () => {
         await writeFile(
             path.join(configHome, "opencode", "specops.json"),
             JSON.stringify({
-                version: 1,
+                version: 2,
                 workflow: { defaultTier: "standard" },
                 routing: { forceFullForFacets: ["security"] },
             }),
@@ -195,7 +195,7 @@ describe("resolveConfig", () => {
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
             JSON.stringify({
-                version: 1,
+                version: 2,
                 workflow: { onboarding: "always" },
                 automation: { requireCleanWorktree: false },
             }),

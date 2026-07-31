@@ -595,7 +595,7 @@ export type QuestionToolPayload = {
 export type WorkerQuestionOption = {
     id: string
     label: string
-    /** Whether this option is the worker's recommendation (at most one per question). */
+    /** Whether this option is the worker's recommendation. */
     recommended?: boolean
 }
 
@@ -630,7 +630,6 @@ export type PendingQuestion = {
     impact: QuestionImpact
     policyHash: string
     bindingHash: string
-    fingerprint: string
     raisedAt: string
     /** Number of times this question has been dismissed (not cleared). */
     dismissalCount: number
@@ -656,7 +655,6 @@ export type QuestionRecord = {
     impact: QuestionImpact
     policyHash: string
     bindingHash: string
-    fingerprint: string
     raisedAt: string
     resolvedAt: string
     outcome: "answered" | "cancelled" | "dismissed"
@@ -665,25 +663,6 @@ export type QuestionRecord = {
     otherText?: string
     answerHash: string
     invalidatedArtifacts: ArtifactId[]
-}
-
-/** Budget limits controlling worker-raised question loops. */
-export type QuestionBudgets = {
-    maxQuestionsPerRun: number
-    maxQuestionsPerDispatch: number
-    maxRepeatedQuestionFingerprints: number
-}
-
-/**
- * Explicit counters for question budget accounting.
- *
- * Stored names are usage-counter names rather than limit names to keep
- * accounting unambiguous.
- */
-type QuestionBudgetUsage = {
-    questionsRaised: number
-    questionsByDispatch: Record<string, number>
-    fingerprintCounts: Record<string, number>
 }
 
 /** A live, unanswered checkpoint paused between dispatch phases. */
@@ -760,7 +739,7 @@ export type ResumeTarget = {
  * `resumable` describe the paused state.
  */
 export type RunState = {
-    version: 3
+    version: 4
     mode: "automatic" | "interactive"
     goal: string
     baseline: string
@@ -806,8 +785,6 @@ export type RunState = {
     pendingQuestions?: PendingQuestion[]
     /** Immutable history of answered, cancelled, or dismissed questions. */
     questionHistory: QuestionRecord[]
-    /** Question budget accounting. */
-    questionBudgetUsage: QuestionBudgetUsage
     /** A live, unresolved interactive checkpoint between dispatch phases. */
     pendingCheckpoint?: PendingCheckpoint
     /** Immutable history of resolved interactive checkpoints. */

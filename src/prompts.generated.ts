@@ -91,13 +91,13 @@ const QUESTION_ELIGIBLE_AGENTS: ReadonlySet<AgentId> = new Set<AgentId>([
 
 /** Strict policy for when a worker may raise a question marker. */
 const QUESTION_POLICY = [
-    "You may emit up to three `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` markers. `impact` is a top-level question field, never an option field, and only when ALL of the following hold for each question:",
+    "You may emit one or more `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` markers. `impact` is a top-level question field, never an option field, and only when ALL of the following hold for each question:",
     "(a) the choice cannot be resolved by inspecting the repository or repository conventions;",
     "(b) at least two remaining outcomes are materially different;",
     "(c) choosing incorrectly would alter requirements, public behaviour, safety, validation, or an irreversible design decision;",
     "(d) a reversible low-risk assumption is insufficient.",
     "NEVER raise a question for naming, formatting, minor implementation preferences, progress updates, permission to continue, ordinary uncertainty, or anything resolvable from repository conventions.",
-    'Mark exactly one option per question with `"recommended": true` when you have a recommendation. At most one recommended option per question.',
+    'Mark options with `"recommended": true` only when the recommendation is useful; recommendations are optional.',
     "Use the typed escalation marker for requirement changes that do not require a human decision.",
     "Never emit both an escalation marker and a question marker in the same output.",
 ].join(" ")

@@ -30,11 +30,11 @@ describe("doctor config-source warning", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "lean" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "lean" } }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toMatch(/^WARN project configuration overrides global/m)
@@ -46,11 +46,11 @@ describe("doctor config-source warning", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).not.toMatch(/^WARN project configuration overrides global/m)
@@ -62,11 +62,11 @@ describe("doctor config-source warning", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "lean" }, $schema: "./x.json" }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "lean" }, $schema: "./x.json" }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toMatch(/^WARN project configuration overrides global/m)
@@ -79,11 +79,11 @@ describe("doctor config-source warning", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "lean", onboarding: "always" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "lean", onboarding: "always" } }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toMatch(/^WARN project configuration overrides global/m)
@@ -96,7 +96,7 @@ describe("doctor config-source warning", () => {
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         await writeFile(
             path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json"),
-            JSON.stringify({ version: 1, workflow: { defaultTier: "standard" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "standard" } }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).not.toMatch(/^WARN project configuration overrides global/m)
@@ -106,7 +106,7 @@ describe("doctor config-source warning", () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         const projectPath = path.join(projectDirectory, ".opencode", "specops.json")
-        await writeFile(projectPath, "{ version: 1")
+        await writeFile(projectPath, "{ version: 2")
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toContain("FAIL")
         expect(output).toContain(projectPath)

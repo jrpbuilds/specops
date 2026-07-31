@@ -3,7 +3,7 @@
 Project policy is read from `.opencode/specops.json`. Copy
 `examples/specops.json` and keep its `$schema` reference for editor validation.
 
-Configuration version 1 is strict and camelCase. Unknown or missing fields fail startup.
+Configuration version 2 is strict and camelCase. Unknown or missing fields fail startup.
 
 ## Configuration sources and precedence
 
@@ -147,22 +147,17 @@ A worker that hits a genuinely unresolved material decision may emit a `<!-- spe
 marker. Interactive runs present validated options through OpenCode's native question UI; automatic
 runs pause as a resumable block so a CLI/CI consumer can answer and resume.
 
-| Field                                               | Purpose                                                                                                                                                                                                       |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `questions.budgets.maxQuestionsPerRun`              | Total questions admitted during one run.                                                                                                                                                                      |
-| `questions.budgets.maxQuestionsPerDispatch`         | Questions admitted from a single dispatch. Must be at least `maxQuestionsPerMarker` or the permitted batch will always be blocked.                                                                            |
-| `questions.budgets.maxRepeatedQuestionFingerprints` | Times the same semantic question may re-appear before the run blocks.                                                                                                                                         |
-| `questions.maxPromptLength`                         | Maximum character length of a question prompt.                                                                                                                                                                |
-| `questions.maxOptionIdLength`                       | Maximum character length of an option id (also the native UI label).                                                                                                                                          |
-| `questions.maxOptionLabelLength`                    | Maximum character length of an option's human description.                                                                                                                                                    |
-| `questions.maxOtherTextLength`                      | Maximum character length of free-form Other text.                                                                                                                                                             |
-| `questions.maxMarkerBytes`                          | Combined maximum byte size of all control markers in one output.                                                                                                                                              |
-| `questions.maxQuestionsPerMarker`                   | Maximum number of question markers a single worker output may contain. Default 3. The per-dispatch budget default matches this so a worker may emit the full permitted batch under the default configuration. |
+| Field        | Purpose                                                   |
+| ------------ | --------------------------------------------------------- |
+| `prompt`     | Non-empty material decision prompt.                       |
+| `options`    | One or more options with unique non-empty ids and labels. |
+| `allowOther` | Whether the native UI may collect a custom answer.        |
 
-Each marker must contain a non-empty `prompt` and 2–5 options. At most one option per question
-may carry `"recommended": true`. In the native UI the option `label` is the canonical option id
-(the value the backend validates against), and the recommendation guidance is shown in the
-description, so the user's selected value can be passed back unchanged as `selectedOption`.
+Each marker must contain a non-empty `prompt`. It must contain at least one option unless
+`allowOther` is true; custom-only questions are valid. Option ids and labels must be non-empty and
+unique. In the native UI the option `label` is the canonical option id (the value the backend
+validates against), and recommendation guidance is shown in the description, so the user's
+selected value can be passed back unchanged as `selectedOption`.
 
 Multiple markers in one worker output register as a multi-question batch. The run stays paused
 until every question in the batch is answered; `specops_answer_questions` accepts one

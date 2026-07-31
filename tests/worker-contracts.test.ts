@@ -79,7 +79,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function standardState(): RunState {
     const assessed = standardAssessment
     return {
-        version: 3,
+        version: 4,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -102,11 +102,6 @@ function standardState(): RunState {
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
         questionHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",

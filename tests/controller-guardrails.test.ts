@@ -141,7 +141,7 @@ describe("control-marker policy exposure", () => {
         id => {
             const text = promptText(id as (typeof ALL_AGENT_IDS)[number])
             expect(text).toContain("specops-question:")
-            expect(text).toContain("You may emit up to three")
+            expect(text).toContain("You may emit one or more")
         },
     )
 })

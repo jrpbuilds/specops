@@ -56,7 +56,7 @@ describe("adaptive frontier escalation", () => {
             "Best effort.",
             '<!-- specops-frontier: {"tier":"low","task":"Resolve the implementation blocker","whyNormalPathIsInsufficient":"The attempted API shape conflicts with the existing contract.","impact":"implementation","evidence":[{"kind":"repository-path","path":"src/types.ts"}],"attempts":["Inspected and attempted the existing adapter."]} -->',
         ].join("\n")
-        const parsed = parseWorkerOutput(output, adaptiveConfig, "implementation", "implementation")
+        const parsed = parseWorkerOutput(output, "implementation", "implementation")
         expect(parsed.prose).toBe("Best effort.")
         expect(parsed.frontier?.tier).toBe("low")
         expect(parsed.frontier?.evidence).toHaveLength(1)
@@ -637,7 +637,7 @@ describe("adaptive frontier escalation", () => {
 function completedPlanningState(): RunState {
     const requirements = requirementsFor(assessment, "auto", adaptiveConfig).requirements
     const state: RunState = {
-        version: 3,
+        version: 4,
         mode: "automatic",
         goal: "test frontier replay",
         baseline: "abc",
@@ -660,11 +660,6 @@ function completedPlanningState(): RunState {
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
         questionHistory: [],
-        questionBudgetUsage: {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        },
         checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",

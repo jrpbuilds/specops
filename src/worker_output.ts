@@ -8,7 +8,6 @@
  * the prose, and rejects combinations that are not allowed by policy.
  */
 import { createHash } from "node:crypto"
-import type { SpecOpsConfig } from "./config.js"
 import type {
     ArtifactId,
     CapabilityId,
@@ -142,20 +141,15 @@ const MARKER_RE = {
  *
  * Validation rules:
  * - At most one escalation marker and at most one frontier marker.
- * - Up to `questions.maxQuestionsPerMarker` question markers may be present;
- *   each is parsed and validated independently.
+ * - Every question marker is parsed and validated independently.
  * - A worker output must not contain both an escalation and a question marker.
  * - Marker JSON must parse and be an object.
- * - Question payload bounds: 2–5 options, non-empty prompt/id/label, configured
- *   max lengths, option IDs unique case-insensitively, `allowOther` boolean,
- *   `impact` one of the four allowed values, at most one option with
- *   `recommended: true`, and no unknown fields.
+ * - Question payloads require a non-empty prompt, usable options or
+ *   `allowOther`, unique option IDs, a valid impact, and no unknown fields.
  * - Markers that appear inside fenced code blocks or quoted blocks are ignored,
  *   preventing documentation examples from accidentally triggering control flow.
- * - Total marker payload size is bounded by `questions.maxMarkerBytes`.
  *
  * @param output - Raw worker output text.
- * @param config - Configuration carrying marker bounds.
  * @param phase - Artifact the worker was producing; used for impact validation.
  * @param capability - Capability that produced the output.
  * @returns Parsed and validated worker output.
@@ -163,7 +157,6 @@ const MARKER_RE = {
  */
 export function parseWorkerOutput(
     output: string,
-    config: Pick<SpecOpsConfig, "questions">,
     phase: ArtifactId,
     capability: CapabilityId,
 ): ParsedWorkerOutput {
@@ -178,11 +171,6 @@ export function parseWorkerOutput(
 
     if (escalationMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple escalation markers")
-    }
-    if (questionMarkers.length > config.questions.maxQuestionsPerMarker) {
-        throw new Error(
-            `SpecOps worker output contains more than ${config.questions.maxQuestionsPerMarker} question markers`,
-        )
     }
     if (frontierMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple frontier markers")
@@ -201,18 +189,11 @@ export function parseWorkerOutput(
         throw new Error("SpecOps worker output contains incompatible control markers; choose one")
     }
 
-    const markerPayloadSize = markers.reduce((sum, m) => sum + Buffer.byteLength(m.payload), 0)
-    if (markerPayloadSize > config.questions.maxMarkerBytes) {
-        throw new Error("SpecOps worker control marker exceeds maximum size")
-    }
-
     const escalation = escalationMarkers[0]
         ? parseEscalationPayload(escalationMarkers[0].payload)
         : undefined
     const questions = questionMarkers.length
-        ? questionMarkers.map(marker =>
-              parseQuestionPayload(marker.payload, config.questions, phase, capability),
-          )
+        ? questionMarkers.map(marker => parseQuestionPayload(marker.payload, phase, capability))
         : undefined
     const frontier = frontierMarkers[0]
         ? parseFrontierPayload(frontierMarkers[0].payload, phase, capability)
@@ -413,8 +394,8 @@ export function parseEvidenceRef(value: unknown): EvidenceRef {
 /**
  * Determine whether a span sits inside a fenced code block or quoted block.
  *
- * A simple line-by-line scan is sufficient because worker output is bounded
- * and control markers must be intentionally placed outside passive content.
+ * A simple line-by-line scan is sufficient because control markers must be
+ * intentionally placed outside passive content.
  *
  * @param output - Full worker output.
  * @param start - Start index of the marker.
@@ -654,11 +635,10 @@ function parseEscalationValidations(
 /**
  * Parse and strictly validate a question marker payload.
  *
- * Enforces option count, field bounds, uniqueness, unknown-field rejection,
+ * Enforces structural validity, option uniqueness, unknown-field rejection,
  * and impact validity for the originating phase/capability.
  *
  * @param payload - Inner JSON text of the question marker.
- * @param limits - Question configuration limits.
  * @param phase - Artifact the worker was producing.
  * @param capability - Capability that produced the output.
  * @returns The parsed and validated worker question.
@@ -666,7 +646,6 @@ function parseEscalationValidations(
  */
 function parseQuestionPayload(
     payload: string,
-    limits: SpecOpsConfig["questions"],
     phase: ArtifactId,
     capability: CapabilityId,
 ): WorkerQuestion {
@@ -676,17 +655,20 @@ function parseQuestionPayload(
     if (typeof value.prompt !== "string" || !value.prompt.trim()) {
         throw new Error("SpecOps question marker must have a non-empty prompt")
     }
-    if (value.prompt.length > limits.maxPromptLength) {
-        throw new Error("SpecOps question prompt exceeds maximum length")
+    let allowOther: boolean | undefined
+    if (value.allowOther !== undefined) {
+        if (typeof value.allowOther !== "boolean") {
+            throw new Error("SpecOps question allowOther must be a boolean")
+        }
+        allowOther = value.allowOther
     }
 
-    if (!Array.isArray(value.options) || value.options.length < 2 || value.options.length > 5) {
-        throw new Error("SpecOps question marker must contain 2 to 5 options")
+    if (!Array.isArray(value.options) || (value.options.length === 0 && allowOther !== true)) {
+        throw new Error("SpecOps question marker must contain options or allow Other text")
     }
 
     const options: WorkerQuestionOption[] = []
     const seenIds = new Set<string>()
-    let recommendedCount = 0
     for (const option of value.options) {
         if (!option || typeof option !== "object" || Array.isArray(option)) {
             throw new Error("SpecOps question option must be an object")
@@ -705,14 +687,8 @@ function parseQuestionPayload(
         if (typeof parsed.id !== "string" || !parsed.id.trim()) {
             throw new Error("SpecOps question option id must be a non-empty string")
         }
-        if (parsed.id.length > limits.maxOptionIdLength) {
-            throw new Error("SpecOps question option id exceeds maximum length")
-        }
         if (typeof parsed.label !== "string" || !parsed.label.trim()) {
             throw new Error("SpecOps question option label must be a non-empty string")
-        }
-        if (parsed.label.length > limits.maxOptionLabelLength) {
-            throw new Error("SpecOps question option label exceeds maximum length")
         }
         const normalId = parsed.id.trim().toLowerCase()
         if (seenIds.has(normalId)) {
@@ -725,24 +701,10 @@ function parseQuestionPayload(
                 throw new Error("SpecOps question option recommended must be a boolean")
             }
             if (parsed.recommended) {
-                recommendedCount += 1
-                if (recommendedCount > 1) {
-                    throw new Error(
-                        "SpecOps question marker may have at most one recommended option",
-                    )
-                }
                 recommended = true
             }
         }
         options.push({ id: parsed.id, label: parsed.label, recommended })
-    }
-
-    let allowOther: boolean | undefined
-    if (value.allowOther !== undefined) {
-        if (typeof value.allowOther !== "boolean") {
-            throw new Error("SpecOps question allowOther must be a boolean")
-        }
-        allowOther = value.allowOther
     }
 
     let impact: QuestionImpact | undefined
