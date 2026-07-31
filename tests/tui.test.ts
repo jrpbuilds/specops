@@ -44,8 +44,8 @@ afterEach(() => {
 })
 
 describe.sequential("SpecOps model settings TUI", () => {
-    it("registers a native command, prompts for v1, and saves a complete v2 mapping", async () => {
-        const harness = await createHarness(legacyManifest())
+    it("registers a native command and saves a complete v2 mapping", async () => {
+        const harness = await createHarness(DEFAULT_MANIFEST)
         registerModelSettings(harness.api)
 
         expect(harness.layer.commands.map(command => command.name)).toContain(
@@ -57,16 +57,15 @@ describe.sequential("SpecOps model settings TUI", () => {
             desc: "Choose a configured OpenCode model and variant for each agent",
             category: "SpecOps",
         })
-        await harness.events.get("server.connected")?.()
 
-        expect(harness.toasts.at(-1)?.message).toContain("legacy v1 manifest")
+        await harness.layer.commands[0].run()
         const agents = harness.rendered as SelectDialog
         expect(agents.title).toBe("SpecOps agent model mappings")
         expect(harness.dialogSize).toBe("xlarge")
         expect(agents.options[0]).toMatchObject({
             title: ALL_AGENT_IDS[0],
             category: "Controllers",
-            footer: expect.stringContaining("Default"),
+            footer: expect.stringContaining("default"),
         })
         expect(
             agents.options.find(option => option.value === AGENT_IDS.review.frontierLow),
@@ -219,23 +218,6 @@ async function createHarness(initial: unknown): Promise<{
         get dialogSize() {
             return state.dialogSize
         },
-    }
-}
-
-/** Create a v1 catalogue containing the legacy fields that must be ignored. */
-function legacyManifest(): unknown {
-    return {
-        version: 1,
-        agents: Object.fromEntries(
-            ALL_AGENT_IDS.map(id => [
-                id,
-                {
-                    model: "configured/custom",
-                    steps: 48,
-                    reasoningEffort: "high",
-                },
-            ]),
-        ),
     }
 }
 

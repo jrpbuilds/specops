@@ -521,7 +521,6 @@ export type DispatchRecord = {
     /** Resume metadata when this dispatch re-issues a paused phase after an answer. */
     resume?: {
         sourceId: string
-        questionId: string
         originalDispatchId: string
         answerHash: string
         phase: ArtifactId
@@ -588,6 +587,8 @@ export type QuestionToolPayload = {
 export type WorkerQuestionOption = {
     id: string
     label: string
+    /** Whether this option is the worker's recommendation (at most one per question). */
+    recommended?: boolean
 }
 
 /**
@@ -608,7 +609,7 @@ export type WorkerQuestion = {
  *
  * Contains every field required to resume the same question without replaying
  * the worker that raised it. No `status` field is stored here; the question is
- * implicitly pending while it appears on `RunState.pendingQuestion`.
+ * implicitly pending while they appear on `RunState.pendingQuestions`.
  */
 export type PendingQuestion = {
     id: string
@@ -671,7 +672,7 @@ export type QuestionBudgets = {
  * Stored names are usage-counter names rather than limit names to keep
  * accounting unambiguous.
  */
-export type QuestionBudgetUsage = {
+type QuestionBudgetUsage = {
     questionsRaised: number
     questionsByDispatch: Record<string, number>
     fingerprintCounts: Record<string, number>
@@ -726,8 +727,6 @@ export type CheckpointRecord = {
 export type ResumeTarget = {
     /** Source record id (worker question or checkpoint) being replayed. */
     sourceId: string
-    /** Worker question id, kept for backward-compatible readers; equals sourceId. */
-    questionId: string
     originalDispatchId: string
     phase: ArtifactId
     capability: CapabilityId
@@ -737,7 +736,7 @@ export type ResumeTarget = {
     action: string
     /** Hash of the answer/feedback that drives the fresh dispatch. */
     answerHash: string
-    /** Whether the replay follows a worker question (legacy) or checkpoint. */
+    /** Whether the replay follows a worker question or a checkpoint. */
     origin: "question" | "checkpoint"
     consumed?: boolean
 }
@@ -751,7 +750,7 @@ export type ResumeTarget = {
  * `resumable` describe the paused state.
  */
 export type RunState = {
-    version: 2
+    version: 3
     mode: "automatic" | "interactive"
     goal: string
     baseline: string
@@ -769,9 +768,9 @@ export type RunState = {
     invalidations: Array<{ artifacts: ArtifactId[]; reason: string; at: string }>
     repairs: Array<{ mode: RepairMode; at: string; summary: string }>
     /** Immutable normalized assurance responses used as refuter input. */
-    reviewSubmissions?: ReviewSubmission[]
+    reviewSubmissions: ReviewSubmission[]
     /** Bounded repair assignments and their observed outcomes. */
-    repairTasks?: RepairTask[]
+    repairTasks: RepairTask[]
     /** A repair selected by the controller from a validated review ledger. */
     pendingRepair?: {
         mode: RepairMode
@@ -784,25 +783,25 @@ export type RunState = {
         sourceLedgerHash?: string
     }
     /** Frontier policy snapshotted when the run starts. */
-    frontierPolicy?: FrontierPolicy
+    frontierPolicy: FrontierPolicy
     /** Frontier call accounting. */
-    frontierUsage?: FrontierUsage
+    frontierUsage: FrontierUsage
     /** Immutable compact frontier escalation history. */
-    frontierHistory?: FrontierEpisode[]
+    frontierHistory: FrontierEpisode[]
     /** Frontier dispatch currently awaiting completion. */
     pendingFrontier?: PendingFrontier
     /** Originating phase to replay with validated frontier advice. */
     frontierResume?: FrontierResumeTarget
-    /** A live, unanswered worker-raised question. */
-    pendingQuestion?: PendingQuestion
+    /** A live, unanswered worker-raised question batch (1+ questions). */
+    pendingQuestions?: PendingQuestion[]
     /** Immutable history of answered, cancelled, or dismissed questions. */
     questionHistory: QuestionRecord[]
     /** Question budget accounting. */
-    questionBudgetUsage?: QuestionBudgetUsage
+    questionBudgetUsage: QuestionBudgetUsage
     /** A live, unresolved interactive checkpoint between dispatch phases. */
     pendingCheckpoint?: PendingCheckpoint
     /** Immutable history of resolved interactive checkpoints. */
-    checkpointHistory?: CheckpointRecord[]
+    checkpointHistory: CheckpointRecord[]
     /** Explicit target for the fresh dispatch issued after an answer. */
     resumeTarget?: ResumeTarget
     implementationDiffHash?: string

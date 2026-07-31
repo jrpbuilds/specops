@@ -18,12 +18,7 @@ import {
     selectConfiguredModel,
     validateManifestSelections,
 } from "../src/model-settings.js"
-import {
-    DEFAULT_MANIFEST,
-    manifestAgentConfig,
-    validateManifest,
-    type SpecOpsManifest,
-} from "../src/manifest.js"
+import { DEFAULT_MANIFEST, manifestAgentConfig, validateManifest } from "../src/manifest.js"
 
 describe("agent model manifest v2", () => {
     it("accepts optional model and optional variant for every agent", () => {
@@ -81,7 +76,7 @@ describe("agent model manifest v2", () => {
         expect("variant" in config).toBe(false)
     })
 
-    it("preserves legacy bytes and uses packaged defaults for the session", async () => {
+    it("replaces a legacy v1 manifest with current defaults (no upgrade prompt)", async () => {
         const directory = await mkdtemp(path.join(os.tmpdir(), "specops-v1-"))
         const destination = path.join(directory, "specops-manifest.json")
         const legacy = {
@@ -90,9 +85,6 @@ describe("agent model manifest v2", () => {
                 ALL_AGENT_IDS.map(id => [
                     id,
                     {
-                        // Legacy files may reference obsolete models; SpecOps falls back to
-                        // the registry default (now blank/OpenCode default) and preserves only
-                        // the bytes on disk.
                         model: "legacy/obsolete",
                         steps: 999,
                         reasoningEffort: "high",
@@ -104,10 +96,14 @@ describe("agent model manifest v2", () => {
         await writeFile(destination, bytes)
 
         const result = await materializeAgentManifest(destination)
-        expect(result.status).toBe("upgrade-required")
+        expect(result.status).toBe("ready")
         expect(result.manifest).toEqual(DEFAULT_MANIFEST)
-        expect(await readFile(destination, "utf8")).toBe(bytes)
-        expect((await inspectAgentManifest(destination)).status).toBe("upgrade-required")
+        expect(result.replacedInvalidFile).toBe(true)
+        // The legacy file is now overwritten with the current defaults.
+        const rewritten = await readFile(destination, "utf8")
+        expect(rewritten).not.toBe(bytes)
+        const inspection = await inspectAgentManifest(destination)
+        expect(inspection.status).toBe("ready")
     })
 
     it("creates missing v2 defaults and replaces non-legacy invalid data", async () => {
@@ -202,25 +198,25 @@ describe("configured OpenCode model catalogue", () => {
         expect(DEFAULT_MANIFEST.agents[AGENT_IDS.core.repairer].model).toBeUndefined()
     })
 
-    it("retains available legacy models and falls back to OpenCode's default for unavailable ones", () => {
-        const legacy = {
-            version: 1 as const,
-            agents: Object.fromEntries(
-                ALL_AGENT_IDS.map(id => [id, { model: "provider/plain", steps: 20 }]),
-            ),
+    it("retains available models and flags unavailable ones as unresolved", () => {
+        const current = structuredClone(DEFAULT_MANIFEST)
+        for (const id of ALL_AGENT_IDS) {
+            current.agents[id] = { model: "provider/plain" }
         }
-        const retained = createManifestDraft(legacy, models)
+        const retained = createManifestDraft(current, models)
         expect(retained.unresolved).toEqual([])
         expect(
             ALL_AGENT_IDS.every(id => retained.manifest.agents[id].model === "provider/plain"),
         ).toBe(true)
 
-        // Unavailable v1 models fall back to the packaged default, which is blank/OpenCode default.
-        legacy.agents[ALL_AGENT_IDS[0]] = { model: "missing/model", steps: 20 }
-        const fallback = createManifestDraft(legacy, models)
-        expect(fallback.unresolved).toEqual([])
-        expect(fallback.manifest.agents[ALL_AGENT_IDS[0]].model).toBeUndefined()
-        expect(validateManifestSelections(fallback.manifest, models)).toEqual([])
+        // Unavailable models are flagged unresolved so the user is prompted to fix them.
+        current.agents[ALL_AGENT_IDS[0]!] = { model: "missing/model" }
+        const fallback = createManifestDraft(current, models)
+        expect(fallback.unresolved).toEqual([ALL_AGENT_IDS[0]])
+        expect(fallback.manifest.agents[ALL_AGENT_IDS[0]!]?.model).toBe("missing/model")
+        expect(validateManifestSelections(fallback.manifest, models)).toEqual([
+            `${ALL_AGENT_IDS[0]}: model missing/model is not currently configured`,
+        ])
     })
 
     it("produces a blank clean-install draft and clears models back to default", () => {
@@ -229,14 +225,10 @@ describe("configured OpenCode model catalogue", () => {
         expect(validateManifestSelections(draft.manifest, models)).toEqual([])
         expect(ALL_AGENT_IDS.every(id => draft.manifest.agents[id].model === undefined)).toBe(true)
 
-        const selected = createManifestDraft(
-            {
-                version: 2,
-                agents: { [ALL_AGENT_IDS[0]]: { model: "provider/luna", variant: "high" } },
-            } as SpecOpsManifest,
-            models,
-        )
-        const cleared = clearConfiguredModel(selected.manifest.agents[ALL_AGENT_IDS[0]])
+        const selectedSource = structuredClone(DEFAULT_MANIFEST)
+        selectedSource.agents[ALL_AGENT_IDS[0]!] = { model: "provider/luna", variant: "high" }
+        const selected = createManifestDraft(selectedSource, models)
+        const cleared = clearConfiguredModel(selected.manifest.agents[ALL_AGENT_IDS[0]!])
         expect(cleared.model).toBeUndefined()
         expect(cleared.variant).toBe("high")
     })

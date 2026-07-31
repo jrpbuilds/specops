@@ -82,7 +82,7 @@ function leanState(mode: RunState["mode"]): RunState {
         policyHash: "policy",
     }
     return {
-        version: 2,
+        version: 3,
         mode,
         goal: "Update README",
         baseline: "baseline",
@@ -754,24 +754,26 @@ describe("store validator checkpoint invariants", () => {
             bindingHash: "h",
             raisedAt: "now",
         }
-        state.pendingQuestion = {
-            id: "q1",
-            dispatchId: "d1",
-            phase: "tasks",
-            capability: "planning" as never,
-            prompt: "p",
-            options: [{ id: "a", label: "A" }],
-            allowOther: false,
-            impact: "requirements",
-            policyHash: "p",
-            bindingHash: "b",
-            fingerprint: "f",
-            raisedAt: "now",
-            dismissalCount: 0,
-        }
+        state.pendingQuestions = [
+            {
+                id: "q1",
+                dispatchId: "d1",
+                phase: "tasks",
+                capability: "planning" as never,
+                prompt: "p",
+                options: [{ id: "a", label: "A" }],
+                allowOther: false,
+                impact: "requirements",
+                policyHash: "p",
+                bindingHash: "b",
+                fingerprint: "f",
+                raisedAt: "now",
+                dismissalCount: 0,
+            },
+        ]
         await writeRun(directory, change, state)
         await expect(readRun(directory, change)).rejects.toThrow(
-            /must not also have a pending question/,
+            /must not also have pending questions/,
         )
     })
 })

@@ -7,7 +7,7 @@ OpenSpec artifacts. Language models supply bounded reasoning and implementation 
 owns routing, scheduling, persistence, invalidation, command evidence, review independence, repair
 budgets, and completion gates.
 
-The project is intentionally clean-slate. It supports one run-state format (version 2) and one
+The project is intentionally clean-slate. It supports one run-state format and one
 canonical agent catalogue. There are no aliases or fallback pipelines for earlier pre-release
 designs. The installer only provides a targeted additive upgrade from the immediately preceding
 agent catalogue so existing model choices survive the addition of the two frontier routes.
@@ -77,7 +77,7 @@ reinstall flows.
 | ---------------------- | ------------------------------------------------------------------------------- |
 | `/specops <goal>`      | Interactive controller with checkpoints and native worker-question handling.    |
 | `/specops-auto <goal>` | Automatic controller using visible native workers; pauses for material choices. |
-| `/specops-status`      | Reads an existing version 2 run.                                                |
+| `/specops-status`      | Reads an existing run.                                                          |
 | `/specops-doctor`      | Validates installation, manifest, commands, agents, prompts, and schemas.       |
 | `/specops-onboard`     | Installs final OpenSpec schemas into the current repository.                    |
 

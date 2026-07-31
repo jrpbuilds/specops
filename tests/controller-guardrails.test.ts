@@ -66,10 +66,11 @@ describe("controller guardrails", () => {
         }
     })
 
-    it("interactive controller prompt instructs passing questionTool verbatim", () => {
+    it("interactive controller prompt instructs passing questionTools verbatim", () => {
         const text = promptText(AGENT_IDS.controller.interactive)
-        expect(text).toContain("questionTool")
+        expect(text).toContain("questionTools")
         expect(text).toContain("questions` array parameter")
+        expect(text).toContain("specops_answer_questions")
     })
 
     it("non-controller agents retain repository read access", () => {
@@ -125,7 +126,7 @@ describe("control-marker policy exposure", () => {
         id => {
             const text = promptText(id as (typeof ALL_AGENT_IDS)[number])
             expect(text).toContain("specops-question:")
-            expect(text).toContain("You may emit exactly one")
+            expect(text).toContain("You may emit up to three")
         },
     )
 })

@@ -24,13 +24,14 @@ import type {
  * Result of parsing a worker output blob.
  *
  * `prose` is the original text with all control markers removed. Either or
- * both of `escalation` and `question` may be present when valid; malformed or
+ * both of `escalation` and `questions` may be present when valid; malformed or
  * forbidden combinations throw during parse.
  */
 export type ParsedWorkerOutput = {
     prose: string
     escalation?: EscalationClaim
-    question?: WorkerQuestion
+    /** One or more parsed worker questions (absent when no question markers). */
+    questions?: WorkerQuestion[]
     frontier?: FrontierRequest
 }
 
@@ -140,12 +141,15 @@ const MARKER_RE = {
  * Parse worker output once into structured control metadata and cleaned prose.
  *
  * Validation rules:
- * - At most one escalation marker and at most one question marker.
+ * - At most one escalation marker and at most one frontier marker.
+ * - Up to `questions.maxQuestionsPerMarker` question markers may be present;
+ *   each is parsed and validated independently.
  * - A worker output must not contain both an escalation and a question marker.
  * - Marker JSON must parse and be an object.
  * - Question payload bounds: 2–5 options, non-empty prompt/id/label, configured
  *   max lengths, option IDs unique case-insensitively, `allowOther` boolean,
- *   `impact` one of the four allowed values, and no unknown fields.
+ *   `impact` one of the four allowed values, at most one option with
+ *   `recommended: true`, and no unknown fields.
  * - Markers that appear inside fenced code blocks or quoted blocks are ignored,
  *   preventing documentation examples from accidentally triggering control flow.
  * - Total marker payload size is bounded by `questions.maxMarkerBytes`.
@@ -175,8 +179,10 @@ export function parseWorkerOutput(
     if (escalationMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple escalation markers")
     }
-    if (questionMarkers.length > 1) {
-        throw new Error("SpecOps worker output contains multiple question markers")
+    if (questionMarkers.length > config.questions.maxQuestionsPerMarker) {
+        throw new Error(
+            `SpecOps worker output contains more than ${config.questions.maxQuestionsPerMarker} question markers`,
+        )
     }
     if (frontierMarkers.length > 1) {
         throw new Error("SpecOps worker output contains multiple frontier markers")
@@ -203,21 +209,23 @@ export function parseWorkerOutput(
     const escalation = escalationMarkers[0]
         ? parseEscalationPayload(escalationMarkers[0].payload)
         : undefined
-    const question = questionMarkers[0]
-        ? parseQuestionPayload(questionMarkers[0].payload, config.questions, phase, capability)
+    const questions = questionMarkers.length
+        ? questionMarkers.map(marker =>
+              parseQuestionPayload(marker.payload, config.questions, phase, capability),
+          )
         : undefined
     const frontier = frontierMarkers[0]
         ? parseFrontierPayload(frontierMarkers[0].payload, phase, capability)
         : undefined
 
-    return { prose: prose.trim(), escalation, question, frontier }
+    return { prose: prose.trim(), escalation, questions, frontier }
 }
 
 /**
  * Compute a stable hash for binding a question to authoritative inputs.
  *
  * The binding hash intentionally excludes incidental run-state mutations such
- * as `pendingQuestion`, timestamps, or pause status. It binds the question to
+ * as `pendingQuestions`, timestamps, or pause status. It binds the question to
  * the requirement policy hash, relevant artifact hashes, prior answer hashes,
  * the originating dispatch input hash, and the implementation diff hash when
  * relevant.
@@ -678,13 +686,14 @@ function parseQuestionPayload(
 
     const options: WorkerQuestionOption[] = []
     const seenIds = new Set<string>()
+    let recommendedCount = 0
     for (const option of value.options) {
         if (!option || typeof option !== "object" || Array.isArray(option)) {
             throw new Error("SpecOps question option must be an object")
         }
         const parsed = option as Record<string, unknown>
         for (const key of Object.keys(parsed)) {
-            if (key !== "id" && key !== "label") {
+            if (key !== "id" && key !== "label" && key !== "recommended") {
                 throw new Error(`SpecOps question option contains unknown field: ${key}`)
             }
         }
@@ -705,7 +714,22 @@ function parseQuestionPayload(
             throw new Error("SpecOps question option ids must be unique")
         }
         seenIds.add(normalId)
-        options.push({ id: parsed.id, label: parsed.label })
+        let recommended: boolean | undefined
+        if (parsed.recommended !== undefined) {
+            if (typeof parsed.recommended !== "boolean") {
+                throw new Error("SpecOps question option recommended must be a boolean")
+            }
+            if (parsed.recommended) {
+                recommendedCount += 1
+                if (recommendedCount > 1) {
+                    throw new Error(
+                        "SpecOps question marker may have at most one recommended option",
+                    )
+                }
+                recommended = true
+            }
+        }
+        options.push({ id: parsed.id, label: parsed.label, recommended })
     }
 
     let allowOther: boolean | undefined

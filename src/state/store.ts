@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { DispatchRecord, RunState } from "../types.js"
+import type { RunState } from "../types.js"
 
 /**
  * Return the controller-owned directory for one OpenSpec change.
@@ -53,9 +53,11 @@ export async function writeRun(directory: string, change: string, state: RunStat
 /**
  * Read and validate the only supported run-state format.
  *
- * Reads `specops-run.json` from the change directory, parses it, and
- * validates all v2 state invariants including consistency between `status`,
- * `pauseReason`, `resumable`, `pendingQuestion`, and `outcome`.
+ * Reads `specops-run.json` from the change directory, parses it, and validates
+ * all version-3 state invariants including consistency between `status`,
+ * `pauseReason`, `resumable`, `pendingQuestions`, and `outcome`. Only the
+ * current run-state version is accepted; superseded versions and legacy field
+ * shapes are rejected rather than migrated.
  *
  * @param directory - The repository root.
  * @param change - The OpenSpec change id.
@@ -63,118 +65,20 @@ export async function writeRun(directory: string, change: string, state: RunStat
  * @throws If the file is missing or contains JSON that fails any invariant.
  */
 export async function readRun(directory: string, change: string): Promise<RunState> {
-    const raw = JSON.parse(
+    const raw: unknown = JSON.parse(
         await readFile(path.join(changeRoot(directory, change), "specops-run.json"), "utf8"),
     )
 
-    // Migrate v1 to v2: rename terminalStatus → status, add new fields.
-    if (raw.version === 1) {
-        if (raw.terminalStatus === "paused") {
-            throw new Error(
-                "Legacy v1 paused states are not supported by v2; " +
-                    "start a fresh run or manually fix the run state",
-            )
-        }
-        raw.version = 2
-        raw.status = raw.terminalStatus
-        delete raw.terminalStatus
-        raw.questionHistory ??= []
-        raw.questionBudgetUsage ??= {
-            questionsRaised: 0,
-            questionsByDispatch: {},
-            fingerprintCounts: {},
-        }
-    }
-
-    raw.frontierPolicy ??= {
-        mode: "disabled",
-        maxEscalationsPerRun: 2,
-        maxDispatchesPerRun: 3,
-        maxHighDispatchesPerRun: 1,
-    }
-    raw.frontierUsage ??= { escalations: 0, dispatches: 0, highDispatches: 0 }
-    raw.frontierHistory ??= []
-    raw.reviewSubmissions ??= []
-    raw.repairTasks ??= []
-    // v2 back-compat: runs persisted before checkpoints have no checkpoint
-    // history; default it so existing runs load and run unchanged.
-    raw.checkpointHistory ??= []
-
-    // v2 back-compat: resume targets persisted before the origin/sourceId
-    // fields were introduced. Normalize the legacy shape so a worker-question
-    // answer still drives the fresh dispatch instead of being silently dropped.
-    // If the originating dispatch cannot be resolved the target is abandoned
-    // rather than replayed against an unknown action.
-    if (raw.resumeTarget) {
-        const target = raw.resumeTarget
-        target.sourceId ??= target.questionId
-        target.origin ??= "question"
-        if (target.purpose === undefined || target.action === undefined) {
-            const origin = (raw.dispatches as DispatchRecord[]).find(
-                dispatch => dispatch.id === target.originalDispatchId,
-            )
-            if (origin) {
-                target.purpose ??= origin.purpose
-                target.action ??= origin.action
-            } else {
-                // The originating dispatch is gone; drop the stale target
-                // so deterministic scheduling re-derives the next action.
-                delete raw.resumeTarget
-            }
-        }
-    }
-
-    // v2 back-compat: dispatch resume metadata persisted before the
-    // purpose/action fields were introduced. Normalize from the originating
-    // dispatch when possible; otherwise leave the metadata for audit only.
-    for (const dispatch of (raw.dispatches as DispatchRecord[]) ?? []) {
-        if (dispatch.resume && dispatch.resume.purpose === undefined) {
-            const origin = (raw.dispatches as DispatchRecord[]).find(
-                candidate => candidate.id === dispatch.resume!.originalDispatchId,
-            )
-            if (origin) {
-                dispatch.resume.purpose ??= origin.purpose
-                dispatch.resume.action ??= origin.action
-            }
-        }
-    }
-
-    if (raw.pendingRepair && !raw.pendingRepair.taskId) {
-        const taskId = `legacy-${String(raw.updatedAt ?? "repair")}`
-        raw.repairTasks.push({
-            id: taskId,
-            target:
-                raw.pendingRepair.mode === "spec-mismatch"
-                    ? "planning"
-                    : raw.pendingRepair.mode === "design-revision"
-                      ? "design"
-                      : "implementation",
-            modes: [raw.pendingRepair.mode],
-            findingIds: [],
-            summary: raw.pendingRepair.summary,
-            evidence: [],
-            acceptanceCriteria: [],
-            sourceLedgerHash: "",
-            sourceDiffHash: raw.implementationDiffHash,
-            fingerprint: taskId,
-            attempt: 1,
-            status: "queued",
-            beforeDiffHash: raw.implementationDiffHash,
-            at: raw.updatedAt ?? new Date(0).toISOString(),
-        })
-        raw.pendingRepair.taskId = taskId
-    }
-
-    const value = raw as RunState
-
-    // Validate all v2 invariants in a single pass.
     if (
-        value.version !== 2 ||
-        (value.mode !== "interactive" && value.mode !== "automatic") ||
-        !["running", "paused", "passed", "blocked", "failed", "cancelled"].includes(value.status)
+        !isCurrentRunStateShape(raw) ||
+        raw.version !== 3 ||
+        (raw.mode !== "interactive" && raw.mode !== "automatic") ||
+        typeof raw.status !== "string" ||
+        !["running", "paused", "passed", "blocked", "failed", "cancelled"].includes(raw.status)
     ) {
         throw new Error("invalid SpecOps run state")
     }
+    const value = raw as RunState
 
     const validPauseReasons = new Set(["pending-question", "question-dismissed", "checkpoint"])
 
@@ -191,6 +95,9 @@ export async function readRun(directory: string, change: string): Promise<RunSta
             }
             if (value.pendingCheckpoint) {
                 throw new Error("running state must not have a pending checkpoint")
+            }
+            if (value.pendingQuestions) {
+                throw new Error("running state must not have pending questions")
             }
             break
 
@@ -211,12 +118,12 @@ export async function readRun(directory: string, change: string): Promise<RunSta
                 if (!value.pendingCheckpoint) {
                     throw new Error("checkpoint-paused state requires a pending checkpoint")
                 }
-                if (value.pendingQuestion) {
-                    throw new Error("checkpoint-paused state must not also have a pending question")
+                if (value.pendingQuestions) {
+                    throw new Error("checkpoint-paused state must not also have pending questions")
                 }
             } else {
-                if (!value.pendingQuestion) {
-                    throw new Error("question-paused state requires a pending question")
+                if (!value.pendingQuestions || value.pendingQuestions.length === 0) {
+                    throw new Error("question-paused state requires pending questions")
                 }
                 if (value.pendingCheckpoint) {
                     throw new Error("question-paused state must not also have a pending checkpoint")
@@ -226,8 +133,8 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 
         case "passed":
         case "cancelled":
-            if (value.pendingQuestion) {
-                throw new Error(`terminal state (${value.status}) must not have a pending question`)
+            if (value.pendingQuestions) {
+                throw new Error(`terminal state (${value.status}) must not have pending questions`)
             }
             if (value.pendingCheckpoint) {
                 throw new Error(
@@ -251,8 +158,8 @@ export async function readRun(directory: string, change: string): Promise<RunSta
         // eslint-disable-next-line no-fallthrough
         case "blocked":
         case "failed":
-            if (value.pendingQuestion) {
-                throw new Error(`terminal state (${value.status}) must not have a pending question`)
+            if (value.pendingQuestions) {
+                throw new Error(`terminal state (${value.status}) must not have pending questions`)
             }
             if (value.pendingCheckpoint) {
                 throw new Error(
@@ -283,6 +190,48 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     }
 
     return value
+}
+
+/** Return whether a parsed run record has every required current-format collection and snapshot. */
+function isCurrentRunStateShape(value: unknown): value is Record<string, unknown> {
+    if (!isRecord(value)) return false
+    if (
+        !Array.isArray(value.reviewSubmissions) ||
+        !Array.isArray(value.repairTasks) ||
+        !Array.isArray(value.frontierHistory) ||
+        !Array.isArray(value.questionHistory) ||
+        !Array.isArray(value.checkpointHistory) ||
+        !isRecord(value.frontierPolicy) ||
+        !isRecord(value.frontierUsage) ||
+        !isRecord(value.questionBudgetUsage)
+    ) {
+        return false
+    }
+    const policy = value.frontierPolicy
+    const usage = value.frontierUsage
+    const questionUsage = value.questionBudgetUsage
+    return (
+        (policy.mode === "disabled" || policy.mode === "adaptive") &&
+        isNonNegativeInteger(policy.maxEscalationsPerRun) &&
+        isNonNegativeInteger(policy.maxDispatchesPerRun) &&
+        isNonNegativeInteger(policy.maxHighDispatchesPerRun) &&
+        isNonNegativeInteger(usage.escalations) &&
+        isNonNegativeInteger(usage.dispatches) &&
+        isNonNegativeInteger(usage.highDispatches) &&
+        isNonNegativeInteger(questionUsage.questionsRaised) &&
+        isRecord(questionUsage.questionsByDispatch) &&
+        isRecord(questionUsage.fingerprintCounts)
+    )
+}
+
+/** Return whether a value is a plain JSON object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/** Return whether a value is an integer counter that cannot be negative. */
+function isNonNegativeInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
 /**

@@ -632,29 +632,12 @@ describe("adaptive frontier escalation", () => {
         expect(cancelled.frontierResume).toBeUndefined()
         expect(cancelled.status).toBe("cancelled")
     })
-
-    it("loads pre-frontier version-2 state with safe disabled defaults", async () => {
-        const { directory, change, state } = await persistedFrontierRun("legacy-state")
-        state.frontierPolicy = undefined
-        state.frontierUsage = undefined
-        state.frontierHistory = undefined
-        await writeRun(directory, change, state)
-
-        const loaded = await readRun(directory, change)
-        expect(loaded.frontierPolicy).toEqual(DEFAULT_CONFIG.frontier)
-        expect(loaded.frontierUsage).toEqual({
-            escalations: 0,
-            dispatches: 0,
-            highDispatches: 0,
-        })
-        expect(loaded.frontierHistory).toEqual([])
-    })
 })
 
 function completedPlanningState(): RunState {
     const requirements = requirementsFor(assessment, "auto", adaptiveConfig).requirements
     const state: RunState = {
-        version: 2,
+        version: 3,
         mode: "automatic",
         goal: "test frontier replay",
         baseline: "abc",
@@ -671,6 +654,8 @@ function completedPlanningState(): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
         frontierPolicy: structuredClone(adaptiveConfig.frontier),
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
@@ -680,6 +665,7 @@ function completedPlanningState(): RunState {
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",

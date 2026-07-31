@@ -93,7 +93,6 @@ export function queueWorkerFrontier(
     phase: ArtifactId,
     request: FrontierRequest,
 ): FrontierQueueDecision {
-    ensureFrontierState(state)
     if (state.frontierPolicy!.mode !== "adaptive") return { disposition: "continue" }
     const fingerprint = requestFingerprint(request, phase, dispatch.capability)
     const prior = state.frontierHistory?.find(item => item.fingerprint === fingerprint)
@@ -170,7 +169,6 @@ export function queueReviewFrontier(
     mode: RepairMode,
     summary: string,
 ): boolean {
-    ensureFrontierState(state)
     if (state.frontierPolicy!.mode !== "adaptive") return false
     const normalisedSummary = summary.trim().toLowerCase().replace(/\s+/g, " ")
     const fingerprint = createHash("sha256")
@@ -370,7 +368,6 @@ export function canPromotePending(state: RunState): boolean {
 }
 
 function canStartEpisode(state: RunState): boolean {
-    ensureFrontierState(state)
     return (
         state.frontierPolicy!.mode === "adaptive" &&
         state.frontierUsage!.escalations < state.frontierPolicy!.maxEscalationsPerRun &&
@@ -379,7 +376,6 @@ function canStartEpisode(state: RunState): boolean {
 }
 
 function canDispatch(state: RunState, tier: FrontierTier): boolean {
-    ensureFrontierState(state)
     return (
         state.frontierUsage!.dispatches < state.frontierPolicy!.maxDispatchesPerRun &&
         (tier === "low" ||
@@ -424,15 +420,4 @@ function requestFingerprint(
 
 function hashJson(value: unknown): string {
     return createHash("sha256").update(JSON.stringify(value)).digest("hex")
-}
-
-function ensureFrontierState(state: RunState): void {
-    state.frontierPolicy ??= {
-        mode: "disabled",
-        maxEscalationsPerRun: 2,
-        maxDispatchesPerRun: 3,
-        maxHighDispatchesPerRun: 1,
-    }
-    state.frontierUsage ??= { escalations: 0, dispatches: 0, highDispatches: 0 }
-    state.frontierHistory ??= []
 }

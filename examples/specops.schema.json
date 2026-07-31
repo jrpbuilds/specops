@@ -130,6 +130,15 @@
         "questions": {
             "type": "object",
             "additionalProperties": false,
+            "required": [
+                "budgets",
+                "maxPromptLength",
+                "maxOptionIdLength",
+                "maxOptionLabelLength",
+                "maxOtherTextLength",
+                "maxMarkerBytes",
+                "maxQuestionsPerMarker"
+            ],
             "properties": {
                 "budgets": {
                     "type": "object",
@@ -149,7 +158,8 @@
                 "maxOptionIdLength": { "type": "integer", "minimum": 1 },
                 "maxOptionLabelLength": { "type": "integer", "minimum": 1 },
                 "maxOtherTextLength": { "type": "integer", "minimum": 1 },
-                "maxMarkerBytes": { "type": "integer", "minimum": 1 }
+                "maxMarkerBytes": { "type": "integer", "minimum": 1 },
+                "maxQuestionsPerMarker": { "type": "integer", "minimum": 1 }
             }
         },
         "review": {

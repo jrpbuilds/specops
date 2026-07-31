@@ -16,6 +16,8 @@ export const TOOL_IDS = {
     completeAction: "specops_complete_action",
     /** Record an answer to a worker-raised pending question. */
     answerQuestion: "specops_answer_question",
+    /** Answer multiple pending questions in a single transaction. */
+    answerQuestions: "specops_answer_questions",
     /** Record that the user dismissed the native question UI without answering. */
     dismissQuestion: "specops_dismiss_question",
     /** Resolve a pending checkpoint and resume scheduling. */

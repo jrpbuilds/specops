@@ -100,7 +100,7 @@ describe("final SpecOps policy", () => {
     it("accepts a bounded escalation only when it adds a new requirement", () => {
         const routed = requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements
         const state = {
-            version: 2 as const,
+            version: 3 as const,
             mode: "automatic" as const,
             goal: "test",
             baseline: "abc",
@@ -117,12 +117,18 @@ describe("final SpecOps policy", () => {
             artifacts: {},
             invalidations: [],
             repairs: [],
+            reviewSubmissions: [],
+            repairTasks: [],
+            frontierPolicy: structuredClone(DEFAULT_CONFIG.frontier),
+            frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+            frontierHistory: [],
             questionHistory: [],
             questionBudgetUsage: {
                 questionsRaised: 0,
                 questionsByDispatch: {},
                 fingerprintCounts: {},
             },
+            checkpointHistory: [],
             createdAt: "now",
             updatedAt: "now",
             status: "running" as const,
@@ -474,7 +480,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function automaticState(): RunState {
     const assessed = assessment()
     return {
-        version: 2,
+        version: 3,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -491,12 +497,18 @@ function automaticState(): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
+        frontierPolicy: structuredClone(DEFAULT_CONFIG.frontier),
+        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+        frontierHistory: [],
         questionHistory: [],
         questionBudgetUsage: {
             questionsRaised: 0,
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",

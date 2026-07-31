@@ -56,12 +56,13 @@ const QUESTION_ELIGIBLE_AGENTS: ReadonlySet<AgentId> = new Set<AgentId>([
 
 /** Strict policy for when a worker may raise a question marker. */
 const QUESTION_POLICY = [
-    "You may emit exactly one `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` marker, and only when ALL of the following hold:",
+    "You may emit up to three `<!-- specops-question: {prompt, options, allowOther?, impact?} -->` markers, and only when ALL of the following hold for each question:",
     "(a) the choice cannot be resolved by inspecting the repository or repository conventions;",
     "(b) at least two remaining outcomes are materially different;",
     "(c) choosing incorrectly would alter requirements, public behaviour, safety, validation, or an irreversible design decision;",
     "(d) a reversible low-risk assumption is insufficient.",
     "NEVER raise a question for naming, formatting, minor implementation preferences, progress updates, permission to continue, ordinary uncertainty, or anything resolvable from repository conventions.",
+    'Mark exactly one option per question with `"recommended": true` when you have a recommendation. At most one recommended option per question.',
     "Use the typed escalation marker for requirement changes that do not require a human decision.",
     "Never emit both an escalation marker and a question marker in the same output.",
 ].join(" ")
@@ -132,12 +133,18 @@ export function promptText(id: AgentId): string {
             "DIRECTIVE HANDLING:",
             "- dispatch: launch exactly the returned worker via task, then submit the unmodified output through " +
                 `${TOOL_IDS.completeAction}.`,
-            "- ask-question: Call the `question` tool passing the directive's `questionTool` object " +
-                "verbatim as the single element of the `questions` array parameter. " +
-                "After the user selects an option or provides Other text, call " +
-                `${TOOL_IDS.answerQuestion} with the questionId and exactly one of selectedOption or otherText. ` +
-                "Never rewrite the question or options. If the user dismisses the question UI without answering, " +
-                `call ${TOOL_IDS.dismissQuestion}. Do not dispatch a worker while a question is pending.`,
+            "- ask-question: Call the `question` tool passing the directive's `questionTools` array " +
+                "directly as the `questions` array parameter. " +
+                "When only one question is present, this renders a single-question UI; " +
+                "when multiple are present, this renders a multi-step wizard. " +
+                "Pass the selected option value back unchanged as `selectedOption` " +
+                "(the option `label` is the canonical option id the backend validates against). " +
+                "After the user answers all questions, call " +
+                `${TOOL_IDS.answerQuestions} once with an array of {questionId, selectedOption?, otherText?} ` +
+                "answers — exactly one entry per pending question, exactly one of selectedOption or otherText each. " +
+                "Never rewrite the questions or options, and never split a batch across multiple calls. " +
+                "If the user dismisses the question UI without answering, " +
+                `call ${TOOL_IDS.dismissQuestion} for each question id. Do not dispatch a worker while questions are pending.`,
             "- checkpoint: Call the `question` tool passing the directive's `questionTool` object " +
                 "verbatim as the single element of the `questions` array parameter. " +
                 "When the user selects 'Continue' or dismisses the question, call " +

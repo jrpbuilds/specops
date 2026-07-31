@@ -24,10 +24,19 @@
   Resume targets must be consumed at most once.
 - Never treat an explicit blocker, an exhausted budget, or an unverifiable
   decision as successful phase completion.
-- Keep changes to persisted state compatible with existing version-2 runs by
-  supplying safe defaults for newly added fields.
 - When configuration or agent catalogues change, update the schema, example,
   documentation, generated files, and packed-install coverage together.
+
+## Version compatibility
+
+- Do not add backward-compatibility or migration code for features unless
+  explicitly requested. Assume all runs are fresh for the current version; do
+  not normalize, migrate, or preserve superseded state shapes, field names, or
+  legacy persisted records on read.
+- When a type or persisted shape changes, change it directly. Remove obsolete
+  fields and their handling rather than keeping both old and new forms alive.
+- The only exception is an explicit user request to preserve compatibility
+  with previously persisted data.
 
 ## Validation
 

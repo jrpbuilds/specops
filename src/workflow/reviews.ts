@@ -22,7 +22,7 @@ export type Judgment = {
     findings: AssuranceFinding[]
 }
 
-/** Parse a strict judgment; the engine handles legacy empty-finding failures. */
+/** Parse a strict judgment; the engine handles empty-finding failures. */
 export function parseJudgment(output: string): Judgment {
     const value = parseObject(output, "judgment")
     assertAllowedKeys(value, new Set(["verdict", "summary", "findings"]), "judgment")
@@ -160,7 +160,7 @@ export function leanLedgerFromSubmission(submission: ReviewSubmission): ReviewLe
 
 /** Return submissions that were produced for the current implementation and policy. */
 export function currentReviewSubmissions(state: RunState): ReviewSubmission[] {
-    return (state.reviewSubmissions ?? []).filter(
+    return state.reviewSubmissions.filter(
         submission =>
             submission.implementationDiffHash === state.implementationDiffHash &&
             submission.policyHash === state.requirements.policyHash &&

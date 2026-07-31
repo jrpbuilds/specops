@@ -71,15 +71,14 @@ export function configuredModels(
 }
 
 /**
- * Build an editable complete mapping from a v1 or v2 manifest.
+ * Build an editable complete mapping from a current manifest.
  *
- * Legacy model values are retained only when OpenCode currently exposes them.
- * The registry default may now be blank (meaning "use OpenCode's global
- * default model"), so a missing/blank model is valid and not unresolved; only
- * a non-blank model that is not currently available is flagged unresolved.
+ * The registry default may be blank (meaning "use OpenCode's global default
+ * model"), so a missing/blank model is valid and not unresolved; only a
+ * non-blank model that is not currently available is flagged unresolved.
  */
 export function createManifestDraft(
-    source: { version: 1; agents: Record<string, unknown> } | SpecOpsManifest,
+    source: SpecOpsManifest,
     models: readonly ConfiguredModel[],
 ): ManifestDraft {
     const available = new Set(models.map(model => model.id))
@@ -88,32 +87,13 @@ export function createManifestDraft(
 
     for (const id of ALL_AGENT_IDS) {
         const sourceEntry = source.agents[id]
-        const rawSourceModel =
-            sourceEntry &&
-            typeof sourceEntry === "object" &&
-            !Array.isArray(sourceEntry) &&
-            typeof (sourceEntry as { model?: unknown }).model === "string"
-                ? (sourceEntry as { model: string }).model
-                : undefined
-        const sourceModel = rawSourceModel?.trim() ? rawSourceModel : undefined
+        const sourceModel = sourceEntry.model?.trim() ? sourceEntry.model : undefined
         const defaultModel = DEFAULT_MANIFEST.agents[id].model?.trim()
             ? DEFAULT_MANIFEST.agents[id].model
             : undefined
-        const sourceVariant =
-            source.version === 2 &&
-            sourceEntry &&
-            typeof sourceEntry === "object" &&
-            !Array.isArray(sourceEntry) &&
-            typeof (sourceEntry as { variant?: unknown }).variant === "string"
-                ? (sourceEntry as { variant: string }).variant
-                : undefined
+        const sourceVariant = sourceEntry.variant ?? undefined
 
-        const model =
-            source.version === 2
-                ? (sourceModel ?? defaultModel)
-                : sourceModel && available.has(sourceModel)
-                  ? sourceModel
-                  : defaultModel
+        const model = sourceModel ?? defaultModel
 
         agents[id] = {
             ...(model ? { model } : {}),

@@ -4,7 +4,7 @@ import type { RunState } from "../src/types.js"
 
 function state(overrides: Partial<RunState> = {}): RunState {
     const base: RunState = {
-        version: 2,
+        version: 3,
         mode: "interactive",
         goal: "test",
         baseline: "abc",
@@ -65,12 +65,23 @@ function state(overrides: Partial<RunState> = {}): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
+        frontierPolicy: {
+            mode: "disabled",
+            maxEscalationsPerRun: 2,
+            maxDispatchesPerRun: 3,
+            maxHighDispatchesPerRun: 1,
+        },
+        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+        frontierHistory: [],
         questionHistory: [],
         questionBudgetUsage: {
             questionsRaised: 0,
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",

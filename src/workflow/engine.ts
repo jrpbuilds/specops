@@ -44,7 +44,7 @@ import {
     dismissQuestion,
     flushPendingQuestionOnCancel,
     invalidationForCheckpoint,
-    registerPendingQuestion,
+    registerPendingQuestions,
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
 import { SPEC_NAME_REGEX, validateSpecContent } from "./contracts.js"
@@ -128,7 +128,7 @@ export async function startRun(
 
     const now = new Date().toISOString()
     const state: RunState = {
-        version: 2,
+        version: 3,
         mode: input.mode,
         goal: input.goal,
         baseline: "",
@@ -156,6 +156,7 @@ export async function startRun(
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: now,
         updatedAt: now,
         status: "running",
@@ -268,7 +269,6 @@ export async function issueDirective(
         if (resume) {
             record.resume = {
                 sourceId: resume.sourceId,
-                questionId: resume.questionId,
                 originalDispatchId: resume.originalDispatchId,
                 answerHash: resume.answerHash,
                 phase: resume.phase,
@@ -364,12 +364,12 @@ export async function completeAction(
         const scopeBeforeCompletion = state.scopeTier
         applyClaim(state, parsed.escalation, config)
 
-        if (parsed.question) {
-            // A required question takes precedence over phase completion.
+        if (parsed.questions && parsed.questions.length > 0) {
+            // A required question batch takes precedence over phase completion.
             // The cleaned prose is retained only as dispatch evidence via the
             // output hash; the phase artefact is intentionally not published.
             dispatch.outputHash = hash(parsed.prose)
-            registerPendingQuestion(state, dispatch, parsed.question, config)
+            registerPendingQuestions(state, dispatch, parsed.questions, config)
             dispatch.status = "completed"
         } else if (parsed.frontier) {
             if (state.frontierPolicy?.mode !== "adaptive") {
@@ -438,7 +438,7 @@ export async function completeAction(
         if (
             state.mode === "interactive" &&
             state.status === "running" &&
-            !state.pendingQuestion &&
+            !state.pendingQuestions &&
             !state.pendingFrontier
         ) {
             const checkpointArtifacts = checkpointArtifactsFor(state, action)
@@ -554,6 +554,88 @@ export async function answerQuestionAction(
 }
 
 /**
+ * Answer multiple pending questions in a single transaction.
+ *
+ * Preflight-validates the entire answer batch against the current pending
+ * questions before applying any mutation, so a malformed or partial batch
+ * leaves persisted state unchanged. The run stays paused until every
+ * question in the batch is answered, at which point the resume target is
+ * set and the run resumes.
+ *
+ * The batch must contain exactly one answer for each currently pending
+ * question: no more, no fewer, no duplicates, and no answers for unknown or
+ * already-answered questions. Each answer must supply exactly one of
+ * `selectedOption` or `otherText`.
+ *
+ * @param directory - Repository root directory.
+ * @param change - The change name.
+ * @param answers - Array of question answers (questionId + one of option/otherText).
+ * @param config - Configuration carrying Other-text bounds.
+ * @returns The updated {@link RunState}.
+ * @throws When the answer batch is empty, partial, duplicate, unknown,
+ *     spans more than the active batch, or any individual answer fails
+ *     validation. No state mutation is performed on failure.
+ */
+export async function answerQuestionsAction(
+    directory: string,
+    change: string,
+    answers: Array<{ questionId: string; selectedOption?: string; otherText?: string }>,
+    config: Pick<SpecOpsConfig, "questions">,
+): Promise<RunState> {
+    const state = await readRun(directory, change)
+
+    // Preflight: validate the whole batch against the current pending
+    // questions before applying any answer so a rejected batch cannot leave
+    // the run in a half-answered state.
+    const pending = state.pendingQuestions
+    if (!answers || answers.length === 0) {
+        throw new Error("SpecOps answer batch must contain at least one answer")
+    }
+    if (!pending || pending.length === 0) {
+        throw new Error("SpecOps answer batch received but no questions are pending")
+    }
+    if (answers.length !== pending.length) {
+        throw new Error(
+            `SpecOps answer batch must answer every pending question ` +
+                `(expected ${pending.length}, received ${answers.length})`,
+        )
+    }
+    const pendingIds = new Set(pending.map(q => q.id))
+    const seenAnswerIds = new Set<string>()
+    for (const answer of answers) {
+        if (!answer.questionId || !answer.questionId.trim()) {
+            throw new Error("SpecOps answer batch contains an empty question id")
+        }
+        if (!pendingIds.has(answer.questionId)) {
+            throw new Error(
+                `SpecOps answer batch references unknown or already-answered question: ${answer.questionId}`,
+            )
+        }
+        if (seenAnswerIds.has(answer.questionId)) {
+            throw new Error(
+                `SpecOps answer batch contains a duplicate question id: ${answer.questionId}`,
+            )
+        }
+        seenAnswerIds.add(answer.questionId)
+        const hasOption = answer.selectedOption !== undefined
+        const hasOther = answer.otherText !== undefined
+        if (hasOption === hasOther) {
+            throw new Error(
+                `SpecOps answer for ${answer.questionId} must provide exactly one of selectedOption or otherText`,
+            )
+        }
+    }
+    // The batch answers every pending question exactly once; apply it.
+
+    for (const answer of answers) {
+        answerQuestion(state, answer.questionId, answer.selectedOption, answer.otherText, config)
+    }
+    await writeArtifactIndex(directory, change, state)
+    await writeRun(directory, change, state)
+    return state
+}
+
+/**
  * Record that the user dismissed the native question UI.
  *
  * The run is paused with the pending question retained for re-presentation.
@@ -619,7 +701,6 @@ export async function resumeCheckpointAction(
     // hashes) the checkpoint is stale: record it and resume scheduling without
     // applying the user's feedback against invalidated outputs.
     if (!isCheckpointBindingCurrent(state, pending)) {
-        state.checkpointHistory ??= []
         state.checkpointHistory.push({
             dispatchId: pending.dispatchId,
             capability: pending.capability,
@@ -670,7 +751,6 @@ export async function resumeCheckpointAction(
         invalidate(state, invalidatedArtifacts, "checkpoint feedback")
         state.resumeTarget = {
             sourceId: pending.dispatchId,
-            questionId: pending.dispatchId,
             originalDispatchId: pending.dispatchId,
             phase: pending.artifacts[0]?.artifact ?? "proposal",
             capability: pending.capability,
@@ -697,7 +777,7 @@ export async function resumeCheckpointAction(
         feedbackHash,
         invalidatedArtifacts,
     }
-    state.checkpointHistory ??= []
+
     state.checkpointHistory.push(record)
     state.pendingCheckpoint = undefined
     state.status = "running"
@@ -746,7 +826,7 @@ export async function cancelRun(
     // state is consistent and the pause reason is never left dangling.
     if (state.pendingCheckpoint) {
         const pending = state.pendingCheckpoint
-        state.checkpointHistory ??= []
+
         state.checkpointHistory.push({
             dispatchId: pending.dispatchId,
             capability: pending.capability,
@@ -789,7 +869,7 @@ export async function finalizeRun(
 ): Promise<RunState> {
     const state = await readRun(directory, change)
 
-    if (state.status === "paused" && (state.pendingQuestion || state.pendingCheckpoint)) {
+    if (state.status === "paused" && (state.pendingQuestions || state.pendingCheckpoint)) {
         await writeRun(directory, change, state)
         return state
     }
@@ -894,7 +974,7 @@ export async function finalizeRun(
         repairTasks: state.repairTasks,
         decisions: state.decisions,
         questionHistory: state.questionHistory,
-        checkpointHistory: state.checkpointHistory ?? [],
+        checkpointHistory: state.checkpointHistory,
         frontierUsage: state.frontierUsage,
         frontierHistory: state.frontierHistory,
     }
@@ -1077,12 +1157,12 @@ async function persistActionResult(
             const dispatch = state.dispatches.find(item => item.id === action.id)
             if (!dispatch) throw new Error("judgment dispatch provenance is missing")
             if (judgment.verdict === "FAIL" && judgment.findings.length === 0) {
-                const legacyMode: RepairMode =
+                const repairMode: RepairMode =
                     artifact === "correctness-judgment" ? "implementation-defect" : "spec-mismatch"
                 await writeArtifact(directory, change, file, output)
                 recordArtifact(state, artifact, action.agent, output, action.purpose)
-                if (!queueReviewFrontier(state, dispatch, artifact, legacyMode, judgment.summary)) {
-                    scheduleRepairOrOutcome(state, legacyMode, judgment.summary)
+                if (!queueReviewFrontier(state, dispatch, artifact, repairMode, judgment.summary)) {
+                    scheduleRepairOrOutcome(state, repairMode, judgment.summary)
                 }
                 return
             }
@@ -1186,7 +1266,7 @@ async function saveLeanAssuranceBundle(
         throw new Error("failed Lean judgment requires a configured blocking finding")
     }
     await verifySubmissionEvidence(directory, change, state, submission.findings, config)
-    state.reviewSubmissions ??= []
+
     state.reviewSubmissions.push(submission)
     const ledger = leanLedgerFromSubmission(submission)
     const normalizedLedgerOutput = JSON.stringify(ledger)
@@ -1263,7 +1343,7 @@ async function admitReviewSubmission(
     if (Buffer.byteLength(JSON.stringify(projected)) > config.review.maxContextBytes) {
         throw new Error("current review submissions exceed review.maxContextBytes")
     }
-    state.reviewSubmissions ??= []
+
     state.reviewSubmissions.push(submission)
 }
 
@@ -1719,7 +1799,7 @@ function scheduleRepairOrOutcome(
     const syntheticLedger: ReviewLedger = {
         findings: [
             {
-                id: stableId("legacy-finding", mode, summary),
+                id: stableId("synthetic-finding", mode, summary),
                 sourceFindingIds: [],
                 severity: "HIGH",
                 mode,
@@ -1826,7 +1906,7 @@ function scheduleLedgerRepairOrOutcome(
         beforeDiffHash: state.implementationDiffHash,
         at: now,
     }
-    state.repairTasks ??= []
+
     state.repairTasks.push(task)
     state.pendingRepair = {
         mode: modes[0]!,
@@ -1901,8 +1981,8 @@ async function refreshImplementationBinding(
     if (state.status !== "running" || state.artifacts.implementation?.validity !== "valid") {
         return false
     }
-    // Non-SHA baselines exist only in legacy/synthetic compatibility states,
-    // where repository diff collection is not guaranteed to be available.
+    // Repository diff collection requires a real git commit baseline; skip
+    // the refresh for synthetic test baselines where no git context exists.
     if (!/^[0-9a-f]{40}$/i.test(state.baseline)) return false
     const current = hash(await collectDiff(directory, maxDiffBytes))
     const previous = state.implementationDiffHash
@@ -2200,7 +2280,7 @@ function answerHashes(state: RunState): Record<string, string> {
     const questionHashes = state.questionHistory
         .filter(record => record.outcome === "answered" && record.answerHash)
         .map(record => [record.id, record.answerHash] as [string, string])
-    const checkpointHashes = (state.checkpointHistory ?? [])
+    const checkpointHashes = state.checkpointHistory
         .filter(record => record.outcome === "feedback" && record.feedbackHash)
         .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
     const result: Record<string, string> = {}

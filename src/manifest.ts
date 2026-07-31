@@ -62,14 +62,6 @@ export function validateManifest(value: unknown): SpecOpsManifest {
     return value as SpecOpsManifest
 }
 
-/** Return whether a parsed value is recognisably a legacy v1 manifest. */
-export function isLegacyManifest(value: unknown): value is {
-    version: 1
-    agents: Record<string, unknown>
-} {
-    return isRecord(value) && value.version === 1 && isRecord(value.agents)
-}
-
 /**
  * Combine user-selected model settings with registry-owned workflow policy.
  */

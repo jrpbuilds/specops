@@ -19,6 +19,7 @@ import {
     resumeCheckpointAction,
     startRun,
     answerQuestionAction,
+    answerQuestionsAction,
     dismissQuestionAction,
 } from "./workflow/engine.js"
 import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js"
@@ -158,6 +159,38 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     state,
                 )
                 return summarize(state, args.change, "Question answered")
+            },
+        }),
+        [TOOL_IDS.answerQuestions]: tool({
+            description: "Answer multiple pending worker-raised questions in a single transaction.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                answers: tool.schema.array(
+                    tool.schema.object({
+                        questionId: tool.schema.string().min(1),
+                        selectedOption: tool.schema.string().optional(),
+                        otherText: tool.schema.string().optional(),
+                    }),
+                ),
+            },
+            async execute(args, context) {
+                const state = await answerQuestionsAction(
+                    context.directory,
+                    args.change,
+                    args.answers.map(a => ({
+                        questionId: a.questionId,
+                        selectedOption: a.selectedOption,
+                        otherText: a.otherText,
+                    })),
+                    await readConfig(context.directory),
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return summarize(state, args.change, "Questions answered")
             },
         }),
         [TOOL_IDS.dismissQuestion]: tool({

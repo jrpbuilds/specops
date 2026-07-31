@@ -19,7 +19,7 @@ const COMMAND_NAME = "specops.models.configure"
 const BACK = Symbol("specops-back")
 
 /**
- * Register the command-palette entry and one-per-launch legacy upgrade prompt.
+ * Register the command-palette entry for the agent model editor.
  */
 export function registerModelSettings(api: TuiPluginApi): void {
     let editorOpen = false
@@ -55,25 +55,7 @@ export function registerModelSettings(api: TuiPluginApi): void {
         ],
     })
 
-    let checkedLegacyManifest = false
-    const unsubscribeConnected = api.event.on("server.connected", () => {
-        if (checkedLegacyManifest) return
-        checkedLegacyManifest = true
-        return (async () => {
-            const inspection = await inspectAgentManifest()
-            if (inspection.status === "upgrade-required") {
-                api.ui.toast({
-                    variant: "warning",
-                    title: "SpecOps model settings need updating",
-                    message:
-                        "The legacy v1 manifest is preserved. Complete the model mapping to upgrade it.",
-                })
-                return openEditor()
-            }
-        })()
-    })
     api.lifecycle.onDispose(unregisterCommand)
-    api.lifecycle.onDispose(unsubscribeConnected)
 }
 
 /**
@@ -92,12 +74,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
         return
     }
 
-    const source =
-        inspection.status === "ready"
-            ? inspection.manifest
-            : inspection.status === "upgrade-required"
-              ? inspection.legacy
-              : DEFAULT_MANIFEST
+    const source = inspection.status === "ready" ? inspection.manifest : DEFAULT_MANIFEST
     const expectedContentHash = inspection.contentHash
     const draft = createManifestDraft(source, models)
     const initial = structuredClone(draft.manifest)
@@ -171,9 +148,6 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 title: "Save SpecOps model mappings?",
                 message: [
                     `Schema v2 will contain all ${ALL_AGENT_IDS.length} agents.`,
-                    ...(source.version === 1
-                        ? ["The legacy schema-v1 manifest will be upgraded."]
-                        : []),
                     `${changed} agent selection${changed === 1 ? "" : "s"} changed.`,
                     "Workflow steps, prompts, tools, and permissions remain managed by SpecOps.",
                 ].join("\n"),

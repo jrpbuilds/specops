@@ -6,7 +6,6 @@ import type { Config } from "@opencode-ai/plugin"
 import { ALL_AGENT_IDS } from "./capabilities/ids.js"
 import {
     DEFAULT_MANIFEST,
-    isLegacyManifest,
     manifestAgentConfig,
     validateManifest,
     type SpecOpsManifest,
@@ -14,7 +13,7 @@ import {
 
 /** Result of loading or materialising the agent model manifest. */
 export type ManifestMaterialisation = {
-    status: "ready" | "upgrade-required"
+    status: "ready"
     manifest: SpecOpsManifest
     path: string
     replacedInvalidFile: boolean
@@ -25,12 +24,6 @@ export type ManifestInspection =
     | {
           status: "ready"
           manifest: SpecOpsManifest
-          path: string
-          contentHash: string
-      }
-    | {
-          status: "upgrade-required"
-          legacy: { version: 1; agents: Record<string, unknown> }
           path: string
           contentHash: string
       }
@@ -66,39 +59,20 @@ export function resolveManifestPath(
 }
 
 /**
- * Load a v2 manifest, preserve a legacy v1 file, or repair other invalid data.
+ * Load a valid current manifest, or reset invalid/missing data to defaults.
  *
- * A legacy file is never rewritten here. The current session safely receives
- * packaged v2 defaults and the TUI is responsible for a deliberate upgrade.
+ * Only the current manifest version is accepted; any other file is treated as
+ * invalid and replaced with packaged defaults.
  */
 export async function materializeAgentManifest(
     destination: string = resolveManifestPath(),
 ): Promise<ManifestMaterialisation> {
     try {
-        const parsed = JSON.parse(await readFile(destination, "utf8")) as unknown
-        if (isLegacyManifest(parsed)) {
-            return {
-                status: "upgrade-required",
-                manifest: structuredClone(DEFAULT_MANIFEST),
-                path: destination,
-                replacedInvalidFile: false,
-            }
-        }
-        try {
-            return {
-                status: "ready",
-                manifest: validateManifest(parsed),
-                path: destination,
-                replacedInvalidFile: false,
-            }
-        } catch {
-            await writeManifestAtomically(destination, DEFAULT_MANIFEST)
-            return {
-                status: "ready",
-                manifest: structuredClone(DEFAULT_MANIFEST),
-                path: destination,
-                replacedInvalidFile: true,
-            }
+        return {
+            status: "ready",
+            manifest: validateManifest(JSON.parse(await readFile(destination, "utf8"))),
+            path: destination,
+            replacedInvalidFile: false,
         }
     } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT"
@@ -119,19 +93,10 @@ export async function inspectAgentManifest(
     try {
         const raw = await readFile(destination, "utf8")
         const contentHash = hashContent(raw)
-        const parsed = JSON.parse(raw) as unknown
-        if (isLegacyManifest(parsed)) {
-            return {
-                status: "upgrade-required",
-                legacy: parsed,
-                path: destination,
-                contentHash,
-            }
-        }
         try {
             return {
                 status: "ready",
-                manifest: validateManifest(parsed),
+                manifest: validateManifest(JSON.parse(raw)),
                 path: destination,
                 contentHash,
             }

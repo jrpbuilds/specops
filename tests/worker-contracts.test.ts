@@ -8,7 +8,7 @@
  * verify that the scheduler dispatch prompts include the generated contract
  * strings so agents receive the exact expected output shape.
  */
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -79,7 +79,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function standardState(): RunState {
     const assessed = standardAssessment
     return {
-        version: 2,
+        version: 3,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -96,12 +96,18 @@ function standardState(): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
+        frontierPolicy: structuredClone(DEFAULT_CONFIG.frontier),
+        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+        frontierHistory: [],
         questionHistory: [],
         questionBudgetUsage: {
             questionsRaised: 0,
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",
@@ -839,33 +845,5 @@ describe("scheduler contract consumption", () => {
         const action = nextAction(state)
         expect(action?.capability).toBe("general-risk")
         expect(action?.purpose).toBe("independent-review")
-    })
-})
-
-describe("version-2 review state compatibility", () => {
-    it("supplies safe defaults and converts a legacy pending repair once", async () => {
-        const run = await persistedRun()
-        const legacy = {
-            ...run.state,
-            pendingRepair: {
-                mode: "implementation-defect" as const,
-                summary: "Legacy repair.",
-            },
-        }
-        delete (legacy as Partial<RunState>).reviewSubmissions
-        delete (legacy as Partial<RunState>).repairTasks
-        await writeFile(
-            path.join(changeRoot(run.directory, run.change), "specops-run.json"),
-            `${JSON.stringify(legacy)}\n`,
-        )
-
-        const migrated = await readRun(run.directory, run.change)
-        expect(migrated.reviewSubmissions).toEqual([])
-        expect(migrated.repairTasks).toHaveLength(1)
-        expect(migrated.pendingRepair?.taskId).toBe(migrated.repairTasks?.[0]?.id)
-        expect(migrated.repairTasks?.[0]).toMatchObject({
-            target: "implementation",
-            status: "queued",
-        })
     })
 })

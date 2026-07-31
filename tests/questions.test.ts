@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { DEFAULT_CONFIG } from "../src/config.js"
+import { DEFAULT_CONFIG, validateConfig } from "../src/config.js"
 import { parseWorkerOutput } from "../src/worker_output.js"
 import {
     answerQuestion,
@@ -13,13 +13,13 @@ import {
     invalidationForImpact,
     pendingQuestionBlockView,
     questionFingerprint,
-    registerPendingQuestion,
+    registerPendingQuestions,
     resolveImpact,
     validImpactsForPhase,
 } from "../src/workflow/questions.js"
 import { nextAction, nextDirective } from "../src/workflow/scheduler.js"
-import { changeRoot, writeRun } from "../src/state/store.js"
-import { cancelRun, completeAction } from "../src/workflow/engine.js"
+import { changeRoot, readRun, writeRun } from "../src/state/store.js"
+import { answerQuestionsAction, cancelRun, completeAction } from "../src/workflow/engine.js"
 import { requirementsFor } from "../src/routing/policy.js"
 import type {
     Assessment,
@@ -71,7 +71,7 @@ const QUESTION_MARKER = (q: Partial<WorkerQuestion> = {}): string =>
 function automaticState(overrides: Partial<RunState> = {}): RunState {
     const assessed = assessment()
     return {
-        version: 2,
+        version: 3,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -88,12 +88,18 @@ function automaticState(overrides: Partial<RunState> = {}): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
+        frontierPolicy: structuredClone(DEFAULT_CONFIG.frontier),
+        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+        frontierHistory: [],
         questionHistory: [],
         questionBudgetUsage: {
             questionsRaised: 0,
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",
@@ -124,23 +130,31 @@ describe("worker question marker parsing", () => {
     it("parses a valid question marker and strips it from prose", () => {
         const out = `Some prose.\n${QUESTION_MARKER()}\nMore prose.`
         const parsed = parseWorkerOutput(out, cfg, "proposal", "planning")
-        expect(parsed.question?.options).toHaveLength(2)
-        expect(parsed.question?.allowOther).toBe(true)
-        expect(parsed.question?.impact).toBe("requirements")
+        expect(parsed.questions?.[0]?.options).toHaveLength(2)
+        expect(parsed.questions?.[0]?.allowOther).toBe(true)
+        expect(parsed.questions?.[0]?.impact).toBe("requirements")
         expect(parsed.prose).not.toContain("specops-question")
         expect(parsed.prose).toContain("Some prose.")
     })
 
     it("returns no question when no marker is present", () => {
         const parsed = parseWorkerOutput("plain prose only", cfg, "proposal", "planning")
-        expect(parsed.question).toBeUndefined()
+        expect(parsed.questions).toBeUndefined()
     })
 
-    it("rejects multiple question markers", () => {
-        const out = `${QUESTION_MARKER()}\n${QUESTION_MARKER()}`
+    it("rejects more than maxQuestionsPerMarker question markers", () => {
+        const limit = cfg.questions.maxQuestionsPerMarker
+        const out = Array.from({ length: limit + 1 }, () => QUESTION_MARKER()).join("\n")
         expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(
-            /multiple question markers/,
+            /more than.*question markers/,
         )
+    })
+
+    it("parses up to maxQuestionsPerMarker question markers", () => {
+        const limit = cfg.questions.maxQuestionsPerMarker
+        const out = Array.from({ length: limit }, () => QUESTION_MARKER()).join("\n")
+        const parsed = parseWorkerOutput(out, cfg, "proposal", "planning")
+        expect(parsed.questions).toHaveLength(limit)
     })
 
     it("rejects both an escalation and a question marker", () => {
@@ -156,6 +170,48 @@ describe("worker question marker parsing", () => {
         const out = `${esc}\n${QUESTION_MARKER()}`
         expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(
             /both an escalation and a question/,
+        )
+    })
+
+    it("parses a recommended option", () => {
+        const out = `<!-- specops-question: ${JSON.stringify({
+            prompt: "p",
+            options: [
+                { id: "a", label: "A", recommended: true },
+                { id: "b", label: "B" },
+            ],
+            impact: "requirements",
+        })} -->`
+        const parsed = parseWorkerOutput(out, cfg, "proposal", "planning")
+        expect(parsed.questions?.[0]?.options[0]?.recommended).toBe(true)
+        expect(parsed.questions?.[0]?.options[1]?.recommended).toBeUndefined()
+    })
+
+    it("rejects more than one recommended option per question", () => {
+        const out = `<!-- specops-question: ${JSON.stringify({
+            prompt: "p",
+            options: [
+                { id: "a", label: "A", recommended: true },
+                { id: "b", label: "B", recommended: true },
+            ],
+            impact: "requirements",
+        })} -->`
+        expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(
+            /at most one recommended option/,
+        )
+    })
+
+    it("rejects non-boolean recommended field", () => {
+        const out = `<!-- specops-question: ${JSON.stringify({
+            prompt: "p",
+            options: [
+                { id: "a", label: "A", recommended: "yes" },
+                { id: "b", label: "B" },
+            ],
+            impact: "requirements",
+        })} -->`
+        expect(() => parseWorkerOutput(out, cfg, "proposal", "planning")).toThrow(
+            /recommended must be a boolean/,
         )
     })
 
@@ -223,7 +279,7 @@ describe("worker question marker parsing", () => {
     it("ignores markers inside fenced code blocks", () => {
         const out = "```\n" + QUESTION_MARKER() + "\n```"
         const parsed = parseWorkerOutput(out, cfg, "proposal", "planning")
-        expect(parsed.question).toBeUndefined()
+        expect(parsed.questions).toBeUndefined()
     })
 
     it("enforces a maximum marker size", () => {
@@ -293,13 +349,13 @@ describe("question registration and budgets", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         expect(pending).toBeDefined()
-        expect(state.pendingQuestion?.id).toBe(pending!.id)
-        expect(state.pendingQuestion?.impact).toBe("requirements")
+        expect(state.pendingQuestions?.[0]?.id).toBe(pending![0]!.id)
+        expect(state.pendingQuestions?.[0]?.impact).toBe("requirements")
         expect(state.questionBudgetUsage?.questionsRaised).toBe(1)
         expect(state.questionBudgetUsage?.questionsByDispatch["d1"]).toBe(1)
-        expect(state.questionBudgetUsage?.fingerprintCounts[pending!.fingerprint]).toBe(1)
+        expect(state.questionBudgetUsage?.fingerprintCounts[pending![0]!.fingerprint]).toBe(1)
     })
 
     it("blocks when per-run budget is exhausted", () => {
@@ -319,7 +375,7 @@ describe("question registration and budgets", () => {
                 { id: "b", label: "B" },
             ],
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         expect(pending).toBeUndefined()
         expect(state.status).toBe("blocked")
         expect(state.blockReason).toBe("budget-exhausted")
@@ -339,14 +395,14 @@ describe("question registration and budgets", () => {
             impact: "requirements",
         }
         // First registration succeeds.
-        const first = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
+        const first = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
         // Cancel the question (no answer recorded, so answerHashes unchanged
         // and the binding hash — and therefore fingerprint — stays the same).
-        cancelQuestion(state, first.id)
+        cancelQuestion(state, first[0]!.id)
         // A second dispatch attempts the same question fingerprint.
         const d2 = dispatch("d2", "planning")
         state.dispatches.push(d2)
-        const pending = registerPendingQuestion(state, d2, q, DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d2, [q], DEFAULT_CONFIG)
         expect(pending).toBeUndefined()
         expect(state.status).toBe("blocked")
         expect(state.blockReason).toBe("budget-exhausted")
@@ -367,16 +423,16 @@ describe("ansering questions", () => {
             allowOther: true,
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        const record = answerQuestion(state, pending.id, "a", undefined, DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        const record = answerQuestion(state, pending![0]!.id, "a", undefined, DEFAULT_CONFIG)
         expect(record.outcome).toBe("answered")
         expect(record.selectedOptionId).toBe("a")
         expect(record.selectedOptionLabel).toBe("A")
         expect(record.answerHash).toBeTruthy()
         expect(record.invalidatedArtifacts).toContain("proposal")
-        expect(state.pendingQuestion).toBeUndefined()
+        expect(state.pendingQuestions).toBeUndefined()
         expect(state.status).toBe("running")
-        expect(state.resumeTarget?.questionId).toBe(pending.id)
+        expect(state.resumeTarget?.sourceId).toBe(pending![0]!.id)
         expect(state.resumeTarget?.consumed).toBeUndefined()
         expect(state.questionHistory).toHaveLength(1)
     })
@@ -394,8 +450,14 @@ describe("ansering questions", () => {
             allowOther: true,
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        const record = answerQuestion(state, pending.id, undefined, "custom answer", DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        const record = answerQuestion(
+            state,
+            pending![0]!.id,
+            undefined,
+            "custom answer",
+            DEFAULT_CONFIG,
+        )
         expect(record.outcome).toBe("answered")
         expect(record.otherText).toBe("custom answer")
         expect(record.selectedOptionId).toBeUndefined()
@@ -413,10 +475,10 @@ describe("ansering questions", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        expect(() => answerQuestion(state, pending.id, undefined, "other", DEFAULT_CONFIG)).toThrow(
-            /does not allow Other/,
-        )
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        expect(() =>
+            answerQuestion(state, pending![0]!.id, undefined, "other", DEFAULT_CONFIG),
+        ).toThrow(/does not allow Other/)
     })
 
     it("rejects both option and Other text", () => {
@@ -432,8 +494,8 @@ describe("ansering questions", () => {
             allowOther: true,
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        expect(() => answerQuestion(state, pending.id, "a", "other", DEFAULT_CONFIG)).toThrow(
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        expect(() => answerQuestion(state, pending![0]!.id, "a", "other", DEFAULT_CONFIG)).toThrow(
             /either an option or Other/,
         )
     })
@@ -450,9 +512,9 @@ describe("ansering questions", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
         expect(() =>
-            answerQuestion(state, pending.id, undefined, undefined, DEFAULT_CONFIG),
+            answerQuestion(state, pending![0]!.id, undefined, undefined, DEFAULT_CONFIG),
         ).toThrow(/option or Other/)
     })
 
@@ -468,7 +530,7 @@ describe("ansering questions", () => {
             ],
             impact: "requirements",
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         expect(() => answerQuestion(state, "wrong-id", "a", undefined, DEFAULT_CONFIG)).toThrow(
             /not pending/,
         )
@@ -486,12 +548,12 @@ describe("ansering questions", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
         // Mutate authoritative inputs so the binding hash no longer matches.
         state.requirements.policyHash = "changed"
-        expect(() => answerQuestion(state, pending.id, "a", undefined, DEFAULT_CONFIG)).toThrow(
-            /stale/,
-        )
+        expect(() =>
+            answerQuestion(state, pending![0]!.id, "a", undefined, DEFAULT_CONFIG),
+        ).toThrow(/stale/)
     })
 })
 
@@ -508,14 +570,14 @@ describe("dismissal and cancellation", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        const record = dismissQuestion(state, pending.id)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        const record = dismissQuestion(state, pending![0]!.id)
         expect(record.outcome).toBe("dismissed")
         expect(state.status).toBe("paused")
         expect(state.pauseReason).toBe("question-dismissed")
         expect(state.resumable).toBe(true)
         // pending question retained for re-presentation
-        expect(state.pendingQuestion?.id).toBe(pending.id)
+        expect(state.pendingQuestions?.[0]?.id).toBe(pending![0]!.id)
         expect(state.questionHistory).toHaveLength(1)
     })
 
@@ -535,12 +597,12 @@ describe("dismissal and cancellation", () => {
             `prose\n${QUESTION_MARKER()}`,
             DEFAULT_CONFIG,
         )
-        expect(completed.pendingQuestion).toBeDefined()
+        expect(completed.pendingQuestions).toBeDefined()
 
         const cancelled = await cancelRun(directory, change, "User stopped.")
         expect(cancelled.status).toBe("cancelled")
         expect(cancelled.outcome?.category).toBe("cancelled")
-        expect(cancelled.pendingQuestion).toBeUndefined()
+        expect(cancelled.pendingQuestions).toBeUndefined()
         expect(cancelled.questionHistory).toHaveLength(1)
         expect(cancelled.questionHistory[0]?.outcome).toBe("cancelled")
     })
@@ -559,27 +621,27 @@ describe("scheduler directives", () => {
             ],
             impact: "requirements",
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         const directive = nextDirective(state)
         expect(directive.type).toBe("ask-question")
         if (directive.type === "ask-question") {
-            expect(directive.question.prompt).toBe("p")
+            expect(directive.questions![0]!.prompt).toBe("p")
             // The questionTool payload must match the OpenCode question-tool shape
             // so the controller can pass it verbatim without field mapping.
-            expect(directive.questionTool).toBeDefined()
-            expect(directive.questionTool.question).toBe("p")
-            expect(directive.questionTool.header).toBeTruthy()
-            expect(directive.questionTool.header.length).toBeLessThanOrEqual(30)
-            expect(directive.questionTool.options).toHaveLength(2)
-            expect(directive.questionTool.options[0]).toMatchObject({
+            expect(directive.questionTools[0]).toBeDefined()
+            expect(directive.questionTools[0].question).toBe("p")
+            expect(directive.questionTools[0].header).toBeTruthy()
+            expect(directive.questionTools[0].header.length).toBeLessThanOrEqual(30)
+            expect(directive.questionTools[0].options).toHaveLength(2)
+            expect(directive.questionTools[0].options[0]).toMatchObject({
                 label: "a",
                 description: "A",
             })
-            expect(directive.questionTool.options[1]).toMatchObject({
+            expect(directive.questionTools[0].options[1]).toMatchObject({
                 label: "b",
                 description: "B",
             })
-            expect(directive.questionTool.custom).toBe(false)
+            expect(directive.questionTools[0].custom).toBe(false)
         }
     })
 
@@ -597,24 +659,175 @@ describe("scheduler directives", () => {
             impact: "design",
             allowOther: true,
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         const directive = nextDirective(state)
         expect(directive.type).toBe("ask-question")
         if (directive.type === "ask-question") {
             // The questionTool maps WorkerQuestionOption.id -> label
             // and WorkerQuestionOption.label -> description for the native tool.
-            expect(directive.questionTool.options).toHaveLength(3)
-            expect(directive.questionTool.options[0]).toMatchObject({
+            expect(directive.questionTools[0].options).toHaveLength(3)
+            expect(directive.questionTools[0].options[0]).toMatchObject({
                 label: "option-1",
                 description: "Monolithic",
             })
-            expect(directive.questionTool.options[2]).toMatchObject({
+            expect(directive.questionTools[0].options[2]).toMatchObject({
                 label: "option-3",
                 description: "Event-driven",
             })
             // allowOther: true must surface as custom: true
-            expect(directive.questionTool.custom).toBe(true)
+            expect(directive.questionTools[0].custom).toBe(true)
         }
+    })
+
+    it("exposes the canonical option id as label and marks recommended in description", () => {
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const q: WorkerQuestion = {
+            prompt: "Which approach?",
+            options: [
+                { id: "simple", label: "Simple approach", recommended: true },
+                { id: "complex", label: "Complex approach" },
+            ],
+            impact: "design",
+        }
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
+        const directive = nextDirective(state)
+        expect(directive.type).toBe("ask-question")
+        if (directive.type === "ask-question") {
+            // The native question tool returns the displayed label verbatim
+            // as the selected option, so the label must be the canonical id
+            // the backend validates against (never "id (Recommended)").
+            expect(directive.questionTools[0].options[0].label).toBe("simple")
+            expect(directive.questionTools[0].options[1].label).toBe("complex")
+            // Recommendation guidance is surfaced in the description instead.
+            expect(directive.questionTools[0].options[0].description).toBe(
+                "Simple approach (Recommended)",
+            )
+            expect(directive.questionTools[0].options[1].description).toBe("Complex approach")
+            // multiple must be false so the native UI selects exactly one.
+            expect(directive.questionTools[0].multiple).toBe(false)
+        }
+    })
+
+    it("registers and presents multiple questions as a multi-step batch", () => {
+        const config = {
+            ...DEFAULT_CONFIG,
+            questions: {
+                ...DEFAULT_CONFIG.questions,
+                budgets: { ...DEFAULT_CONFIG.questions.budgets, maxQuestionsPerDispatch: 3 },
+            },
+        }
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const questions: WorkerQuestion[] = [
+            {
+                prompt: "Which session model?",
+                options: [
+                    { id: "session", label: "Session-based" },
+                    { id: "token", label: "Token-based" },
+                ],
+                impact: "requirements",
+            },
+            {
+                prompt: "Which token expiry?",
+                options: [
+                    { id: "1h", label: "1 hour" },
+                    { id: "24h", label: "24 hours" },
+                    { id: "7d", label: "7 days" },
+                ],
+                allowOther: true,
+                impact: "requirements",
+            },
+        ]
+        const batch = registerPendingQuestions(state, d, questions, config)
+        expect(batch).toHaveLength(2)
+        expect(state.pendingQuestions).toHaveLength(2)
+        expect(state.status).toBe("paused")
+
+        const directive = nextDirective(state)
+        expect(directive.type).toBe("ask-question")
+        if (directive.type === "ask-question") {
+            expect(directive.questionTools).toHaveLength(2)
+            expect(directive.questionTools[0].question).toBe("Which session model?")
+            expect(directive.questionTools[1].question).toBe("Which token expiry?")
+            expect(directive.questionTools[1].custom).toBe(true)
+        }
+    })
+
+    it("stays paused after answering one question from a batch", () => {
+        const config = {
+            ...DEFAULT_CONFIG,
+            questions: {
+                ...DEFAULT_CONFIG.questions,
+                budgets: { ...DEFAULT_CONFIG.questions.budgets, maxQuestionsPerDispatch: 3 },
+            },
+        }
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const questions: WorkerQuestion[] = [
+            {
+                prompt: "Q1?",
+                options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                ],
+                impact: "requirements",
+            },
+            {
+                prompt: "Q2?",
+                options: [
+                    { id: "c", label: "C" },
+                    { id: "d", label: "D" },
+                ],
+                impact: "requirements",
+            },
+        ]
+        const batch = registerPendingQuestions(state, d, questions, config)!
+        answerQuestion(state, batch[0]!.id, "a", undefined, config)
+        expect(state.status).toBe("paused")
+        expect(state.pendingQuestions).toHaveLength(1)
+        expect(state.pendingQuestions?.[0]?.prompt).toBe("Q2?")
+    })
+
+    it("resumes after answering all questions in a batch", () => {
+        const config = {
+            ...DEFAULT_CONFIG,
+            questions: {
+                ...DEFAULT_CONFIG.questions,
+                budgets: { ...DEFAULT_CONFIG.questions.budgets, maxQuestionsPerDispatch: 3 },
+            },
+        }
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const questions: WorkerQuestion[] = [
+            {
+                prompt: "Q1?",
+                options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                ],
+                impact: "requirements",
+            },
+            {
+                prompt: "Q2?",
+                options: [
+                    { id: "c", label: "C" },
+                    { id: "d", label: "D" },
+                ],
+                impact: "requirements",
+            },
+        ]
+        const batch = registerPendingQuestions(state, d, questions, config)!
+        answerQuestion(state, batch[0]!.id, "a", undefined, config)
+        answerQuestion(state, batch[1]!.id, "c", undefined, config)
+        expect(state.status).toBe("running")
+        expect(state.pendingQuestions).toBeUndefined()
+        expect(state.resumeTarget).toBeDefined()
+        expect(state.questionHistory.filter(r => r.outcome === "answered")).toHaveLength(2)
     })
 
     it("returns block pending-question resumable for automatic mode", () => {
@@ -629,13 +842,13 @@ describe("scheduler directives", () => {
             ],
             impact: "requirements",
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         const directive = nextDirective(state)
         expect(directive.type).toBe("block")
         if (directive.type === "block") {
             expect(directive.reason).toBe("pending-question")
             expect(directive.resumable).toBe(true)
-            expect(directive.question).toBe(state.pendingQuestion)
+            expect(directive.questions![0]!).toBe(state.pendingQuestions?.[0])
         }
     })
 
@@ -651,7 +864,7 @@ describe("scheduler directives", () => {
             ],
             impact: "requirements",
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         expect(nextAction(state)).toBeUndefined()
     })
 
@@ -667,7 +880,7 @@ describe("scheduler directives", () => {
             ],
             impact: "requirements",
         }
-        registerPendingQuestion(state, d, q, DEFAULT_CONFIG)
+        registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)
         state.status = "paused"
         state.pauseReason = "pending-question"
         state.resumable = true
@@ -713,8 +926,8 @@ describe("resume target and fresh dispatch", () => {
             ],
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
-        answerQuestion(state, pending.id, "a", undefined, DEFAULT_CONFIG)
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        answerQuestion(state, pending![0]!.id, "a", undefined, DEFAULT_CONFIG)
         expect(state.resumeTarget?.consumed).toBeUndefined()
         const directive = nextDirective(state)
         expect(directive.type).toBe("dispatch")
@@ -745,7 +958,7 @@ describe("stable CLI pending-question view", () => {
             allowOther: true,
             impact: "requirements",
         }
-        const pending = registerPendingQuestion(state, d, q, DEFAULT_CONFIG)!
+        const pending = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
         state.status = "paused"
         state.pauseReason = "pending-question"
         state.resumable = true
@@ -756,14 +969,16 @@ describe("stable CLI pending-question view", () => {
             status: "paused",
             reason: "pending-question",
             resumable: true,
-            question: {
-                id: pending.id,
-                prompt: pending.prompt,
-                options: pending.options,
-                allowOther: pending.allowOther,
-                impact: pending.impact,
-                bindingHash: pending.bindingHash,
-            },
+            questions: [
+                {
+                    id: pending![0]!.id,
+                    prompt: pending![0]!.prompt,
+                    options: pending![0]!.options,
+                    allowOther: pending![0]!.allowOther,
+                    impact: pending![0]!.impact,
+                    bindingHash: pending![0]!.bindingHash,
+                },
+            ],
         })
     })
 
@@ -829,5 +1044,452 @@ describe("binding hash stability", () => {
         state.requirements.policyHash = "changed"
         const after = computeQuestionBindingHash(state, d)
         expect(after).not.toBe(before)
+    })
+})
+
+describe("default configuration supports the full permitted batch", () => {
+    it("registers a full maxQuestionsPerMarker batch under DEFAULT_CONFIG", () => {
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const limit = DEFAULT_CONFIG.questions.maxQuestionsPerMarker
+        const questions: WorkerQuestion[] = Array.from({ length: limit }, (_, i) => ({
+            prompt: `Q${i}?`,
+            options: [
+                { id: "a", label: "A" },
+                { id: "b", label: "B" },
+            ],
+            impact: "requirements",
+        }))
+        // Must not be blocked by the default per-dispatch budget.
+        const batch = registerPendingQuestions(state, d, questions, DEFAULT_CONFIG)
+        expect(batch).toHaveLength(limit)
+        expect(state.status).toBe("paused")
+        expect(state.pendingQuestions).toHaveLength(limit)
+    })
+})
+
+describe("answerQuestionsAction preflight validation", () => {
+    async function setupBatchRun() {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-batch-"))
+        const change = "batch-test"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = automaticState({ mode: "interactive" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        await writeRun(directory, change, state)
+        const questions: WorkerQuestion[] = [
+            {
+                prompt: "Q1?",
+                options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                ],
+                impact: "requirements",
+            },
+            {
+                prompt: "Q2?",
+                options: [
+                    { id: "c", label: "C" },
+                    { id: "d", label: "D", recommended: true },
+                ],
+                allowOther: true,
+                impact: "requirements",
+            },
+        ]
+        const completed = await completeAction(
+            directory,
+            change,
+            "d1",
+            `prose\n${questions
+                .map(
+                    q =>
+                        `<!-- specops-question: ${JSON.stringify({
+                            prompt: q.prompt,
+                            options: q.options,
+                            allowOther: q.allowOther,
+                            impact: q.impact,
+                        })} -->`,
+                )
+                .join("\n")}`,
+            DEFAULT_CONFIG,
+        )
+        expect(completed.pendingQuestions).toHaveLength(2)
+        return { directory, change, state: completed }
+    }
+
+    it("accepts a full valid batch and resumes the run", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        const result = await answerQuestionsAction(
+            directory,
+            change,
+            [
+                { questionId: ids[0]!, selectedOption: "a" },
+                { questionId: ids[1]!, selectedOption: "d" },
+            ],
+            DEFAULT_CONFIG,
+        )
+        expect(result.status).toBe("running")
+        expect(result.pendingQuestions).toBeUndefined()
+        expect(result.resumeTarget).toBeDefined()
+        expect(result.questionHistory.filter(r => r.outcome === "answered")).toHaveLength(2)
+    })
+
+    it("accepts Other text where allowOther is true", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        const result = await answerQuestionsAction(
+            directory,
+            change,
+            [
+                { questionId: ids[0]!, selectedOption: "a" },
+                { questionId: ids[1]!, otherText: "custom expiry" },
+            ],
+            DEFAULT_CONFIG,
+        )
+        expect(result.status).toBe("running")
+        const q2 = result.questionHistory.find(r => r.id === ids[1]!)
+        expect(q2?.otherText).toBe("custom expiry")
+    })
+
+    it("rejects an empty answer array and leaves state unchanged", async () => {
+        const { directory, change } = await setupBatchRun()
+        await expect(answerQuestionsAction(directory, change, [], DEFAULT_CONFIG)).rejects.toThrow(
+            /at least one answer/,
+        )
+        const reread = await readRun(directory, change)
+        expect(reread.status).toBe("paused")
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects a partial batch (missing one pending question) and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [{ questionId: ids[0]!, selectedOption: "a" }],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/must answer every pending question/)
+        const reread = await readRun(directory, change)
+        expect(reread.status).toBe("paused")
+        expect(reread.pendingQuestions).toHaveLength(2)
+        expect(reread.questionHistory.filter(r => r.outcome === "answered")).toHaveLength(0)
+    })
+
+    it("rejects extra answers beyond the pending batch and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [
+                    { questionId: ids[0]!, selectedOption: "a" },
+                    { questionId: ids[1]!, selectedOption: "c" },
+                    { questionId: "fake-id", selectedOption: "x" },
+                ],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/must answer every pending question/)
+        const reread = await readRun(directory, change)
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects duplicate question ids and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [
+                    { questionId: ids[0]!, selectedOption: "a" },
+                    { questionId: ids[0]!, selectedOption: "b" },
+                ],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/duplicate question id/)
+        const reread = await readRun(directory, change)
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects unknown question ids and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [
+                    { questionId: ids[0]!, selectedOption: "a" },
+                    { questionId: "no-such-id", selectedOption: "c" },
+                ],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/unknown or already-answered question/)
+        const reread = await readRun(directory, change)
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects an answer with both selectedOption and otherText and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [
+                    { questionId: ids[0]!, selectedOption: "a", otherText: "x" },
+                    { questionId: ids[1]!, selectedOption: "c" },
+                ],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/exactly one of selectedOption or otherText/)
+        const reread = await readRun(directory, change)
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects an answer with neither selectedOption nor otherText and leaves state unchanged", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [{ questionId: ids[0]!, selectedOption: "a" }, { questionId: ids[1]! }],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/exactly one of selectedOption or otherText/)
+        const reread = await readRun(directory, change)
+        expect(reread.pendingQuestions).toHaveLength(2)
+    })
+
+    it("rejects a batch when no questions are pending", async () => {
+        const { directory, change, state } = await setupBatchRun()
+        // Answer the batch fully first to clear pending questions.
+        const ids = state.pendingQuestions!.map(q => q.id)
+        await answerQuestionsAction(
+            directory,
+            change,
+            [
+                { questionId: ids[0]!, selectedOption: "a" },
+                { questionId: ids[1]!, selectedOption: "c" },
+            ],
+            DEFAULT_CONFIG,
+        )
+        // Now no questions are pending; a second batch must be rejected.
+        await expect(
+            answerQuestionsAction(
+                directory,
+                change,
+                [{ questionId: ids[0]!, selectedOption: "a" }],
+                DEFAULT_CONFIG,
+            ),
+        ).rejects.toThrow(/no questions are pending/)
+    })
+})
+
+describe("native option value round-trip", () => {
+    it("a recommended option selected via its native label resolves to the canonical id", () => {
+        const state = automaticState({ mode: "interactive", status: "running" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const q: WorkerQuestion = {
+            prompt: "Which approach?",
+            options: [
+                { id: "simple", label: "Simple approach", recommended: true },
+                { id: "complex", label: "Complex approach" },
+            ],
+            impact: "design",
+        }
+        const batch = registerPendingQuestions(state, d, [q], DEFAULT_CONFIG)!
+        const directive = nextDirective(state)
+        expect(directive.type).toBe("ask-question")
+        if (directive.type !== "ask-question") return
+        // The native UI displays the option with label === "simple" (the id).
+        // The user selects it; the controller passes that value back unchanged.
+        const nativeSelectedLabel = directive.questionTools[0]!.options[0]!.label
+        expect(nativeSelectedLabel).toBe("simple")
+        const record = answerQuestion(
+            state,
+            batch[0]!.id,
+            nativeSelectedLabel,
+            undefined,
+            DEFAULT_CONFIG,
+        )
+        expect(record.selectedOptionId).toBe("simple")
+        expect(record.outcome).toBe("answered")
+    })
+})
+
+describe("multi-question dismissal and cancellation", () => {
+    it("dismissing one question in a batch retains all pending questions", () => {
+        const state = automaticState({ mode: "interactive" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        const questions: WorkerQuestion[] = [
+            {
+                prompt: "Q1?",
+                options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                ],
+                impact: "requirements",
+            },
+            {
+                prompt: "Q2?",
+                options: [
+                    { id: "c", label: "C" },
+                    { id: "d", label: "D" },
+                ],
+                impact: "requirements",
+            },
+        ]
+        const batch = registerPendingQuestions(state, d, questions, DEFAULT_CONFIG)!
+        dismissQuestion(state, batch[0]!.id)
+        expect(state.status).toBe("paused")
+        expect(state.pauseReason).toBe("question-dismissed")
+        expect(state.pendingQuestions).toHaveLength(2)
+        expect(state.questionHistory).toHaveLength(1)
+        expect(state.questionHistory[0]?.outcome).toBe("dismissed")
+    })
+
+    it("run cancellation flushes the entire pending batch as cancelled", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-q-"))
+        const change = "batch-cancel"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = automaticState({ mode: "interactive" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        await writeRun(directory, change, state)
+        const marker = [
+            `<!-- specops-question: ${JSON.stringify({
+                prompt: "Q1?",
+                options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                ],
+                impact: "requirements",
+            })} -->`,
+            `<!-- specops-question: ${JSON.stringify({
+                prompt: "Q2?",
+                options: [
+                    { id: "c", label: "C" },
+                    { id: "d", label: "D" },
+                ],
+                impact: "requirements",
+            })} -->`,
+        ].join("\n")
+        const completed = await completeAction(
+            directory,
+            change,
+            "d1",
+            `prose\n${marker}`,
+            DEFAULT_CONFIG,
+        )
+        expect(completed.pendingQuestions).toHaveLength(2)
+        const cancelled = await cancelRun(directory, change, "User stopped.")
+        expect(cancelled.status).toBe("cancelled")
+        expect(cancelled.pendingQuestions).toBeUndefined()
+        expect(cancelled.questionHistory.filter(r => r.outcome === "cancelled")).toHaveLength(2)
+    })
+})
+
+describe("run-state version strictness", () => {
+    it("rejects a v2 run-state file with version mismatch", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-reject-"))
+        const change = "v2-state"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = automaticState({ mode: "interactive" })
+        const legacy = JSON.parse(JSON.stringify(state)) as Record<string, unknown>
+        legacy.version = 2
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(legacy, null, 2)}\n`,
+        )
+        await expect(readRun(directory, change)).rejects.toThrow(/invalid SpecOps run state/)
+    })
+
+    it("rejects a v1 run-state file with version mismatch", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-reject-"))
+        const change = "v1-state"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const legacy = JSON.parse(JSON.stringify(automaticState())) as Record<string, unknown>
+        legacy.version = 1
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(legacy, null, 2)}\n`,
+        )
+        await expect(readRun(directory, change)).rejects.toThrow(/invalid SpecOps run state/)
+    })
+
+    it("rejects a current-version file missing required persistent fields", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-reject-"))
+        const change = "missing-fields"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const partial = JSON.parse(JSON.stringify(automaticState())) as Record<string, unknown>
+        delete partial.reviewSubmissions
+        delete partial.repairTasks
+        delete partial.frontierPolicy
+        delete partial.frontierUsage
+        delete partial.frontierHistory
+        delete partial.questionBudgetUsage
+        delete partial.checkpointHistory
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(partial, null, 2)}\n`,
+        )
+        await expect(readRun(directory, change)).rejects.toThrow(/invalid SpecOps run state/)
+    })
+
+    it("rejects a superseded singular pendingQuestion state shape", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-reject-"))
+        const change = "legacy-singular"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const state = automaticState({ mode: "interactive" })
+        const d = dispatch("d1", "planning")
+        state.dispatches.push(d)
+        registerPendingQuestions(
+            state,
+            d,
+            [
+                {
+                    prompt: "legacy?",
+                    options: [
+                        { id: "a", label: "A" },
+                        { id: "b", label: "B" },
+                    ],
+                    impact: "requirements",
+                },
+            ],
+            DEFAULT_CONFIG,
+        )
+        const legacyRaw = JSON.parse(JSON.stringify(state)) as Record<string, unknown>
+        const pendingArr = legacyRaw.pendingQuestions as unknown[]
+        legacyRaw.pendingQuestion = pendingArr[0]
+        delete legacyRaw.pendingQuestions
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(legacyRaw, null, 2)}\n`,
+        )
+        await expect(readRun(directory, change)).rejects.toThrow()
+    })
+})
+
+describe("configuration schema and example parity", () => {
+    it("the example config validates and exposes maxQuestionsPerMarker", async () => {
+        const examplePath = path.resolve(import.meta.dirname, "..", "examples", "specops.json")
+        const example = JSON.parse(await readFile(examplePath, "utf8"))
+        const validated = validateConfig(example)
+        expect(validated.questions.maxQuestionsPerMarker).toBe(
+            example.questions.maxQuestionsPerMarker,
+        )
+        expect(validated.questions.budgets.maxQuestionsPerDispatch).toBe(
+            example.questions.budgets.maxQuestionsPerDispatch,
+        )
     })
 })

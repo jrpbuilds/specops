@@ -31,14 +31,15 @@
     "questions": {
         "budgets": {
             "maxQuestionsPerRun": 4,
-            "maxQuestionsPerDispatch": 1,
+            "maxQuestionsPerDispatch": 3,
             "maxRepeatedQuestionFingerprints": 1
         },
         "maxPromptLength": 500,
         "maxOptionIdLength": 40,
         "maxOptionLabelLength": 120,
         "maxOtherTextLength": 1000,
-        "maxMarkerBytes": 8000
+        "maxMarkerBytes": 8000,
+        "maxQuestionsPerMarker": 3
     },
     "review": {
         "blockingSeverities": ["BLOCKER", "HIGH"],

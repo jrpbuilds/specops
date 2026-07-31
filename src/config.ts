@@ -47,6 +47,8 @@ export type SpecOpsConfig = {
         maxOptionLabelLength: number
         maxOtherTextLength: number
         maxMarkerBytes: number
+        /** Maximum number of question markers a single worker output may contain. */
+        maxQuestionsPerMarker: number
     }
     /** Reviewer dispatch and command execution limits. */
     review: {
@@ -112,7 +114,11 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     questions: {
         budgets: {
             maxQuestionsPerRun: 4,
-            maxQuestionsPerDispatch: 1,
+            // Default to match maxQuestionsPerMarker so a worker may emit the
+            // full permitted batch under the default configuration. Raising
+            // one without the other would either silently cap the advertised
+            // batch or allow batches the per-dispatch budget blocks.
+            maxQuestionsPerDispatch: 3,
             maxRepeatedQuestionFingerprints: 1,
         },
         maxPromptLength: 500,
@@ -120,6 +126,7 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
         maxOptionLabelLength: 120,
         maxOtherTextLength: 1000,
         maxMarkerBytes: 8000,
+        maxQuestionsPerMarker: 3,
     },
     review: {
         /** Block on BLOCKER and HIGH findings only. */
@@ -443,6 +450,7 @@ function parseQuestions(value: unknown): SpecOpsConfig["questions"] {
             "maxOptionLabelLength",
             "maxOtherTextLength",
             "maxMarkerBytes",
+            "maxQuestionsPerMarker",
         ],
         "questions",
     )
@@ -498,6 +506,11 @@ function parseQuestions(value: unknown): SpecOpsConfig["questions"] {
         maxMarkerBytes: positiveInteger(
             source.maxMarkerBytes ?? DEFAULT_CONFIG.questions.maxMarkerBytes,
             "questions.maxMarkerBytes",
+            1,
+        ),
+        maxQuestionsPerMarker: positiveInteger(
+            source.maxQuestionsPerMarker ?? DEFAULT_CONFIG.questions.maxQuestionsPerMarker,
+            "questions.maxQuestionsPerMarker",
             1,
         ),
     }

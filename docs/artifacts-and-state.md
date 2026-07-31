@@ -32,10 +32,9 @@ The controller writes these files atomically after validating complete worker ou
 | `specops-progress.json`  | Compact UI projection; not a second run-state format.                                  |
 | `specops-frontier.json`  | Bounded frontier policy, usage counters, and escalation episode history.               |
 
-State format version 2 is current. Earlier supported state is normalized when
-safe defaults can be supplied; incompatible paused legacy state is rejected.
+Only the current run-state format is accepted. Start a fresh run after a SpecOps upgrade.
 
-Version-2 state also retains normalized review submissions and repair-task history. Review
+Version-3 state also retains normalized review submissions and repair-task history. Review
 submissions are immutable, source-id-addressable inputs to refutation; repair tasks record the
 selected target, evidence, acceptance criteria, semantic finding fingerprints, source ledger/diff
 hashes, and observed before/after diff hashes. Only submissions whose originating dispatch

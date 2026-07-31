@@ -419,7 +419,7 @@ describe("compact Lean workflow", () => {
         expect(completed.artifacts.verification?.validity).toBe("stale")
     })
 
-    it("does not accept a legacy failed Lean judgment without findings as success", async () => {
+    it("treats a failed Lean judgment without findings as a repair-cycle failure", async () => {
         const { directory, change } = await persistedLeanVerification("lean-legacy-failure")
 
         const completed = await completeAction(
@@ -972,7 +972,7 @@ describe("compact Lean workflow", () => {
 function leanState(mode: RunState["mode"]): RunState {
     const requirements = requirementsFor(assessment, "auto", DEFAULT_CONFIG).requirements
     return {
-        version: 2,
+        version: 3,
         mode,
         goal: "Update README",
         baseline: "baseline",
@@ -989,6 +989,8 @@ function leanState(mode: RunState["mode"]): RunState {
         artifacts: {},
         invalidations: [],
         repairs: [],
+        reviewSubmissions: [],
+        repairTasks: [],
         frontierPolicy: structuredClone(DEFAULT_CONFIG.frontier),
         frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
         frontierHistory: [],
@@ -998,6 +1000,7 @@ function leanState(mode: RunState["mode"]): RunState {
             questionsByDispatch: {},
             fingerprintCounts: {},
         },
+        checkpointHistory: [],
         createdAt: "now",
         updatedAt: "now",
         status: "running",

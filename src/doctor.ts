@@ -106,14 +106,6 @@ async function checkPackageVersion(diagnostics: Diagnostic[]): Promise<void> {
 async function checkManifest(diagnostics: Diagnostic[]): Promise<void> {
     const manifestPath = resolveManifestPath()
     const inspection = await inspectAgentManifest(manifestPath)
-    if (inspection.status === "upgrade-required") {
-        diagnostics.push({
-            status: "FAIL",
-            message: `agent manifest ${inspection.path} uses legacy schema v1`,
-            repair: "Open “SpecOps: Configure agent models” in OpenCode and save the upgraded mapping.",
-        })
-        return
-    }
     if (inspection.status === "invalid") {
         diagnostics.push({
             status: "FAIL",

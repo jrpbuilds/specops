@@ -23,7 +23,12 @@ import {
     STANDARD_BUNDLE_TASKS_CONTRACT,
 } from "./contracts.generated.js"
 import { currentReviewSubmissions } from "./reviews.js"
-import { getResumeTarget, resumePromptForAnswer, resumePromptForCheckpoint } from "./questions.js"
+import {
+    getResumeTarget,
+    resumePromptForAnswer,
+    resumePromptForAnswers,
+    resumePromptForCheckpoint,
+} from "./questions.js"
 import { canIssuePendingFrontier } from "../frontier/policy.js"
 
 /**
@@ -158,7 +163,7 @@ export function hasCheckpointFor(
     artifacts: CheckpointArtifactSnapshot[],
 ): boolean {
     const hash = checkpointSnapshotHash(artifacts)
-    return (state.checkpointHistory ?? []).some(
+    return state.checkpointHistory.some(
         record =>
             record.dispatchId === dispatchId && checkpointSnapshotHash(record.artifacts) === hash,
     )
@@ -247,10 +252,10 @@ export type ControllerDirective =
     | { type: "dispatch"; action: WorkflowAction }
     | {
           type: "ask-question"
-          question: PendingQuestion
+          questions: PendingQuestion[]
           bindingHash: string
-          /** Pre-mapped QuestionToolPayload for the native question tool. */
-          questionTool: QuestionToolPayload
+          /** Pre-mapped QuestionToolPayload array for the native question tool. */
+          questionTools: QuestionToolPayload[]
       }
     | {
           type: "checkpoint"
@@ -262,7 +267,7 @@ export type ControllerDirective =
           type: "block"
           reason: BlockReason | PauseReason
           resumable: boolean
-          question?: PendingQuestion
+          questions?: PendingQuestion[]
       }
     | { type: "finalize" }
 
@@ -303,7 +308,7 @@ export function nextAction(
     state: RunState,
     resumeTarget?: ResumeTarget,
 ): WorkflowAction | undefined {
-    if (state.status !== "running" || state.pendingQuestion || state.pendingCheckpoint) {
+    if (state.status !== "running" || state.pendingQuestions || state.pendingCheckpoint) {
         return undefined
     }
 
@@ -461,26 +466,37 @@ export function nextAction(
 }
 
 /**
- * Build a {@link QuestionToolPayload} for a pending worker-raised question.
+ * Build an array of {@link QuestionToolPayload} for a batch of pending worker-raised questions.
  *
- * Maps the SpecOps {@link PendingQuestion} fields to OpenCode's native
- * question-tool shape so the controller can pass the directive's
- * `questionTool` object verbatim to the `question` tool without inferring
- * any field mapping.
+ * Maps each SpecOps {@link PendingQuestion} to OpenCode's native question-tool
+ * shape so the controller can pass the directive's `questionTools` array
+ * directly to the `question` tool without inferring any field mapping.
  *
- * @param question - The pending worker-raised question.
- * @returns A payload shaped exactly like OpenCode's `QuestionInfo`.
+ * Options marked `recommended: true` have " (Recommended)" appended to their
+ * label in the mapped payload so the user sees the recommendation in the
+ * native UI.
+ *
+ * @param questions - The pending worker-raised questions.
+ * @returns An array of payloads shaped exactly like OpenCode's `QuestionInfo`.
  */
-function questionToolForPending(question: PendingQuestion): QuestionToolPayload {
-    return {
+function questionToolsForPending(questions: PendingQuestion[]): QuestionToolPayload[] {
+    return questions.map(question => ({
         question: question.prompt,
         header: headerForPhase(question.phase),
+        // The native question tool returns the displayed `label` verbatim as
+        // the selected option, so the label must be the canonical option id
+        // the backend validates against. Recommendation guidance is moved
+        // into the description so it is visible without altering the value
+        // the caller must pass back to specops_answer_questions.
         options: question.options.map(option => ({
             label: option.id,
-            description: option.label,
+            description: option.recommended ? `${option.label} (Recommended)` : option.label,
         })),
         custom: question.allowOther,
-    }
+        // SpecOps questions always select exactly one option (or Other text);
+        // set multiple: false explicitly so the native UI does not allow it.
+        multiple: false,
+    }))
 }
 
 /**
@@ -552,20 +568,20 @@ export function nextDirective(state: RunState): ControllerDirective {
     // Paused states are handled first so a resumable pending question or
     // checkpoint can be presented again without dispatching a worker.
     if (state.status === "paused") {
-        if (state.pendingQuestion) {
+        if (state.pendingQuestions && state.pendingQuestions.length > 0) {
             if (mode === "automatic") {
                 return {
                     type: "block",
                     reason: "pending-question",
                     resumable: true,
-                    question: state.pendingQuestion,
+                    questions: state.pendingQuestions,
                 }
             }
             return {
                 type: "ask-question",
-                question: state.pendingQuestion,
-                bindingHash: state.pendingQuestion.bindingHash,
-                questionTool: questionToolForPending(state.pendingQuestion),
+                questions: state.pendingQuestions,
+                bindingHash: state.pendingQuestions[0]!.bindingHash,
+                questionTools: questionToolsForPending(state.pendingQuestions),
             }
         }
         if (state.pendingCheckpoint) {
@@ -597,24 +613,24 @@ export function nextDirective(state: RunState): ControllerDirective {
             type: "block",
             reason: state.blockReason ?? state.pauseReason ?? "validation-failed",
             resumable: false,
-            question: state.pendingQuestion,
+            questions: state.pendingQuestions,
         }
     }
 
-    if (state.pendingQuestion) {
+    if (state.pendingQuestions && state.pendingQuestions.length > 0) {
         if (mode === "automatic") {
             return {
                 type: "block",
                 reason: "pending-question",
                 resumable: true,
-                question: state.pendingQuestion,
+                questions: state.pendingQuestions,
             }
         }
         return {
             type: "ask-question",
-            question: state.pendingQuestion,
-            bindingHash: state.pendingQuestion.bindingHash,
-            questionTool: questionToolForPending(state.pendingQuestion),
+            questions: state.pendingQuestions,
+            bindingHash: state.pendingQuestions[0]!.bindingHash,
+            questionTools: questionToolsForPending(state.pendingQuestions),
         }
     }
 
@@ -627,7 +643,7 @@ export function nextDirective(state: RunState): ControllerDirective {
     // consuming feedback meant for a prior phase.
     if (resumeTarget && action && matchesResumeTarget(action, resumeTarget)) {
         if (resumeTarget.origin === "checkpoint") {
-            const checkpoint = (state.checkpointHistory ?? []).find(
+            const checkpoint = state.checkpointHistory.find(
                 record =>
                     record.dispatchId === resumeTarget.originalDispatchId &&
                     record.outcome === "feedback",
@@ -636,11 +652,18 @@ export function nextDirective(state: RunState): ControllerDirective {
                 action.prompt = resumePromptForCheckpoint(action.prompt, checkpoint)
             }
         } else {
-            const answered = state.questionHistory.find(
-                record => record.id === resumeTarget.sourceId && record.outcome === "answered",
+            // Inject all answered questions from the batch that originated
+            // from the same dispatch. This handles both single-question and
+            // multi-question batches uniformly.
+            const answered = state.questionHistory.filter(
+                record =>
+                    record.dispatchId === resumeTarget.originalDispatchId &&
+                    record.outcome === "answered",
             )
-            if (answered) {
-                action.prompt = resumePromptForAnswer(action.prompt, answered)
+            if (answered.length === 1) {
+                action.prompt = resumePromptForAnswer(action.prompt, answered[0]!)
+            } else if (answered.length > 1) {
+                action.prompt = resumePromptForAnswers(action.prompt, answered)
             }
         }
     }
@@ -906,7 +929,7 @@ function answerHashes(state: RunState): Record<string, string> {
     const questionHashes = state.questionHistory
         .filter(record => record.outcome === "answered" && record.answerHash)
         .map(record => [record.id, record.answerHash] as [string, string])
-    const checkpointHashes = (state.checkpointHistory ?? [])
+    const checkpointHashes = state.checkpointHistory
         .filter(record => record.outcome === "feedback" && record.feedbackHash)
         .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
     const result: Record<string, string> = {}
