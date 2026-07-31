@@ -119,12 +119,14 @@ describe("deepMergeConfig", () => {
                 workflow: { defaultTier: "standard" },
             } as unknown as Record<string, unknown>,
             {
-                workflow: { onboarding: "always" },
+                workflow: { scopeThresholds: { leanMaxFiles: 3 } },
             } as unknown as Record<string, unknown>,
         )
         expect(merged.workflow.defaultTier).toBe("standard")
-        expect(merged.workflow.onboarding).toBe("always")
-        expect(merged.workflow.scopeThresholds).toEqual(DEFAULT_CONFIG.workflow.scopeThresholds)
+        expect(merged.workflow.scopeThresholds).toEqual({
+            ...DEFAULT_CONFIG.workflow.scopeThresholds,
+            leanMaxFiles: 3,
+        })
     })
 
     it("applies explicit null", () => {
@@ -196,13 +198,11 @@ describe("resolveConfig", () => {
             path.join(projectDirectory, ".opencode", "specops.json"),
             JSON.stringify({
                 version: 2,
-                workflow: { onboarding: "always" },
                 automation: { requireCleanWorktree: false },
             }),
         )
         const config = await resolveConfig(projectDirectory)
         expect(config.workflow.defaultTier).toBe("standard")
-        expect(config.workflow.onboarding).toBe("always")
         expect(config.routing.forceFullForFacets).toEqual(["security"])
         expect(config.automation.requireCleanWorktree).toBe(false)
     })

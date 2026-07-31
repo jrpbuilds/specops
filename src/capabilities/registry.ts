@@ -110,7 +110,7 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     [AGENT_IDS.core.designer]: readOnly(AGENT_IDS.core.designer, "", 48),
     [AGENT_IDS.core.implementer]: writer(AGENT_IDS.core.implementer, "", 96),
     [AGENT_IDS.core.verifier]: verifier(AGENT_IDS.core.verifier, "", 64),
-    [AGENT_IDS.review.risk]: reviewer(AGENT_IDS.review.risk, "", 32),
+    [AGENT_IDS.review.risk]: verifier(AGENT_IDS.review.risk, "", 32),
     [AGENT_IDS.specialist.security]: readOnly(AGENT_IDS.specialist.security, "", 40),
     [AGENT_IDS.specialist.dataMigration]: readOnly(AGENT_IDS.specialist.dataMigration, "", 40),
     [AGENT_IDS.specialist.contract]: readOnly(AGENT_IDS.specialist.contract, "", 40),
@@ -120,8 +120,8 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     [AGENT_IDS.specialist.infrastructure]: readOnly(AGENT_IDS.specialist.infrastructure, "", 40),
     [AGENT_IDS.specialist.usability]: readOnly(AGENT_IDS.specialist.usability, "", 40),
     [AGENT_IDS.specialist.maintainability]: readOnly(AGENT_IDS.specialist.maintainability, "", 40),
-    [AGENT_IDS.review.correctnessJudge]: reviewer(AGENT_IDS.review.correctnessJudge, "", 40),
-    [AGENT_IDS.review.complianceJudge]: reviewer(AGENT_IDS.review.complianceJudge, "", 40),
+    [AGENT_IDS.review.correctnessJudge]: verifier(AGENT_IDS.review.correctnessJudge, "", 40),
+    [AGENT_IDS.review.complianceJudge]: verifier(AGENT_IDS.review.complianceJudge, "", 40),
     [AGENT_IDS.review.refuter]: readOnly(AGENT_IDS.review.refuter, "", 32),
     [AGENT_IDS.review.frontierLow]: readOnly(AGENT_IDS.review.frontierLow, "", 8),
     [AGENT_IDS.review.frontierHigh]: readOnly(AGENT_IDS.review.frontierHigh, "", 12),
@@ -316,31 +316,7 @@ function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
     }
 }
 
-/**
- * Build a reviewer sub-agent policy (bash allowed, edit denied).
- *
- * Reviewers such as the correctness and compliance judges need shell access
- * to run targeted verification commands against the repository, but must not
- * modify files directly. This is the same authority preset as the verifier
- * agent, exposed as a named constructor for clarity in the registry.
- *
- * @param id - The sub-agent id.
- * @param model - The model identifier string.
- * @param steps - Max agent steps before forced termination.
- * @returns A fully populated reviewer {@link AgentPolicy} with subagent
- * dispatch and the question tool denied via permission.
- */
-function reviewer(id: AgentId, model: string, steps: number): AgentPolicy {
-    return {
-        id,
-        role: AGENT_ROLES[id],
-        model,
-        steps,
-        mode: "subagent",
-        permission: VERIFIER,
-    }
-}
-
+// Reviewer and verifier agents share the same read-only shell policy.
 // Fail immediately during module loading if a registry edit drifts from IDs.
 if (Object.keys(AGENT_REGISTRY).length !== ALL_AGENT_IDS.length) {
     throw new Error("SpecOps agent registry does not cover the canonical agent IDs")

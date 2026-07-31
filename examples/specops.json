@@ -4,7 +4,6 @@
     "openspec": { "command": null },
     "workflow": {
         "defaultTier": "auto",
-        "onboarding": "if-missing",
         "scopeThresholds": {
             "leanMaxFiles": 2,
             "leanMaxModules": 1,
@@ -33,7 +32,6 @@
         "maxDiffBytes": 1000000,
         "maxContextBytes": 50000,
         "transientRetries": 1,
-        "agentTimeoutSeconds": 300,
         "commandTimeoutSeconds": 300,
         "commandOutputBytes": 32000
     },

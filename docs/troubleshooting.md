@@ -52,9 +52,7 @@ If the file cannot be parsed or its agent catalogue is incomplete, restart OpenC
 will replace it with the generated default using a temporary file and atomic rename. If that
 fails, check directory ownership and write permissions for the reported configuration directory.
 
-A schema-v1 file is handled differently: SpecOps preserves it byte-for-byte, uses packaged
-defaults for the current session, and opens the mapping screen once per launch. Dismissing the
-screen leaves the file untouched, so it is offered again next launch. If the editor reports that
+Schema-v1 files are invalid under the current manifest format and are atomically replaced with the packaged defaults. If the editor reports that
 settings changed on disk, reopen it; SpecOps intentionally refuses to overwrite a concurrent edit.
 
 ## OpenSpec schemas are unavailable

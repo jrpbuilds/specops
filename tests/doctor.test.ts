@@ -83,12 +83,11 @@ describe("doctor config-source warning", () => {
         )
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            JSON.stringify({ version: 2, workflow: { defaultTier: "lean", onboarding: "always" } }),
+            JSON.stringify({ version: 2, workflow: { defaultTier: "lean" } }),
         )
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toMatch(/^WARN project configuration overrides global/m)
         expect(output).toContain("workflow.defaultTier")
-        expect(output).not.toContain("workflow.onboarding")
     })
 
     it("does not warn when only global configuration exists", async () => {

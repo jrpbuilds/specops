@@ -51,7 +51,6 @@ No shell interpolation is performed.
 | Field                            | Meaning                                                         |
 | -------------------------------- | --------------------------------------------------------------- |
 | `workflow.defaultTier`           | Minimum configured tier: `auto`, `lean`, `standard`, or `full`. |
-| `workflow.onboarding`            | Onboarding policy: `if-missing` or `always`.                    |
 | `scopeThresholds.leanMaxFiles`   | Maximum expected files eligible for Lean.                       |
 | `scopeThresholds.leanMaxModules` | Maximum expected modules eligible for Lean.                     |
 | `scopeThresholds.fullMinFiles`   | File count that forces Full.                                    |
@@ -106,7 +105,6 @@ dispatch of the original phase.
 | `maxDiffBytes`          | Maximum implementation diff admitted to review.    |
 | `maxContextBytes`       | Maximum controller context returned to a worker.   |
 | `transientRetries`      | Provider retries for transient failures.           |
-| `agentTimeoutSeconds`   | Worker response deadline.                          |
 | `commandTimeoutSeconds` | Registered validation command deadline.            |
 | `commandOutputBytes`    | Combined bounded stdout/stderr capture.            |
 

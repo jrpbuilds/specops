@@ -37,10 +37,9 @@
         "workflow": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["defaultTier", "onboarding", "scopeThresholds"],
+            "required": ["defaultTier", "scopeThresholds"],
             "properties": {
                 "defaultTier": { "enum": ["auto", "lean", "standard", "full"] },
-                "onboarding": { "enum": ["if-missing", "always"] },
                 "scopeThresholds": {
                     "type": "object",
                     "additionalProperties": false,
@@ -136,7 +135,6 @@
                 "maxDiffBytes",
                 "maxContextBytes",
                 "transientRetries",
-                "agentTimeoutSeconds",
                 "commandTimeoutSeconds",
                 "commandOutputBytes"
             ],
@@ -148,7 +146,6 @@
                 "maxDiffBytes": { "type": "integer", "minimum": 1000 },
                 "maxContextBytes": { "type": "integer", "minimum": 1000 },
                 "transientRetries": { "type": "integer", "minimum": 0 },
-                "agentTimeoutSeconds": { "type": "integer", "minimum": 30 },
                 "commandTimeoutSeconds": { "type": "integer", "minimum": 1 },
                 "commandOutputBytes": { "type": "integer", "minimum": 1024 }
             }

@@ -130,9 +130,7 @@ narrow specialists.
 }
 ```
 
-If an existing schema-v1 manifest is detected, the mapping screen opens once per launch. SpecOps
-preserves the old file until you save and uses packaged defaults for that session. Available legacy
-model choices are carried forward; unavailable choices visibly require a replacement.
+If an existing schema-v1 manifest is detected, it is treated as invalid and atomically replaced with the current defaults. Configure model choices through the command-palette editor afterward.
 
 ## Development installation
 

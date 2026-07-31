@@ -198,7 +198,6 @@ await writeFile(
     `${JSON.stringify(
         {
             version: 2,
-            workflow: { onboarding: "always" },
             automation: { requireCleanWorktree: false },
         },
         null,
@@ -224,10 +223,6 @@ try {
 assert(
     mergedConfig.workflow.defaultTier === "standard",
     "global workflow defaultTier not inherited",
-)
-assert(
-    mergedConfig.workflow.onboarding === "always",
-    "project workflow onboarding override not applied",
 )
 assert(
     mergedConfig.automation.requireCleanWorktree === false,

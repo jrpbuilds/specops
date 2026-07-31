@@ -19,8 +19,6 @@ export type SpecOpsConfig = {
     workflow: {
         /** Default tier selected when no assessment-level suggestion overrides it. */
         defaultTier: "auto" | ScopeTier
-        /** When to run onboarding: `if-missing` only when absent, `always` on every run. */
-        onboarding: "if-missing" | "always"
         /** File/module counts at which the lean and full tiers are selected. */
         scopeThresholds: {
             leanMaxFiles: number
@@ -52,8 +50,6 @@ export type SpecOpsConfig = {
         maxContextBytes: number
         /** Number of transient reviewer failures tolerated before escalation. */
         transientRetries: number
-        /** Hard timeout for a reviewer agent dispatch, in seconds. */
-        agentTimeoutSeconds: number
         /** Hard timeout for a review command execution, in seconds. */
         commandTimeoutSeconds: number
         /** Maximum bytes of command output retained as evidence. */
@@ -76,8 +72,6 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     workflow: {
         /** Routing selects the tier from the assessment unless overridden. */
         defaultTier: "auto",
-        /** Onboard only when the manifest is absent. */
-        onboarding: "if-missing",
         scopeThresholds: {
             leanMaxFiles: 2,
             leanMaxModules: 1,
@@ -109,7 +103,6 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
         maxDiffBytes: 1_000_000,
         maxContextBytes: 50_000,
         transientRetries: 1,
-        agentTimeoutSeconds: 300,
         commandTimeoutSeconds: 300,
         commandOutputBytes: 32_000,
     },
@@ -320,7 +313,7 @@ function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
 }
 
 /**
- * Parse the `workflow` section: validates `defaultTier`, `onboarding`, and the
+ * Parse the `workflow` section: validates `defaultTier` and the
  * four scope thresholds, and ensures full-tier thresholds exceed lean-tier ones.
  *
  * @param value - Raw `workflow` value from the configuration.
@@ -329,14 +322,10 @@ function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
  */
 function parseWorkflow(value: unknown): SpecOpsConfig["workflow"] {
     const source = asObject(value, "workflow")
-    assertKeys(source, ["defaultTier", "onboarding", "scopeThresholds"], "workflow")
+    assertKeys(source, ["defaultTier", "scopeThresholds"], "workflow")
     if (!isOneOf(source.defaultTier, ["auto", "lean", "standard", "full"])) {
         throw new Error("invalid SpecOps configuration field: workflow.defaultTier")
     }
-    if (!isOneOf(source.onboarding, ["if-missing", "always"])) {
-        throw new Error("invalid SpecOps configuration field: workflow.onboarding")
-    }
-
     const thresholds = asObject(source.scopeThresholds, "workflow.scopeThresholds")
     assertKeys(
         thresholds,
@@ -370,7 +359,6 @@ function parseWorkflow(value: unknown): SpecOpsConfig["workflow"] {
 
     return {
         defaultTier: source.defaultTier,
-        onboarding: source.onboarding,
         scopeThresholds,
     }
 }
@@ -476,7 +464,6 @@ function parseReview(value: unknown): SpecOpsConfig["review"] {
             "maxDiffBytes",
             "maxContextBytes",
             "transientRetries",
-            "agentTimeoutSeconds",
             "commandTimeoutSeconds",
             "commandOutputBytes",
         ],
@@ -494,11 +481,6 @@ function parseReview(value: unknown): SpecOpsConfig["review"] {
         maxDiffBytes: positiveInteger(source.maxDiffBytes, "review.maxDiffBytes", 1_000),
         maxContextBytes: positiveInteger(source.maxContextBytes, "review.maxContextBytes", 1_000),
         transientRetries: positiveInteger(source.transientRetries, "review.transientRetries", 0),
-        agentTimeoutSeconds: positiveInteger(
-            source.agentTimeoutSeconds,
-            "review.agentTimeoutSeconds",
-            30,
-        ),
         commandTimeoutSeconds: positiveInteger(
             source.commandTimeoutSeconds,
             "review.commandTimeoutSeconds",
