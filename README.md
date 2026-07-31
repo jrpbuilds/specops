@@ -160,9 +160,12 @@ See [Architecture](docs/architecture.md), [Workflows](docs/workflows.md), and
 
 ## Configuration
 
-Project policy lives at `.opencode/specops.json`. Start from
+Project policy lives at `.opencode/specops.json`. User-wide defaults live at
+`~/.config/opencode/specops.json` (or `$XDG_CONFIG_HOME/opencode/specops.json` when set);
+the project file overrides them with deep merging. Start from
 [examples/specops.json](examples/specops.json); its schema is
-[examples/specops.schema.json](examples/specops.schema.json).
+[examples/specops.schema.json](examples/specops.schema.json). A minimal global example is
+[examples/specops.global.json](examples/specops.global.json).
 
 Configuration is strict. Unknown fields, invalid thresholds, and incomplete escalation or question
 budget objects fail at startup instead of being ignored. See

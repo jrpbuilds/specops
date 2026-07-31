@@ -5,6 +5,32 @@ Project policy is read from `.opencode/specops.json`. Copy
 
 Configuration version 1 is strict and camelCase. Unknown or missing fields fail startup.
 
+## Configuration sources and precedence
+
+SpecOps merges configuration from three sources, in order of increasing precedence:
+
+1. Built-in defaults (`DEFAULT_CONFIG`).
+2. Global user configuration at `~/.config/opencode/specops.json` (or
+   `$XDG_CONFIG_HOME/opencode/specops.json` when the environment variable is set).
+3. Project `.opencode/specops.json`.
+
+Either file may omit any section. The merge starts from defaults, applies the global file,
+then applies the project file. Plain objects are combined recursively; arrays, primitives,
+and explicit `null` replace earlier values. A project key set to the same value as the
+global file is not reported as an override.
+
+Each file is independently validated with a relaxed partial validator that allows missing
+required sections but rejects unknown keys. Error messages include the offending file path.
+The merged result is then validated with the strict complete validator used before a run
+starts.
+
+The project-over-global override warning is emitted only when both the global and project
+files exist. A project-only file that changes defaults is not flagged.
+
+`$schema` is preserved as a local, relative reference in the project file and is ignored by
+the runtime merge. A global file may also contain a `$schema` value; it does not affect
+precedence.
+
 ## OpenSpec
 
 `openspec.command` is either `null` for the bundled OpenSpec executable or a non-empty executable
