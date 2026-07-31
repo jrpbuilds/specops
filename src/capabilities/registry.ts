@@ -11,15 +11,20 @@ type AgentPermission = {
     glob?: "allow" | "deny"
     grep?: "allow" | "deny"
     todowrite?: "allow" | "deny"
+    /** Subagent dispatch via the `task` tool. */
+    task?: "allow" | "deny"
+    /** Native user `question` tool for interactive checkpoints. */
+    question?: "allow" | "deny"
 }
 
 /**
  * Canonical capabilities, model defaults, and non-overridable permissions.
  *
  * Every agent in the system has exactly one policy that fixes its id, role,
- * model, step budget, execution mode (primary or subagent), tool availability,
- * and permissions. Manifests may select a model and variant but cannot change
- * the workflow-policy fields defined here.
+ * model, step budget, execution mode (primary or subagent), and permissions
+ * (including the `task` subagent-dispatch and `question` checkpoint tools).
+ * Manifests may select a model and variant but cannot change the
+ * workflow-policy fields defined here.
  */
 export type AgentPolicy = {
     id: AgentId
@@ -27,18 +32,17 @@ export type AgentPolicy = {
     model: string
     steps: number
     mode: "primary" | "subagent"
-    tools: { question?: boolean; task?: boolean }
     permission: AgentPermission
 }
 
-/** Permission preset: no bash or edit access. */
-const READ_ONLY: AgentPermission = { bash: "deny", edit: "deny" }
+/** Permission preset: no bash or edit access, no dispatch or checkpoints. */
+const READ_ONLY: AgentPermission = { bash: "deny", edit: "deny", task: "deny", question: "deny" }
 
-/** Permission preset: full bash and edit access. */
-const WRITER: AgentPermission = { bash: "allow", edit: "allow" }
+/** Permission preset: full bash and edit access, no dispatch or checkpoints. */
+const WRITER: AgentPermission = { bash: "allow", edit: "allow", task: "deny", question: "deny" }
 
-/** Permission preset: bash access but no edit access. */
-const VERIFIER: AgentPermission = { bash: "allow", edit: "deny" }
+/** Permission preset: bash access but no edit access, no dispatch or checkpoints. */
+const VERIFIER: AgentPermission = { bash: "allow", edit: "deny", task: "deny", question: "deny" }
 
 /** Permission preset: controllers may only dispatch and present checkpoints. */
 const CONTROLLER_PERMISSION: AgentPermission = {
@@ -231,11 +235,12 @@ export function agentForCapability(
  * Build a primary (non-subagent) controller policy.
  *
  * @param id - The controller agent id.
- * @param interactive - Whether the controller should have the `question` tool
- * enabled for user checkpoints.
+ * @param interactive - Whether the controller is the interactive variant that
+ * presents user checkpoints via the native `question` tool.
  * @returns A fully populated primary {@link AgentPolicy} with 1 000 steps,
  * a blank default model (so OpenCode uses its global default), no direct
- * exploration or edit permissions, and the `task` tool enabled.
+ * exploration or edit permissions, subagent dispatch (`task`) allowed, and the
+ * `question` tool allowed only for the interactive variant.
  */
 function primary(id: AgentId, interactive: boolean): AgentPolicy {
     return {
@@ -244,8 +249,11 @@ function primary(id: AgentId, interactive: boolean): AgentPolicy {
         model: "",
         steps: 1_000,
         mode: "primary",
-        tools: { question: interactive, task: true },
-        permission: CONTROLLER_PERMISSION,
+        permission: {
+            ...CONTROLLER_PERMISSION,
+            task: "allow",
+            question: interactive ? "allow" : "deny",
+        },
     }
 }
 
@@ -255,8 +263,8 @@ function primary(id: AgentId, interactive: boolean): AgentPolicy {
  * @param id - The sub-agent id.
  * @param model - The model identifier string.
  * @param steps - Max agent steps before forced termination.
- * @returns A fully populated read-only {@link AgentPolicy} with `task`
- * tool disabled.
+ * @returns A fully populated read-only {@link AgentPolicy} with subagent
+ * dispatch and the question tool denied via permission.
  */
 function readOnly(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
@@ -265,7 +273,6 @@ function readOnly(id: AgentId, model: string, steps: number): AgentPolicy {
         model,
         steps,
         mode: "subagent",
-        tools: { task: false },
         permission: READ_ONLY,
     }
 }
@@ -276,7 +283,7 @@ function readOnly(id: AgentId, model: string, steps: number): AgentPolicy {
  * @param id - The sub-agent id.
  * @param steps - Max agent steps before forced termination.
  * @returns A fully populated writer {@link AgentPolicy} with the default
- * code-writing model and `task` tool disabled.
+ * code-writing model and subagent dispatch and the question tool denied.
  */
 function writer(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
@@ -285,7 +292,6 @@ function writer(id: AgentId, model: string, steps: number): AgentPolicy {
         model,
         steps,
         mode: "subagent",
-        tools: { task: false },
         permission: WRITER,
     }
 }
@@ -296,8 +302,8 @@ function writer(id: AgentId, model: string, steps: number): AgentPolicy {
  * @param id - The sub-agent id.
  * @param model - The model identifier string.
  * @param steps - Max agent steps before forced termination.
- * @returns A fully populated verifier {@link AgentPolicy} with `task` tool
- * disabled.
+ * @returns A fully populated verifier {@link AgentPolicy} with subagent
+ * dispatch and the question tool denied via permission.
  */
 function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
@@ -306,7 +312,6 @@ function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
         model,
         steps,
         mode: "subagent",
-        tools: { task: false },
         permission: VERIFIER,
     }
 }
@@ -322,8 +327,8 @@ function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
  * @param id - The sub-agent id.
  * @param model - The model identifier string.
  * @param steps - Max agent steps before forced termination.
- * @returns A fully populated reviewer {@link AgentPolicy} with `task` tool
- * disabled.
+ * @returns A fully populated reviewer {@link AgentPolicy} with subagent
+ * dispatch and the question tool denied via permission.
  */
 function reviewer(id: AgentId, model: string, steps: number): AgentPolicy {
     return {
@@ -332,7 +337,6 @@ function reviewer(id: AgentId, model: string, steps: number): AgentPolicy {
         model,
         steps,
         mode: "subagent",
-        tools: { task: false },
         permission: VERIFIER,
     }
 }

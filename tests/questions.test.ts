@@ -992,7 +992,7 @@ describe("no direct worker access to the question tool", () => {
     it("only the interactive controller has the question tool enabled", () => {
         for (const id of ALL_AGENT_IDS) {
             const policy = AGENT_REGISTRY[id]
-            const hasQuestion = policy.tools.question === true
+            const hasQuestion = policy.permission.question === "allow"
             if (id === AGENT_IDS.controller.interactive) {
                 expect(hasQuestion).toBe(true)
             } else {

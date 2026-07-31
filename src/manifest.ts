@@ -75,7 +75,6 @@ export function manifestAgentConfig(id: AgentId, entry: ManifestEntry) {
         maxSteps: policy.steps,
         mode: policy.mode,
         prompt: promptText(id),
-        tools: policy.tools,
         permission: policy.permission,
     }
 }

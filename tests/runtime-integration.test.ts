@@ -69,12 +69,17 @@ describe.sequential("installed runtime contract", () => {
 
         const interactive = config.agent?.[AGENT_IDS.controller.interactive]
         const automatic = config.agent?.[AGENT_IDS.controller.automatic]
+        const interactivePermission = interactive?.permission as Record<string, string> | undefined
+        const automaticPermission = automatic?.permission as Record<string, string> | undefined
         expect(interactive?.mode).toBe("primary")
         expect(automatic?.mode).toBe("primary")
         expect(interactive?.maxSteps).toBe(1_000)
-        expect(automatic?.tools?.task).toBe(true)
-        expect(interactive?.tools?.question).toBe(true)
-        expect(automatic?.tools?.question).toBe(false)
+        // Subagent dispatch is allowed for both controllers; the native
+        // question tool is allowed only for the interactive variant.
+        expect(automaticPermission?.task).toBe("allow")
+        expect(interactivePermission?.task).toBe("allow")
+        expect(automaticPermission?.question).toBe("deny")
+        expect(interactivePermission?.question).toBe("allow")
 
         const controllerPermission: Record<string, string> = {
             bash: "deny",
@@ -83,11 +88,28 @@ describe.sequential("installed runtime contract", () => {
             glob: "deny",
             grep: "deny",
             todowrite: "deny",
+            task: "allow",
         }
+        // Both controllers share this exact permission key set; the per-key
+        // loop below also catches an unexpected extra key (closed permission set).
+        const controllerPermissionKeys = [
+            "bash",
+            "edit",
+            "glob",
+            "grep",
+            "question",
+            "read",
+            "task",
+            "todowrite",
+        ].sort()
         for (const id of CONTROLLER_AGENT_IDS) {
-            expect(config.agent?.[id]?.permission as Record<string, string>).toEqual(
-                controllerPermission,
-            )
+            const permission = config.agent?.[id]?.permission as Record<string, string>
+            expect(Object.keys(permission).sort()).toEqual(controllerPermissionKeys)
+            for (const [key, value] of Object.entries(controllerPermission)) {
+                expect(permission[key], `${id}.${key}`).toBe(value)
+            }
+            const expectedQuestion = id === AGENT_IDS.controller.interactive ? "allow" : "deny"
+            expect(permission.question, `${id}.question`).toBe(expectedQuestion)
             const prompt = promptText(id)
             expect(prompt).toContain("FIRST action")
             expect(prompt).toContain("specops-assessor")
@@ -99,7 +121,9 @@ describe.sequential("installed runtime contract", () => {
             expect(config.agent?.[id]?.prompt).toBe(promptText(id))
             if (!CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
                 expect(config.agent?.[id]?.mode).toBe("subagent")
-                expect(config.agent?.[id]?.tools?.task).toBe(false)
+                expect(
+                    (config.agent?.[id]?.permission as Record<string, string> | undefined)?.task,
+                ).toBe("deny")
                 // Workers need read/glob/grep to inspect the repository.
                 expect(
                     (config.agent?.[id]?.permission as Record<string, string> | undefined)?.read,

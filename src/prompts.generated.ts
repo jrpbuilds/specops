@@ -12,7 +12,42 @@ const COMMON_RULES = [
 /** Capability-specific instructions that remain independent of user model settings. */
 const ROLE_INSTRUCTIONS: Partial<Record<AgentId, string>> = {
     [AGENT_IDS.core.assessor]:
-        "Inspect the repository thoroughly enough to route the complete change. Return only strict assessment JSON with facts, inferences, risk facets, touched surfaces, uncertainty, inspected paths, and likely validations. For Lean runs this inspection is the authoritative source of exploration evidence. Do not edit files.",
+        "Inspect the repository thoroughly enough to route the complete change. Do not edit files. " +
+        "Return ONLY a single strict assessment JSON object — no prose, no code fences, no commentary — that conforms EXACTLY to the schema below. " +
+        "Every top-level field is required; the only optional field is `cwd` inside a likelyValidations entry. " +
+        "Use exactly the enum string values listed; do not invent synonyms or PascalCase variants. " +
+        "Facts are verifiable observations; inferences are your conclusions with stated reasoning.\n" +
+        "ASSESSMENT SCHEMA (return one JSON object matching this exactly):\n" +
+        "{\n" +
+        '  "changeKind": "documentation" | "configuration" | "test" | "bugfix" | "refactor" | "feature" | "migration" | "infrastructure",\n' +
+        '  "expectedFiles": number,            // non-negative integer, NOT an array or object\n' +
+        '  "expectedModules": number,          // non-negative integer\n' +
+        '  "restoresExistingBehavior": boolean,\n' +
+        '  "changesRequirements": boolean,\n' +
+        '  "publicContract": "none" | "compatible" | "breaking",\n' +
+        '  "riskFacets": RiskFacet[],          // de-duplicated array of kebab-case strings\n' +
+        '  "touchedSurfaces": TouchedSurface[],// de-duplicated array of kebab-case strings\n' +
+        '  "uncertainty": {\n' +
+        '    "requirements": "low" | "medium" | "high",\n' +
+        '    "repository": "low" | "medium" | "high",\n' +
+        '    "design": "low" | "medium" | "high",\n' +
+        '    "implementation": "low" | "medium" | "high",\n' +
+        '    "verification": "low" | "medium" | "high"\n' +
+        "  },\n" +
+        '  "suggestedTier": "lean" | "standard" | "full",\n' +
+        '  "inspectedPaths": string[],         // non-empty array of non-blank strings\n' +
+        '  "unresolvedQuestions": string[],    // may be empty\n' +
+        '  "likelyValidations": Array<{        // at least one entry when validations are identifiable\n' +
+        '    "executable": string,             // non-empty, e.g. "npm" or "node"\n' +
+        '    "args": string[],                 // array of string arguments\n' +
+        '    "cwd"?: string,                   // OPTIONAL relative path only; must not start with "/" and must not contain ".."\n' +
+        '    "purpose": string                 // non-empty human-readable purpose\n' +
+        "  }>,\n" +
+        '  "facts": string[],                  // non-empty array of verifiable observations\n' +
+        '  "inferences": string[]             // array of conclusions with stated reasoning\n' +
+        "}\n" +
+        'RiskFacet = one of: "security", "data", "public-contract", "concurrency", "resilience", "performance", "infrastructure", "migration", "usability", "maintainability".\n' +
+        'TouchedSurface = one of: "api", "auth", "database", "filesystem", "network", "queue", "cli", "ui", "configuration", "build", "deployment", "documentation".',
     [AGENT_IDS.core.explorer]: "Return evidence-backed exploration Markdown. Do not edit files.",
     [AGENT_IDS.core.planner]:
         "Return only the requested JSON bundle or Markdown artifact. When asked for a Lean plan, produce concise actionable tasks without proposal or specification boilerplate. Do not edit files.",
@@ -144,13 +179,27 @@ export function promptText(id: AgentId): string {
                 "answers — exactly one entry per pending question, exactly one of selectedOption or otherText each. " +
                 "Never rewrite the questions or options, and never split a batch across multiple calls. " +
                 "If the user dismisses the question UI without answering, " +
-                `call ${TOOL_IDS.dismissQuestion} for each question id. Do not dispatch a worker while questions are pending.`,
+                `call ${TOOL_IDS.dismissQuestion} for each question id. Do not dispatch a worker while questions are pending. ` +
+                "QUESTION TOOL UNAVAILABLE FALLBACK: if the `question` tool is not present in your toolset, " +
+                "do NOT silently advance and do NOT dispatch a worker. " +
+                "Instead, render each question and its options as plain text in the chat, " +
+                "explicitly ask the user to reply with their selected option label or free-form text, " +
+                "and STOP — wait for the user's reply. " +
+                `Only after the user replies, call ${TOOL_IDS.answerQuestions} ` +
+                "(or dismissQuestion if they decline). Never call resume tools as a default.",
             "- checkpoint: Call the `question` tool passing the directive's `questionTool` object " +
                 "verbatim as the single element of the `questions` array parameter. " +
                 "When the user selects 'Continue' or dismisses the question, call " +
                 `${TOOL_IDS.resumeCheckpoint} with no feedback. When the user provides Other text, ` +
                 `call ${TOOL_IDS.resumeCheckpoint} with that text. ` +
-                "Never dispatch a worker while a checkpoint is pending.",
+                "Never dispatch a worker while a checkpoint is pending. " +
+                "QUESTION TOOL UNAVAILABLE FALLBACK: if the `question` tool is not present in your toolset, " +
+                "do NOT silently call resumeCheckpoint and do NOT dispatch a worker. " +
+                "Instead, present the checkpoint and its options as plain text in the chat, " +
+                "explicitly ask the user to reply 'Continue' or with their feedback, and STOP — " +
+                "wait for the user's reply. " +
+                `Only after the user replies, call ${TOOL_IDS.resumeCheckpoint} ` +
+                "(no feedback for 'Continue', their text otherwise). Never silently advance a checkpoint.",
             "- block: resumable true means the run is paused; present the next directive on the following call. " +
                 "resumable false means the run is terminal.",
             `- finalize: call ${TOOL_IDS.finalize}.`,
