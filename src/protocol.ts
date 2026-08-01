@@ -14,6 +14,8 @@ export const TOOL_IDS = {
     nextAction: "specops_next_action",
     /** Validate and persist an issued deterministic worker result. */
     completeAction: "specops_complete_action",
+    /** Recover one interrupted issued dispatch without cancelling the run. */
+    recoverDispatch: "specops_recover_dispatch",
     /** Record an answer to a worker-raised pending question. */
     answerQuestion: "specops_answer_question",
     /** Answer multiple pending questions in a single transaction. */

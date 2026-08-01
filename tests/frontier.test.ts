@@ -637,7 +637,8 @@ describe("adaptive frontier escalation", () => {
 function completedPlanningState(): RunState {
     const requirements = requirementsFor(assessment, "auto", adaptiveConfig).requirements
     const state: RunState = {
-        version: 4,
+        version: 5,
+        revision: 0,
         mode: "automatic",
         goal: "test frontier replay",
         baseline: "abc",

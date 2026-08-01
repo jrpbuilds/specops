@@ -4,7 +4,8 @@ import type { RunState } from "../src/types.js"
 
 function state(overrides: Partial<RunState> = {}): RunState {
     const base: RunState = {
-        version: 4,
+        version: 5,
+        revision: 0,
         mode: "interactive",
         goal: "test",
         baseline: "abc",

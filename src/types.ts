@@ -526,6 +526,12 @@ export type DispatchRecord = {
     }
     status: "issued" | "completed" | "failed"
     at: string
+    /** Controller completion timestamp, present after the dispatch leaves issued state. */
+    finishedAt?: string
+    /** Assurance binding epoch used to decide whether a result is still current. */
+    assuranceEpoch?: string
+    /** Recovery metadata when an issued dispatch was explicitly interrupted. */
+    recovery?: { reason: string; at: string; fingerprint: string; attempt: number }
     /** Resume metadata when this dispatch re-issues a paused phase after an answer. */
     resume?: {
         sourceId: string
@@ -739,7 +745,9 @@ export type ResumeTarget = {
  * `resumable` describe the paused state.
  */
 export type RunState = {
-    version: 4
+    version: 5
+    /** Monotonic optimistic-concurrency revision of the persisted run state. */
+    revision: number
     mode: "automatic" | "interactive"
     goal: string
     baseline: string
@@ -792,6 +800,18 @@ export type RunState = {
     /** Explicit target for the fresh dispatch issued after an answer. */
     resumeTarget?: ResumeTarget
     implementationDiffHash?: string
+    /** Bounded scheduler decisions retained for loop diagnosis. */
+    schedulerHistory?: Array<{
+        sequence: number
+        revision: number
+        snapshotHash: string
+        action?: string
+        capability?: CapabilityId
+        purpose?: DispatchPurpose
+        bindingHash?: string
+        reason?: string
+        at: string
+    }>
     createdAt: string
     updatedAt: string
     status: "running" | "paused" | "passed" | "blocked" | "failed" | "cancelled"

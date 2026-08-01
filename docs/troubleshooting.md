@@ -1,5 +1,13 @@
 # Troubleshooting
 
+## A run was interrupted
+
+Restart OpenCode and run `/specops-status` for the affected change. SpecOps will
+attempt to recover the run and continue from the last verified stage. Do not edit
+the files in the change directory or submit a made-up result. If the run remains
+blocked, run `/specops-doctor`, keep the change directory for diagnosis, and start
+a new workflow only after recording the reported failure.
+
 Start with `/specops-doctor`. It performs read-only checks against the installed package,
 OpenCode command registration, the materialised agent manifest, canonical agent catalogue,
 generated prompts, and bundled OpenSpec schemas. Every failure includes a repair action.

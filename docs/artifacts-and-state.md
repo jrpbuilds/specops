@@ -19,7 +19,9 @@ Depending on scope, a change may contain:
 - `review-ledger.json`;
 - `specops-receipt.json`.
 
-The controller writes these files atomically after validating complete worker output.
+SpecOps validates these records before saving them and can recover an interrupted update
+automatically. Users should not edit the files in a change directory by hand; use the normal
+status, doctor, and workflow commands to inspect or continue a run.
 
 ## Machine records
 
@@ -34,7 +36,7 @@ The controller writes these files atomically after validating complete worker ou
 
 Only the current run-state format is accepted. Start a fresh run after a SpecOps upgrade.
 
-Version-3 state also retains normalized review submissions and repair-task history. Review
+The current state also retains review submissions and repair-task history. Review
 submissions are immutable, source-id-addressable inputs to refutation; repair tasks record the
 selected target, evidence, acceptance criteria, semantic finding fingerprints, source ledger/diff
 hashes, and observed before/after diff hashes. Only submissions whose originating dispatch
@@ -53,7 +55,8 @@ Every artifact records:
 - validity and invalidation reason.
 
 Dispatch records separately capture the chosen agent, capability, purpose, independence, input
-hash, output hash, and status.
+hash, output hash, status, and completion time. If a run is interrupted, SpecOps records the
+interruption and either resumes safely or reports a bounded failure instead of inventing a result.
 
 Frontier-assisted dispatches additionally retain the escalation episode,
 selected low/high tier, advice hash, and originating dispatch. The completion

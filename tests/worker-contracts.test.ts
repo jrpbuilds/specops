@@ -19,7 +19,7 @@ import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { Assessment, RunState } from "../src/types.js"
 import { completeAction } from "../src/workflow/engine.js"
 import { currentReviewSubmissions } from "../src/workflow/reviews.js"
-import { nextAction } from "../src/workflow/scheduler.js"
+import { dispatchHash, nextAction } from "../src/workflow/scheduler.js"
 import {
     JUDGMENT_CONTRACT,
     PLANNING_BUNDLE_CONTRACT,
@@ -79,7 +79,8 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function standardState(): RunState {
     const assessed = standardAssessment
     return {
-        version: 4,
+        version: 5,
+        revision: 0,
         mode: "automatic",
         goal: "test",
         baseline: "abc",
@@ -868,5 +869,33 @@ describe("scheduler contract consumption", () => {
         const action = nextAction(state)
         expect(action?.capability).toBe("general-risk")
         expect(action?.purpose).toBe("independent-review")
+    })
+
+    it("does not stale a specialist review when later judgment artifacts are written", () => {
+        const state = standardState()
+        state.implementationDiffHash = "current-diff"
+        for (const artifact of [
+            "routing",
+            "exploration",
+            "proposal",
+            "specs",
+            "tasks",
+            "implementation",
+            "verification",
+        ]) {
+            validArtifact(state, artifact)
+        }
+        const action = {
+            id: "review",
+            capability: "general-risk" as const,
+            agent: agentForCapability("general-risk", "independent-review"),
+            purpose: "independent-review" as const,
+            independent: true,
+            prompt: "",
+        }
+        const before = dispatchHash(action, state)
+        validArtifact(state, "correctness-judgment")
+        validArtifact(state, "compliance-judgment")
+        expect(dispatchHash(action, state)).toBe(before)
     })
 })

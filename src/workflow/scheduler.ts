@@ -650,6 +650,14 @@ export function nextDirective(state: RunState): ControllerDirective {
         }
     }
 
+    if (assuranceCycleIsStalled(state)) {
+        return {
+            type: "block",
+            reason: "workflow-stalled",
+            resumable: false,
+        }
+    }
+
     const resumeTarget = getResumeTarget(state)
     if (!resumeTarget && consultationCycleIsStalled(state)) {
         return {
@@ -739,6 +747,22 @@ function consultationCycleIsStalled(state: RunState): boolean {
     return consultations.length >= 12
 }
 
+/** Detect repeated assurance work for one unchanged implementation epoch. */
+function assuranceCycleIsStalled(state: RunState): boolean {
+    const epoch = assuranceEpoch(state)
+    const expectedReviews =
+        state.requirements.requiredReviewFacets.length +
+        (state.requirements.requiredCapabilities.includes("general-risk") ? 1 : 0)
+    if (expectedReviews === 0) return false
+    const completed = state.dispatches.filter(
+        dispatch =>
+            dispatch.status === "completed" &&
+            dispatch.purpose === "independent-review" &&
+            dispatch.assuranceEpoch === epoch,
+    ).length
+    return completed > expectedReviews * 2
+}
+
 /**
  * Hash stable dispatch inputs for an auditable provenance record.
  *
@@ -759,13 +783,54 @@ export function dispatchHash(action: WorkflowAction, state: RunState): string {
                 answers: answerHashes(state),
                 frontierRequest: state.pendingFrontier?.fingerprint,
                 frontierAdvice: state.frontierResume?.adviceHash,
-                artifacts: Object.fromEntries(
-                    Object.entries(state.artifacts)
-                        .filter(([, artifact]) => artifact?.validity === "valid")
-                        .sort(([left], [right]) => left.localeCompare(right))
-                        .map(([id, artifact]) => [id, artifact?.outputHash]),
-                ),
-                contract: 2,
+                artifacts: bindingArtifacts(action, state),
+                contract: 3,
+            }),
+        )
+        .digest("hex")
+}
+
+/**
+ * Select only the artifacts that are direct inputs to an action.
+ *
+ * Assurance actions must not bind to every currently-valid artifact: writing a
+ * later judgment must not make an already-completed specialist review appear
+ * stale. Implementation and verification changes still alter the relevant
+ * bindings and therefore force fresh assurance.
+ */
+function bindingArtifacts(action: WorkflowAction, state: RunState): Record<string, string> {
+    const direct: ArtifactId[] = []
+    if (action.purpose === "independent-review") {
+        direct.push("implementation", "verification")
+    } else if (action.capability === "correctness-judgment") {
+        direct.push("implementation", "verification")
+    } else if (action.capability === "compliance-judgment") {
+        direct.push("implementation", "verification", "specs")
+    } else if (action.capability === "refutation") {
+        direct.push("implementation", "verification", "correctness-judgment", "compliance-judgment")
+    } else {
+        return Object.fromEntries(
+            Object.entries(state.artifacts)
+                .filter(([, artifact]) => artifact?.validity === "valid")
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([id, artifact]) => [id, artifact?.outputHash ?? ""]),
+        )
+    }
+    return Object.fromEntries(
+        direct
+            .map(artifact => [artifact, state.artifacts[artifact]?.outputHash ?? ""])
+            .sort(([left], [right]) => left.localeCompare(right)),
+    )
+}
+
+/** Return the assurance epoch shared by all reviews of one implementation. */
+export function assuranceEpoch(state: RunState): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify({
+                policy: state.requirements.policyHash,
+                implementation: state.implementationDiffHash ?? "",
+                verification: state.artifacts.verification?.outputHash ?? "",
             }),
         )
         .digest("hex")

@@ -131,13 +131,10 @@ export function parseAssessment(output: string): Assessment {
  */
 function parseUncertainty(value: unknown): Assessment["uncertainty"] {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw enumError("uncertainty", value, [
-            "requirements",
-            "repository",
-            "design",
-            "implementation",
-            "verification",
-        ])
+        throw new Error(
+            "invalid assessment.uncertainty — expected an object with requirements, repository, " +
+                "design, implementation, and verification confidence fields; each value must be low, medium, or high",
+        )
     }
     const source = value as Record<string, unknown>
     const keys = ["requirements", "repository", "design", "implementation", "verification"] as const

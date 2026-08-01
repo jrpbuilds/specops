@@ -146,6 +146,7 @@ export function promptText(id: AgentId): string {
             `- finalize: call ${TOOL_IDS.finalize} and report its persisted outcome.`,
             `If cancellation is requested while tools remain available, call ${TOOL_IDS.cancelRun} once for the active change.`,
             "FAILURE HANDLING:",
+            `- If the worker task execution is interrupted before you receive a result, call ${TOOL_IDS.recoverDispatch} with the exact issued dispatchId and a concise reason, then call ${TOOL_IDS.nextAction}. Do not synthesize output or substitute another worker.`,
             `- If ${TOOL_IDS.completeAction} throws, do NOT retry the same dispatchId; the dispatch is marked ` +
                 `failed and cannot be re-submitted. Call ${TOOL_IDS.nextAction} again to obtain a fresh dispatch ` +
                 "for the same capability, then submit the corrected output through the new dispatchId.",
@@ -204,6 +205,7 @@ export function promptText(id: AgentId): string {
                 "resumable false means the run is terminal.",
             `- finalize: call ${TOOL_IDS.finalize}.`,
             "FAILURE HANDLING:",
+            `- If the worker task execution is interrupted before you receive a result, call ${TOOL_IDS.recoverDispatch} with the exact issued dispatchId and a concise reason, then call ${TOOL_IDS.nextAction}. Do not synthesize output or substitute another worker.`,
             `- If ${TOOL_IDS.completeAction} throws, do NOT retry the same dispatchId; the dispatch is marked ` +
                 `failed and cannot be re-submitted. Call ${TOOL_IDS.nextAction} again to obtain a fresh dispatch ` +
                 "for the same capability, then submit the corrected output through the new dispatchId.",

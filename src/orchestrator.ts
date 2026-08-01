@@ -10,10 +10,11 @@ import { READ_ONLY_OPENSPEC_COMMANDS, openSpecOrThrow, onboard, readConfig } fro
 import { publishProgress, type MetadataContext } from "./progress.js"
 import { summarize } from "./summary.js"
 import { TOOL_IDS } from "./protocol.js"
-import { changeRoot, readMachine, readRun, writeMachine } from "./state/store.js"
+import { changeRoot, readMachine, readRun, withRunLock, writeMachine } from "./state/store.js"
 import {
     cancelRun,
     completeAction,
+    recoverDispatch,
     finalizeRun,
     issueDirective,
     resumeCheckpointAction,
@@ -130,6 +131,29 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     ? `${dispatch.capability}${dispatch.purpose === "judgment" ? " judgment" : ""} completed`
                     : "Action completed"
                 return summarize(state, args.change, label)
+            },
+        }),
+        [TOOL_IDS.recoverDispatch]: tool({
+            description: "Recover one interrupted issued dispatch and resume the run.",
+            args: {
+                change: tool.schema.string().regex(CHANGE_NAME),
+                dispatchId: tool.schema.string().min(1),
+                reason: tool.schema.string().min(1),
+            },
+            async execute(args, context) {
+                const state = await recoverDispatch(
+                    context.directory,
+                    args.change,
+                    args.dispatchId,
+                    args.reason,
+                )
+                await publishProgress(
+                    context as MetadataContext,
+                    context.directory,
+                    args.change,
+                    state,
+                )
+                return summarize(state, args.change, "Interrupted dispatch recovered")
             },
         }),
         [TOOL_IDS.answerQuestion]: tool({
@@ -273,61 +297,66 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 cwd: tool.schema.string().optional(),
             },
             async execute(args, context) {
-                const config = await readConfig(context.directory)
-                const state = await readRun(context.directory, args.change)
-                if (
-                    !state.dispatches.some(
-                        dispatch => dispatch.id === args.dispatchId && dispatch.status === "issued",
+                return withRunLock(context.directory, args.change, "run validation", async () => {
+                    const config = await readConfig(context.directory)
+                    const state = await readRun(context.directory, args.change)
+                    if (
+                        !state.dispatches.some(
+                            dispatch =>
+                                dispatch.id === args.dispatchId && dispatch.status === "issued",
+                        )
+                    ) {
+                        throw new Error("validation requires an issued dispatch")
+                    }
+
+                    const requirement = state.requirements.requiredValidations.find(
+                        (
+                            candidate,
+                        ): candidate is Extract<
+                            (typeof state.requirements.requiredValidations)[number],
+                            { kind: "command" }
+                        > => candidate.id === args.validationId && candidate.kind === "command",
                     )
-                ) {
-                    throw new Error("validation requires an issued dispatch")
-                }
+                    if (
+                        !requirement ||
+                        requirement.executable !== args.executable ||
+                        JSON.stringify(requirement.args) !== JSON.stringify(args.args) ||
+                        requirement.cwd !== args.cwd
+                    ) {
+                        throw new Error(
+                            "validation command does not match the run evidence registry",
+                        )
+                    }
 
-                const requirement = state.requirements.requiredValidations.find(
-                    (
-                        candidate,
-                    ): candidate is Extract<
-                        (typeof state.requirements.requiredValidations)[number],
-                        { kind: "command" }
-                    > => candidate.id === args.validationId && candidate.kind === "command",
-                )
-                if (
-                    !requirement ||
-                    requirement.executable !== args.executable ||
-                    JSON.stringify(requirement.args) !== JSON.stringify(args.args) ||
-                    requirement.cwd !== args.cwd
-                ) {
-                    throw new Error("validation command does not match the run evidence registry")
-                }
-
-                const evidence = await executeValidation(
-                    context.directory,
-                    config,
-                    {
-                        ...args,
-                        implementationDiffHash: state.implementationDiffHash,
-                        policyHash: state.requirements.policyHash,
-                    },
-                    context.abort,
-                )
-                const registry = await readMachine(
-                    context.directory,
-                    args.change,
-                    "specops-evidence.json",
-                    {
-                        version: 2,
-                        commands: [] as unknown[],
-                    },
-                )
-                registry.version = 2
-                registry.commands.push(evidence)
-                await writeMachine(
-                    context.directory,
-                    args.change,
-                    "specops-evidence.json",
-                    registry,
-                )
-                return JSON.stringify(evidence, null, 2)
+                    const evidence = await executeValidation(
+                        context.directory,
+                        config,
+                        {
+                            ...args,
+                            implementationDiffHash: state.implementationDiffHash,
+                            policyHash: state.requirements.policyHash,
+                        },
+                        context.abort,
+                    )
+                    const registry = await readMachine(
+                        context.directory,
+                        args.change,
+                        "specops-evidence.json",
+                        {
+                            version: 2,
+                            commands: [] as unknown[],
+                        },
+                    )
+                    registry.version = 2
+                    registry.commands.push(evidence)
+                    await writeMachine(
+                        context.directory,
+                        args.change,
+                        "specops-evidence.json",
+                        registry,
+                    )
+                    return JSON.stringify(evidence, null, 2)
+                })
             },
         }),
         [TOOL_IDS.getStatus]: tool({

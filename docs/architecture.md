@@ -15,7 +15,8 @@ their role.
    provenance, repair state, and budgets to select one next action.
 4. **Workflow engine** issues dispatch records, validates worker results, persists controller-owned
    artifacts, applies bounded escalation decisions, and produces receipts.
-5. **State and artifact stores** use atomic replacement beneath one OpenSpec change.
+5. **State and artifact stores** are updated safely and can recover interrupted work beneath one
+   OpenSpec change.
 6. **Evidence registry** executes declared project commands without a shell and records immutable
    hashes and bounded excerpts.
 

@@ -3,6 +3,7 @@ import path from "node:path"
 import { runProcess } from "../git.js"
 import type { SpecOpsConfig } from "../config.js"
 import type { CommandEvidence } from "../types.js"
+import { redactSensitiveText } from "../security/redact.js"
 
 /**
  * Resolve a command working directory without allowing path traversal.
@@ -102,8 +103,8 @@ export async function executeValidation(
         exitCode: result.code,
         stdoutHash: createHash("sha256").update(result.stdout).digest("hex"),
         stderrHash: createHash("sha256").update(result.stderr).digest("hex"),
-        stdoutExcerpt: result.stdout + stdoutMarker,
-        stderrExcerpt: result.stderr + stderrMarker,
+        stdoutExcerpt: redactSensitiveText(result.stdout) + stdoutMarker,
+        stderrExcerpt: redactSensitiveText(result.stderr) + stderrMarker,
         validationId: input.validationId,
         dispatchId: input.dispatchId,
         implementationDiffHash: input.implementationDiffHash,

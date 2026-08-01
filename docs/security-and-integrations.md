@@ -12,6 +12,10 @@ reapplied from the canonical registry on every plugin load.
 
 ## Untrusted content
 
+Sensitive-looking values in generated reports, diagnostics, and command summaries are masked before
+they are saved. This includes common tokens, passwords, credentials, bearer values, and private
+keys, while verification records retain enough information to explain what was checked.
+
 Repository files, diffs, OpenSpec artifacts, command output, and prior worker responses are treated
 as untrusted data. Prompts require observed facts to be separated from inference and prohibit
 fabricated paths, APIs, commands, or evidence.

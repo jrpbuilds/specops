@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import { type SpecOpsConfig, resolveConfig } from "./config.js"
 import { runProcess } from "./git.js"
 import { writeTextAtomic } from "./state/store.js"
+import { redactSensitiveText } from "./security/redact.js"
 
 // `openspec.ts` is emitted directly into `dist`, so one parent reaches the package root in both
 // source and packed layouts. Keeping this package-relative avoids source-checkout path leakage.
@@ -168,7 +169,7 @@ export async function writeArtifact(
     relative: string,
     content: string,
 ): Promise<void> {
-    await writeTextAtomic(directory, change, relative, content)
+    await writeTextAtomic(directory, change, relative, redactSensitiveText(content))
 }
 
 /**

@@ -352,7 +352,7 @@ const change = changeMatch[0]
 const state = JSON.parse(
     await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute({ change }, smokeContext),
 )
-assert(state.version === 4, "packed start-run did not persist final state")
+assert(state.version === 5, "packed start-run did not persist final state")
 
 const directive = JSON.parse(
     await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),

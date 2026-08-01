@@ -18,6 +18,7 @@ import {
     changeRoot,
     readMachine,
     readRun,
+    withRunLock,
     writeMachine,
     writeRun,
     writeTextAtomic,
@@ -44,6 +45,7 @@ import {
     checkpointArtifactsFor,
     computeCheckpointBindingHash,
     dispatchHash,
+    assuranceEpoch,
     hasCheckpointFor,
     isCheckpointBindingCurrent,
     nextAction,
@@ -62,6 +64,7 @@ import {
 } from "./questions.js"
 import { parseWorkerOutput } from "../worker_output.js"
 import { SPEC_NAME_REGEX, validateSpecContent } from "./contracts.js"
+import { redactSensitiveText } from "../security/redact.js"
 import {
     canPromotePending,
     completeFrontierEpisode,
@@ -140,74 +143,83 @@ export async function startRun(
     }
     await createChange(directory, config, change, input.goal, routed.requirements.scopeTier)
 
-    const now = new Date().toISOString()
-    const state: RunState = {
-        version: 4,
-        mode: input.mode,
-        goal: input.goal,
-        baseline: "",
-        requestedTier: input.requestedTier,
-        scopeTier: routed.requirements.scopeTier,
-        assessment,
-        requirements: routed.requirements,
-        riskFacets: assessment.riskFacets,
-        uncertainty: assessment.uncertainty,
-        routingReasons: routed.reasons,
-        decisions: [],
-        budgetUsage: {},
-        dispatches: [],
-        artifacts: {},
-        invalidations: [],
-        repairs: [],
-        reviewSubmissions: [],
-        repairTasks: [],
-        frontierPolicy: structuredClone(config.frontier),
-        frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
-        frontierHistory: [],
-        questionHistory: [],
-        checkpointHistory: [],
-        createdAt: now,
-        updatedAt: now,
-        status: "running",
-    }
+    return withRunLock(directory, change, "start run", async () => {
+        const now = new Date().toISOString()
+        const state: RunState = {
+            version: 5,
+            revision: 0,
+            mode: input.mode,
+            goal: input.goal,
+            baseline: "",
+            requestedTier: input.requestedTier,
+            scopeTier: routed.requirements.scopeTier,
+            assessment,
+            requirements: routed.requirements,
+            riskFacets: assessment.riskFacets,
+            uncertainty: assessment.uncertainty,
+            routingReasons: routed.reasons,
+            decisions: [],
+            budgetUsage: {
+                maxScopeEscalations: 0,
+                maxSpecialistDispatches: 0,
+                maxRepairCycles: 0,
+                maxRepeatedFailureFingerprints: 0,
+            },
+            dispatches: [],
+            artifacts: {},
+            invalidations: [],
+            repairs: [],
+            reviewSubmissions: [],
+            repairTasks: [],
+            frontierPolicy: structuredClone(config.frontier),
+            frontierUsage: { escalations: 0, dispatches: 0, highDispatches: 0 },
+            frontierHistory: [],
+            questionHistory: [],
+            checkpointHistory: [],
+            schedulerHistory: [],
+            createdAt: now,
+            updatedAt: now,
+            status: "running",
+        }
 
-    state.baseline = await baseCommit(directory)
+        state.baseline = await baseCommit(directory)
 
-    await persistArtifact(
-        directory,
-        change,
-        state,
-        "routing",
-        "specops-engine",
-        routingMarkdown(state),
-        "workflow",
-    )
-    if (state.scopeTier === "lean") {
         await persistArtifact(
             directory,
             change,
             state,
-            "exploration",
-            AGENT_IDS.core.assessor,
-            assessmentExplorationMarkdown(state),
+            "routing",
+            "specops-engine",
+            routingMarkdown(state),
             "workflow",
         )
-    }
-    await writeRun(directory, change, state)
-    await writeMachine(directory, change, "specops-context.json", {
-        version: 1,
-        goal: input.goal,
-        baseline: state.baseline,
-        riskFacets: state.riskFacets,
-        touchedSurfaces: assessment.touchedSurfaces,
-        openQuestions: assessment.unresolvedQuestions,
-        relevantPaths: assessment.inspectedPaths,
-        decisions: [],
-    })
-    await writeMachine(directory, change, "specops-evidence.json", { version: 2, commands: [] })
-    await writeArtifactIndex(directory, change, state)
+        if (state.scopeTier === "lean") {
+            await persistArtifact(
+                directory,
+                change,
+                state,
+                "exploration",
+                AGENT_IDS.core.assessor,
+                assessmentExplorationMarkdown(state),
+                "workflow",
+            )
+        }
+        await writeRun(directory, change, state)
+        await writeMachine(directory, change, "specops-context.json", {
+            version: 1,
+            goal: input.goal,
+            baseline: state.baseline,
+            riskFacets: state.riskFacets,
+            touchedSurfaces: assessment.touchedSurfaces,
+            openQuestions: assessment.unresolvedQuestions,
+            relevantPaths: assessment.inspectedPaths,
+            decisions: [],
+        })
+        await writeMachine(directory, change, "specops-evidence.json", { version: 2, commands: [] })
+        await writeArtifactIndex(directory, change, state)
 
-    return { change, state }
+        return { change, state }
+    })
 }
 
 /**
@@ -225,6 +237,83 @@ export async function startRun(
  * @returns The next {@link ControllerDirective}.
  */
 export async function issueDirective(
+    directory: string,
+    change: string,
+    config: Pick<SpecOpsConfig, "review" | "frontier">,
+): Promise<ControllerDirective> {
+    return withRunLock(directory, change, "issue directive", () =>
+        issueDirectiveLocked(directory, change, config),
+    )
+}
+
+/**
+ * Recover one interrupted worker dispatch without cancelling the whole run.
+ *
+ * Only the exact currently-issued dispatch may be recovered. Repository-mutating
+ * dispatches invalidate implementation assurance because the worker may have
+ * left a partial diff on disk before the interruption.
+ *
+ * @param directory - Repository root directory.
+ * @param change - OpenSpec change id.
+ * @param dispatchId - Exact issued dispatch to recover.
+ * @param reason - Human-readable interruption reason.
+ * @returns The updated run state.
+ */
+export async function recoverDispatch(
+    directory: string,
+    change: string,
+    dispatchId: string,
+    reason: string,
+): Promise<RunState> {
+    return withRunLock(directory, change, "recover dispatch", async () => {
+        const state = await readRun(directory, change)
+        const dispatch = state.dispatches.find(item => item.id === dispatchId)
+        if (!dispatch) throw new Error(`unknown SpecOps dispatch: ${dispatchId}`)
+        if (dispatch.status !== "issued") {
+            throw new Error(`SpecOps dispatch ${dispatchId} is already ${dispatch.status}`)
+        }
+        const otherIssued = state.dispatches.find(
+            item => item.status === "issued" && item.id !== dispatchId,
+        )
+        if (otherIssued) {
+            throw new Error(`SpecOps has another issued dispatch: ${otherIssued.id}`)
+        }
+        const trimmed = redactSensitiveText(reason.trim()).slice(0, 1_000)
+        if (!trimmed) throw new Error("dispatch recovery reason must be non-empty")
+        const fingerprint = hash(
+            JSON.stringify({
+                capability: dispatch.capability,
+                purpose: dispatch.purpose,
+                action: dispatch.action,
+                inputHash: dispatch.inputHash,
+            }),
+        )
+        const attempt =
+            state.dispatches.filter(item => item.recovery?.fingerprint === fingerprint).length + 1
+        dispatch.status = "failed"
+        dispatch.finishedAt = new Date().toISOString()
+        dispatch.failureReason = `Interrupted dispatch recovered: ${trimmed}`.slice(0, 2_000)
+        dispatch.recovery = { reason: trimmed, at: dispatch.finishedAt, fingerprint, attempt }
+        if (dispatch.capability === "implementation" || dispatch.capability === "repair") {
+            invalidate(state, ["implementation"], "implementation worker interrupted")
+        }
+        if (attempt > state.requirements.budgets.maxRepeatedFailureFingerprints) {
+            setOutcome(
+                state,
+                "blocked",
+                "policy-blocked",
+                `Interrupted dispatch recovery budget exhausted for ${dispatch.capability}.`,
+                "budget-exhausted",
+            )
+        }
+        await writeArtifactIndex(directory, change, state)
+        await writeRun(directory, change, state)
+        return state
+    })
+}
+
+/** Issue a directive after the caller has acquired the run mutation lock. */
+async function issueDirectiveLocked(
     directory: string,
     change: string,
     config: Pick<SpecOpsConfig, "review" | "frontier">,
@@ -259,6 +348,7 @@ export async function issueDirective(
                 ).length + 1,
             status: "issued",
             at: new Date().toISOString(),
+            assuranceEpoch: assuranceEpoch(state),
         }
         if (
             directive.action.capability === "implementation" ||
@@ -314,6 +404,18 @@ export async function issueDirective(
             state.frontierResume.consumed = true
         }
         state.dispatches.push(record)
+        state.schedulerHistory ??= []
+        state.schedulerHistory.push({
+            sequence: state.schedulerHistory.length + 1,
+            revision: state.revision,
+            snapshotHash: inputHash,
+            action: record.action,
+            capability: record.capability,
+            purpose: record.purpose,
+            bindingHash: record.inputHash,
+            at: record.at,
+        })
+        if (state.schedulerHistory.length > 256) state.schedulerHistory.shift()
         if (directive.action.capability === "frontier") {
             recordFrontierDispatch(state)
         }
@@ -324,7 +426,7 @@ export async function issueDirective(
             "policy-blocked",
             state.resumeTarget
                 ? "SpecOps could not reconstruct the exact action targeted by the pending resume request."
-                : "SpecOps detected a repeated consultation cycle without implementation progress.",
+                : "SpecOps detected repeated scheduling for the same assurance epoch without implementation progress.",
             "workflow-stalled",
         )
     }
@@ -362,6 +464,19 @@ export async function completeAction(
     output: string,
     config: Pick<SpecOpsConfig, "review" | "frontier" | "routing" | "workflow">,
 ): Promise<RunState> {
+    return withRunLock(directory, change, "complete action", () =>
+        completeActionLocked(directory, change, dispatchId, output, config),
+    )
+}
+
+/** Complete a worker result after the caller has acquired the run mutation lock. */
+async function completeActionLocked(
+    directory: string,
+    change: string,
+    dispatchId: string,
+    output: string,
+    config: Pick<SpecOpsConfig, "review" | "frontier" | "routing" | "workflow">,
+): Promise<RunState> {
     const state = await readRun(directory, change)
     const dispatch = state.dispatches.find(record => record.id === dispatchId)
     if (!dispatch) {
@@ -383,6 +498,9 @@ export async function completeAction(
     const phase = phaseForAction(action)
 
     try {
+        if (Buffer.byteLength(output, "utf8") > 1_000_000) {
+            throw new Error("SpecOps worker output exceeds the 1,000,000-byte limit")
+        }
         if (action.capability === "implementation" || action.capability === "repair") {
             await assertWriterGuards(directory, change, state, dispatch)
         }
@@ -399,6 +517,7 @@ export async function completeAction(
             dispatch.outputHash = hash(parsed.prose)
             registerPendingQuestions(state, dispatch, parsed.questions)
             dispatch.status = "completed"
+            dispatch.finishedAt = new Date().toISOString()
         } else if (parsed.frontier) {
             if (state.frontierPolicy?.mode !== "adaptive") {
                 await persistActionResult(directory, change, state, action, parsed.prose, config)
@@ -445,10 +564,12 @@ export async function completeAction(
             }
             dispatch.outputHash = hash(parsed.prose)
             dispatch.status = "completed"
+            dispatch.finishedAt = new Date().toISOString()
         } else {
             await persistActionResult(directory, change, state, action, parsed.prose, config)
             dispatch.outputHash = hash(parsed.prose)
             dispatch.status = "completed"
+            dispatch.finishedAt = new Date().toISOString()
         }
         if (state.scopeTier !== scopeBeforeCompletion) {
             invalidate(
@@ -494,7 +615,8 @@ export async function completeAction(
         }
     } catch (error) {
         dispatch.status = "failed"
-        dispatch.failureReason = String(error).slice(0, 2_000)
+        dispatch.finishedAt = new Date().toISOString()
+        dispatch.failureReason = redactSensitiveText(String(error)).slice(0, 2_000)
         if (/writer guard/i.test(String(error))) {
             setOutcome(state, "blocked", "policy-blocked", String(error), "policy-rejected")
         }
@@ -646,8 +768,21 @@ export async function answerQuestionAction(
     selectedOptionId: string | undefined,
     otherText: string | undefined,
 ): Promise<RunState> {
+    return withRunLock(directory, change, "answer question", () =>
+        answerQuestionActionLocked(directory, change, questionId, selectedOptionId, otherText),
+    )
+}
+
+/** Answer a question after the caller has acquired the run mutation lock. */
+async function answerQuestionActionLocked(
+    directory: string,
+    change: string,
+    questionId: string,
+    selectedOption?: string,
+    otherText?: string,
+): Promise<RunState> {
     const state = await readRun(directory, change)
-    answerQuestion(state, questionId, selectedOptionId, otherText)
+    answerQuestion(state, questionId, selectedOption, otherText)
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
     await writeQuestionLedger(directory, change, state)
@@ -680,6 +815,21 @@ export async function answerQuestionsAction(
     directory: string,
     change: string,
     answers: Array<{ questionId: string; selectedOption?: string; otherText?: string }>,
+): Promise<RunState> {
+    return withRunLock(directory, change, "answer questions", () =>
+        answerQuestionsActionLocked(directory, change, answers),
+    )
+}
+
+/** Answer a question batch after the caller has acquired the run mutation lock. */
+async function answerQuestionsActionLocked(
+    directory: string,
+    change: string,
+    answers: Array<{
+        questionId: string
+        selectedOption?: string
+        otherText?: string
+    }>,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
 
@@ -751,6 +901,17 @@ export async function dismissQuestionAction(
     change: string,
     questionId: string,
 ): Promise<RunState> {
+    return withRunLock(directory, change, "dismiss question", () =>
+        dismissQuestionActionLocked(directory, change, questionId),
+    )
+}
+
+/** Dismiss a question after the caller has acquired the run mutation lock. */
+async function dismissQuestionActionLocked(
+    directory: string,
+    change: string,
+    questionId: string,
+): Promise<RunState> {
     const state = await readRun(directory, change)
     dismissQuestion(state, questionId)
     await writeRun(directory, change, state)
@@ -781,6 +942,19 @@ export async function resumeCheckpointAction(
     feedback: string | undefined,
     config: Pick<SpecOpsConfig, "review">,
     resolution: CheckpointResolution | undefined = undefined,
+): Promise<RunState> {
+    return withRunLock(directory, change, "resume checkpoint", () =>
+        resumeCheckpointActionLocked(directory, change, feedback, config, resolution),
+    )
+}
+
+/** Resume a checkpoint after the caller has acquired the run mutation lock. */
+async function resumeCheckpointActionLocked(
+    directory: string,
+    change: string,
+    feedback: string | undefined,
+    config: Pick<SpecOpsConfig, "review">,
+    resolution?: CheckpointResolution,
 ): Promise<RunState> {
     const state = await readRun(directory, change)
     const pending = state.pendingCheckpoint
@@ -919,6 +1093,17 @@ export async function cancelRun(
     change: string,
     reason = "Cancelled by user.",
 ): Promise<RunState> {
+    return withRunLock(directory, change, "cancel run", () =>
+        cancelRunLocked(directory, change, reason),
+    )
+}
+
+/** Cancel a run after the caller has acquired the run mutation lock. */
+async function cancelRunLocked(
+    directory: string,
+    change: string,
+    reason = "Cancelled by user.",
+): Promise<RunState> {
     const state = await readRun(directory, change)
     if (!isActive(state.status)) {
         return state
@@ -977,6 +1162,17 @@ export async function cancelRun(
  * @throws When the completion gates are not yet satisfied.
  */
 export async function finalizeRun(
+    directory: string,
+    change: string,
+    config: SpecOpsConfig,
+): Promise<RunState> {
+    return withRunLock(directory, change, "finalize run", () =>
+        finalizeRunLocked(directory, change, config),
+    )
+}
+
+/** Finalize a run after the caller has acquired the run mutation lock. */
+async function finalizeRunLocked(
     directory: string,
     change: string,
     config: SpecOpsConfig,
@@ -1634,7 +1830,13 @@ async function protectedControllerTree(
     change: string,
 ): Promise<Record<string, string>> {
     const root = changeRoot(directory, change)
-    const excluded = new Set(["specops-run.json", "specops-progress.json", "specops-evidence.json"])
+    const excluded = new Set([
+        "specops-run.json",
+        "specops-progress.json",
+        "specops-evidence.json",
+        "specops-run.lock",
+        "specops-transaction",
+    ])
     const entries: Record<string, string> = {}
 
     async function visit(current: string): Promise<void> {
@@ -2180,9 +2382,17 @@ function setOutcome(
         state.blockReason = blockReason
     }
     if (status !== "cancelled") {
-        state.outcome = { category, message, at: new Date().toISOString() }
+        state.outcome = {
+            category,
+            message: redactSensitiveText(message),
+            at: new Date().toISOString(),
+        }
     } else {
-        state.outcome = { category, message, at: new Date().toISOString() }
+        state.outcome = {
+            category,
+            message: redactSensitiveText(message),
+            at: new Date().toISOString(),
+        }
     }
 }
 
@@ -2382,6 +2592,7 @@ function recordArtifact(
     content: string,
     purpose: DispatchRecord["purpose"],
 ): void {
+    const persistedContent = redactSensitiveText(content.trim())
     state.artifacts[artifact] = {
         artifact,
         producer,
@@ -2392,7 +2603,7 @@ function recordArtifact(
             diff: state.implementationDiffHash ?? "",
             ...answerHashes(state),
         },
-        outputHash: hash(content.trim()),
+        outputHash: hash(persistedContent),
         scopeTier: state.scopeTier,
         capabilities: state.requirements.requiredCapabilities,
         validity: "valid",

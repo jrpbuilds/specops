@@ -12,7 +12,13 @@ import { executeValidation } from "../src/evidence/commands.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
 import { changeRoot, writeMachine, writeRun } from "../src/state/store.js"
 import type { Assessment, RunState } from "../src/types.js"
-import { cancelRun, completeAction, finalizeRun, issueDirective } from "../src/workflow/engine.js"
+import {
+    cancelRun,
+    completeAction,
+    finalizeRun,
+    issueDirective,
+    recoverDispatch,
+} from "../src/workflow/engine.js"
 import { nextAction } from "../src/workflow/scheduler.js"
 
 const assessment = (overrides: Partial<Assessment> = {}): Assessment => ({
@@ -100,7 +106,8 @@ describe("final SpecOps policy", () => {
     it("accepts a bounded escalation only when it adds a new requirement", () => {
         const routed = requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements
         const state = {
-            version: 4 as const,
+            version: 5 as const,
+            revision: 0,
             mode: "automatic" as const,
             goal: "test",
             baseline: "abc",
@@ -337,6 +344,50 @@ describe("final SpecOps policy", () => {
         )
     })
 
+    it("recovers an interrupted dispatch without cancelling the run", async () => {
+        const { directory, change, state } = await persistedRun()
+        state.dispatches.push(dispatch("interrupted", "exploration", "workflow"))
+        await writeRun(directory, change, state)
+
+        const recovered = await recoverDispatch(
+            directory,
+            change,
+            "interrupted",
+            "the worker task was interrupted by the host",
+        )
+        expect(recovered.status).toBe("running")
+        expect(recovered.dispatches[0]).toMatchObject({
+            status: "failed",
+            recovery: { reason: "the worker task was interrupted by the host" },
+        })
+        expect(recovered.dispatches[0]?.finishedAt).toBeTruthy()
+    })
+
+    it("blocks repeated interrupted recovery after its configured budget", async () => {
+        const { directory, change, state } = await persistedRun()
+        state.requirements.budgets.maxRepeatedFailureFingerprints = 1
+        state.dispatches.push(dispatch("interrupted-1", "exploration", "workflow"))
+        await writeRun(directory, change, state)
+
+        const first = await recoverDispatch(
+            directory,
+            change,
+            "interrupted-1",
+            "first interruption",
+        )
+        first.dispatches.push(dispatch("interrupted-2", "exploration", "workflow"))
+        await writeRun(directory, change, first)
+
+        const second = await recoverDispatch(
+            directory,
+            change,
+            "interrupted-2",
+            "second interruption",
+        )
+        expect(second.status).toBe("blocked")
+        expect(second.blockReason).toBe("budget-exhausted")
+    })
+
     it("does not finalize with an unresolved repair task", async () => {
         const { directory, change, state } = await persistedRun()
         makeSchedulerComplete(state)
@@ -475,7 +526,8 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function automaticState(): RunState {
     const assessed = assessment()
     return {
-        version: 4,
+        version: 5,
+        revision: 0,
         mode: "automatic",
         goal: "test",
         baseline: "abc",

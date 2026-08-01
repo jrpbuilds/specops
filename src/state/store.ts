@@ -1,4 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { AsyncLocalStorage } from "node:async_hooks"
+import { createHash } from "node:crypto"
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import path from "node:path"
 import type { RunState } from "../types.js"
 
@@ -23,11 +26,297 @@ export const changeRoot = (directory: string, change: string): string =>
  * @param content - UTF-8 text to write.
  * @returns Resolves when the rename has completed.
  */
-async function atomicWrite(destination: string, content: string): Promise<void> {
+async function atomicWritePhysical(destination: string, content: string): Promise<void> {
     await mkdir(path.dirname(destination), { recursive: true })
-    const temporary = `${destination}.tmp`
-    await writeFile(temporary, content, "utf8")
-    await rename(temporary, destination)
+    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
+    const handle = await open(temporary, "wx")
+    try {
+        await handle.writeFile(content, "utf8")
+        await handle.sync()
+    } finally {
+        await handle.close()
+    }
+    try {
+        await rename(temporary, destination)
+    } finally {
+        await unlink(temporary).catch(() => undefined)
+    }
+}
+
+/** Write through the active transaction when a controller mutation is running. */
+async function atomicWrite(destination: string, content: string): Promise<void> {
+    const transaction = transactionStorage.getStore()
+    if (transaction) {
+        await stageTransactionWrite(transaction, destination, content)
+        return
+    }
+    await atomicWritePhysical(destination, content)
+}
+
+/** Hash persisted text for transaction integrity checks. */
+function contentHash(content: string): string {
+    return createHash("sha256").update(content).digest("hex")
+}
+
+/** Metadata persisted while a controller owns a run mutation lock. */
+type RunLock = { token: string; pid: number; operation: string; acquiredAt: string }
+
+const LOCK_STALE_MS = 30_000
+const TRANSACTION_DIR = "specops-transaction"
+const RUN_STATE_FILE = "specops-run.json"
+
+type TransactionEntry = {
+    destination: string
+    staged: string
+    hash: string
+}
+
+type TransactionManifest = {
+    version: 1
+    id: string
+    status: "open" | "prepared"
+    entries: TransactionEntry[]
+}
+
+type RunTransaction = {
+    root: string
+    directory: string
+    manifest: TransactionManifest
+    entries: Map<string, TransactionEntry>
+}
+
+const transactionStorage = new AsyncLocalStorage<RunTransaction>()
+
+/** Execute one run mutation under an exclusive, recoverable filesystem lock. */
+export async function withRunLock<T>(
+    directory: string,
+    change: string,
+    operation: string,
+    callback: () => Promise<T>,
+): Promise<T> {
+    const root = changeRoot(directory, change)
+    await mkdir(root, { recursive: true })
+    const lockPath = path.join(root, "specops-run.lock")
+    const lock: RunLock = {
+        token: randomUUID(),
+        pid: process.pid,
+        operation,
+        acquiredAt: new Date().toISOString(),
+    }
+    let acquired = false
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+            await mkdir(lockPath)
+            acquired = true
+            await atomicWrite(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`)
+            break
+        } catch (error) {
+            if (acquired) {
+                await rm(lockPath, { recursive: true, force: true })
+                acquired = false
+            }
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+            if (attempt === 1 || !(await reclaimDeadLock(lockPath))) {
+                throw new Error(
+                    `SpecOps run is busy: ${change} is being mutated; retry after ${operation}`,
+                )
+            }
+        }
+    }
+    if (!acquired) throw new Error(`SpecOps could not acquire the run lock for ${change}`)
+    try {
+        await recoverTransactions(root)
+        const transaction = await beginTransaction(root)
+        return await transactionStorage.run(transaction, async () => {
+            try {
+                const result = await callback()
+                await finishTransaction(transaction)
+                return result
+            } catch (error) {
+                await finishTransaction(transaction)
+                throw error
+            }
+        })
+    } finally {
+        try {
+            const current = JSON.parse(
+                await readFile(path.join(lockPath, "owner.json"), "utf8"),
+            ) as Partial<RunLock>
+            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true })
+        } catch {
+            // A recovered lock has already been removed; the mutation is still complete.
+        }
+    }
+}
+
+/** Start a transaction whose writes remain invisible until the callback ends. */
+async function beginTransaction(root: string): Promise<RunTransaction> {
+    const id = randomUUID()
+    const transactionRoot = path.join(root, TRANSACTION_DIR, id)
+    const manifest: TransactionManifest = { version: 1, id, status: "open", entries: [] }
+    await mkdir(transactionRoot, { recursive: true })
+    await atomicWritePhysical(
+        path.join(transactionRoot, "manifest.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+    )
+    return {
+        root,
+        directory: transactionRoot,
+        manifest,
+        entries: new Map(),
+    }
+}
+
+/** Stage one destination write and keep the manifest durable as work progresses. */
+async function stageTransactionWrite(
+    transaction: RunTransaction,
+    destination: string,
+    content: string,
+): Promise<void> {
+    const relative = path.relative(transaction.root, destination)
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new Error("transaction destination escaped change root")
+    }
+    const staged = path.join(transaction.directory, "files", relative)
+    await atomicWritePhysical(staged, content)
+    const entry: TransactionEntry = {
+        destination: relative,
+        staged: path.relative(transaction.directory, staged),
+        hash: contentHash(content),
+    }
+    transaction.entries.set(relative, entry)
+    transaction.manifest.entries = [...transaction.entries.values()].sort((left, right) =>
+        left.destination.localeCompare(right.destination),
+    )
+    await atomicWritePhysical(
+        path.join(transaction.directory, "manifest.json"),
+        `${JSON.stringify(transaction.manifest, null, 2)}\n`,
+    )
+}
+
+/** Publish a prepared transaction idempotently, with run state last. */
+async function publishTransaction(
+    manifest: TransactionManifest,
+    transactionRoot: string,
+    root: string,
+): Promise<void> {
+    if (manifest.version !== 1 || !Array.isArray(manifest.entries)) {
+        throw new Error("invalid SpecOps transaction manifest")
+    }
+    const entries = [...manifest.entries].sort(
+        (left, right) =>
+            Number(left.destination === RUN_STATE_FILE) -
+                Number(right.destination === RUN_STATE_FILE) ||
+            left.destination.localeCompare(right.destination),
+    )
+    for (const entry of entries) {
+        const destination = path.join(root, entry.destination)
+        const staged = path.join(transactionRoot, entry.staged)
+        let currentHash: string | undefined
+        try {
+            currentHash = contentHash(await readFile(destination, "utf8"))
+        } catch {
+            // The destination may not have been published yet.
+        }
+        if (currentHash === entry.hash) continue
+        let stagedContent: string
+        try {
+            stagedContent = await readFile(staged, "utf8")
+        } catch {
+            throw new Error(`transaction entry is missing: ${entry.destination}`)
+        }
+        if (contentHash(stagedContent) !== entry.hash) {
+            throw new Error(`transaction entry hash mismatch: ${entry.destination}`)
+        }
+        await atomicWritePhysical(destination, stagedContent)
+    }
+}
+
+/** Complete a transaction or discard an empty/uncommitted transaction. */
+async function finishTransaction(transaction: RunTransaction): Promise<void> {
+    if (transaction.entries.size === 0) {
+        await rm(transaction.directory, { recursive: true, force: true })
+        return
+    }
+    transaction.manifest.status = "prepared"
+    await atomicWritePhysical(
+        path.join(transaction.directory, "manifest.json"),
+        `${JSON.stringify(transaction.manifest, null, 2)}\n`,
+    )
+    await publishTransaction(transaction.manifest, transaction.directory, transaction.root)
+    await rm(transaction.directory, { recursive: true, force: true })
+}
+
+/** Recover prepared transactions left by a process that died during publication. */
+async function recoverTransactions(root: string): Promise<void> {
+    const transactionsRoot = path.join(root, TRANSACTION_DIR)
+    let names: string[]
+    try {
+        names = await readdir(transactionsRoot)
+    } catch {
+        return
+    }
+    for (const name of names.sort()) {
+        const transactionRoot = path.join(transactionsRoot, name)
+        const manifestPath = path.join(transactionRoot, "manifest.json")
+        let manifest: TransactionManifest
+        try {
+            manifest = JSON.parse(await readFile(manifestPath, "utf8")) as TransactionManifest
+        } catch {
+            const stagedFiles = await readdir(path.join(transactionRoot, "files")).catch(() => [])
+            if (stagedFiles.length === 0) {
+                await rm(transactionRoot, { recursive: true, force: true })
+                continue
+            }
+            throw new Error(`SpecOps transaction manifest is unreadable: ${name}`)
+        }
+        if (manifest.status === "open") {
+            await rm(transactionRoot, { recursive: true, force: true })
+            continue
+        }
+        await publishTransaction(manifest, transactionRoot, root)
+        await rm(transactionRoot, { recursive: true, force: true })
+    }
+    await rm(transactionsRoot, { recursive: true, force: true })
+}
+
+/** Reclaim only a sufficiently old lock whose owner is gone or malformed. */
+async function reclaimDeadLock(lockPath: string): Promise<boolean> {
+    let lockStat
+    try {
+        lockStat = await stat(lockPath)
+    } catch {
+        return false
+    }
+
+    if (Date.now() - lockStat.mtimeMs < LOCK_STALE_MS) return false
+
+    let owner: Partial<RunLock> | undefined
+    try {
+        owner = JSON.parse(
+            await readFile(path.join(lockPath, "owner.json"), "utf8"),
+        ) as Partial<RunLock>
+    } catch {
+        // An owner file may be absent or malformed if the process died during acquisition.
+    }
+
+    if (owner?.pid !== undefined) {
+        try {
+            process.kill(owner.pid, 0)
+            return false
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false
+        }
+    }
+
+    const quarantine = `${lockPath}.reclaim-${randomUUID()}`
+    try {
+        await rename(lockPath, quarantine)
+    } catch {
+        return false
+    }
+    await rm(quarantine, { recursive: true, force: true })
+    return true
 }
 
 /**
@@ -43,11 +332,23 @@ async function atomicWrite(destination: string, content: string): Promise<void> 
  * @returns Resolves when the atomic write has completed.
  */
 export async function writeRun(directory: string, change: string, state: RunState): Promise<void> {
+    state.schedulerHistory ??= []
+    const destination = path.join(changeRoot(directory, change), "specops-run.json")
+    let currentRevision = -1
+    try {
+        const current = JSON.parse(await readFile(destination, "utf8")) as { revision?: unknown }
+        if (typeof current.revision === "number") currentRevision = current.revision
+    } catch {
+        // A newly-created run has no persisted revision yet.
+    }
+    if (currentRevision >= 0 && state.revision !== currentRevision) {
+        throw new Error(
+            `SpecOps run revision conflict: expected ${state.revision}, found ${currentRevision}`,
+        )
+    }
+    state.revision = currentRevision < 0 ? (state.revision ?? 0) : currentRevision + 1
     state.updatedAt = new Date().toISOString()
-    await atomicWrite(
-        path.join(changeRoot(directory, change), "specops-run.json"),
-        `${JSON.stringify(state, null, 2)}\n`,
-    )
+    await atomicWrite(destination, `${JSON.stringify(state, null, 2)}\n`)
 }
 
 /**
@@ -71,14 +372,28 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 
     if (
         !isCurrentRunStateShape(raw) ||
-        raw.version !== 4 ||
+        raw.version !== 5 ||
+        !isNonNegativeInteger(raw.revision) ||
         (raw.mode !== "interactive" && raw.mode !== "automatic") ||
         typeof raw.status !== "string" ||
         !["running", "paused", "passed", "blocked", "failed", "cancelled"].includes(raw.status)
     ) {
-        throw new Error("invalid SpecOps run state")
+        const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable"
+        throw new Error(
+            `invalid SpecOps run state (expected version 5 with a numeric revision; found ${version})`,
+        )
     }
     const value = raw as RunState
+
+    const issuedCount = value.dispatches.filter(dispatch => dispatch.status === "issued").length
+    if (issuedCount > 1) {
+        throw new Error(
+            `invalid SpecOps run state: ${issuedCount} issued dispatches found; maximum is 1`,
+        )
+    }
+    if (value.status !== "running" && value.status !== "paused" && issuedCount > 0) {
+        throw new Error(`invalid SpecOps run state: terminal state ${value.status} has issued work`)
+    }
 
     const validPauseReasons = new Set(["pending-question", "question-dismissed", "checkpoint"])
 
@@ -201,6 +516,8 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         !Array.isArray(value.frontierHistory) ||
         !Array.isArray(value.questionHistory) ||
         !Array.isArray(value.checkpointHistory) ||
+        !Array.isArray(value.schedulerHistory) ||
+        !isRecord(value.budgetUsage) ||
         !isRecord(value.frontierPolicy) ||
         !isRecord(value.frontierUsage)
     ) {
@@ -208,7 +525,17 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
     }
     const policy = value.frontierPolicy
     const usage = value.frontierUsage
+    const budgets = value.budgetUsage
     return (
+        Object.values(budgets).every(isNonNegativeInteger) &&
+        Array.isArray(value.dispatches) &&
+        value.dispatches.every(
+            item =>
+                isRecord(item) &&
+                typeof item.id === "string" &&
+                typeof item.inputHash === "string" &&
+                ["issued", "completed", "failed"].includes(String(item.status)),
+        ) &&
         (policy.mode === "disabled" || policy.mode === "adaptive") &&
         isNonNegativeInteger(policy.maxEscalationsPerRun) &&
         isNonNegativeInteger(policy.maxDispatchesPerRun) &&
