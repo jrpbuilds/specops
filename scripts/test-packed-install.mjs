@@ -94,18 +94,22 @@ await writeFile(
     "utf8",
 )
 const disabledHooks = await pluginModule.default.server(fakePluginInput(packageDirectory))
-const disabledConfig = {}
+const disabledConfig = {
+    mcp: {
+        example: { type: "remote", url: "https://mcp.example.test", enabled: true },
+    },
+}
 await disabledHooks.config(disabledConfig)
 for (const id of ALL_AGENT_IDS) {
     if (CONTROLLER_AGENT_IDS.includes(id)) {
         assert(
-            disabledConfig.agent[id]?.tools?.["mcp_*"] === undefined,
+            disabledConfig.agent[id]?.permission?.["example_*"] === undefined,
             `packed disabled policy changed controller ${id}`,
         )
     } else {
         assert(
-            disabledConfig.agent[id]?.tools?.["mcp_*"] === false,
-            `packed disabled policy omitted MCP deny for ${id}`,
+            disabledConfig.agent[id]?.permission?.["example_*"] === "deny",
+            `packed disabled policy omitted MCP server deny for ${id}`,
         )
     }
 }
@@ -511,7 +515,23 @@ async function runOpenCodeSmoke(
     const smokeHome = path.join(temporaryDirectory, "opencode-home")
     await mkdir(openCodeDirectory, { recursive: true })
     await mkdir(smokeHome, { recursive: true })
-    await writeFile(configurationPath, `${JSON.stringify({ plugin: [pluginEntry] }, null, 2)}\n`)
+    await writeFile(
+        configurationPath,
+        `${JSON.stringify(
+            {
+                plugin: [pluginEntry],
+                mcp: {
+                    example: {
+                        type: "local",
+                        command: ["node", "-e", ""],
+                        enabled: false,
+                    },
+                },
+            },
+            null,
+            2,
+        )}\n`,
+    )
     const environment = {
         ...process.env,
         HOME: smokeHome,
@@ -564,6 +584,20 @@ async function runOpenCodeSmoke(
         assert(agent.stdout.includes(controller), `OpenCode debug output omitted ${controller}`)
         assert(agent.stdout.includes("primary"), `${controller} is not primary in OpenCode`)
     }
+
+    const worker = spawnSync("opencode", ["debug", "agent", ids.AGENT_IDS.core.explorer], {
+        cwd: packageDirectory,
+        encoding: "utf8",
+        env: environment,
+        maxBuffer: 2 * 1024 * 1024,
+        detached: true,
+        timeout: 30_000,
+    })
+    assertProcess(worker, "OpenCode MCP worker resolution")
+    assert(
+        worker.stdout.includes("example_*") && worker.stdout.includes("allow"),
+        "OpenCode worker omitted the inherited MCP server permission",
+    )
 
     const cli = await runAutomaticCli(environment, smokeProjectDirectory)
     return `OpenCode ${available.stdout.trim()} resolved both controllers; ${cli}`

@@ -49,8 +49,8 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
             status: "INFO",
             message:
                 config.integrations.mcp === "disabled"
-                    ? `MCP policy: disabled (mcp_* denied for ${subagentCount} SpecOps subagents)`
-                    : "MCP policy: inherit (host MCP access preserved)",
+                    ? `MCP policy: disabled (configured MCP server tools denied for ${subagentCount} SpecOps subagents)`
+                    : "MCP policy: inherit (configured host MCP server tools passed through)",
         },
     ]
 

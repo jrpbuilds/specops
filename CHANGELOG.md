@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.1] - 2026-08-01
+
+### Fixed
+
+- Exposed configured OpenCode MCP server tools to SpecOps subagents using server-prefixed permission rules. Previously workers fell back to OpenCode's implicit `ask` prompt, which subagents cannot satisfy, effectively blocking all MCP tool access including `codegraph_explore`.
+- Aligned generated OpenSpec change names with the 200-character kebab-case contract.
+- Added regression coverage for packed installation, MCP policy, and change-name boundaries.
+
 ## [0.16.0] - 2026-08-01
 
 ### Highlights
@@ -33,4 +41,5 @@
   documentation.
 - CI and release workflows now use the repository-pinned Node.js version from `.nvmrc`.
 
+[0.16.1]: https://github.com/jrpbuilds/specops/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/jrpbuilds/specops/compare/v0.15.1...v0.16.0

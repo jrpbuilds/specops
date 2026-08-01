@@ -31,6 +31,9 @@ export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
     "show",
 ])
 
+/** OpenSpec's maximum change-name length. */
+export const MAX_CHANGE_NAME_LENGTH = 200
+
 /**
  * Resolve the final configuration from defaults, the global user file, and the
  * project file.
@@ -238,22 +241,25 @@ export async function writeArtifact(
 
 /**
  * Derive a readable, filesystem-safe unique change identifier from a goal.
- * Strips non-alphanumeric characters, truncates to 48 characters, and
- * appends a base-36 timestamp suffix when the base name is already taken.
+ * Strips non-alphanumeric characters, bounds the result to OpenSpec's maximum
+ * length, and appends a base-36 timestamp suffix when the base name is taken.
  * @param directory - Project root directory.
  * @param goal - Human-readable change description.
  * @returns A unique, filesystem-safe slug for the change directory.
  */
 export async function uniqueChangeName(directory: string, goal: string): Promise<string> {
-    const base =
-        goal
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 48) || "specops-change"
+    const normalized = goal
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    const base = normalized.slice(0, MAX_CHANGE_NAME_LENGTH).replace(/-+$/g, "") || "specops-change"
     try {
         await stat(path.join(directory, "openspec", "changes", base))
-        return `${base}-${Date.now().toString(36)}`
+        const suffix = `-${Date.now().toString(36)}`
+        const availableBaseLength = MAX_CHANGE_NAME_LENGTH - suffix.length
+        const uniqueBase =
+            base.slice(0, availableBaseLength).replace(/-+$/g, "") || "specops-change"
+        return `${uniqueBase}${suffix}`
     } catch {
         return base
     }

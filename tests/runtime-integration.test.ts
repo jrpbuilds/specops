@@ -11,15 +11,11 @@ import {
 } from "../src/capabilities/registry.js"
 import { COMMANDS } from "../src/commands.js"
 import { DEFAULT_CONFIG, SPECOPS_CONFIG_SCHEMA_URL, validateConfig } from "../src/config.js"
-import {
-    MCP_TOOL_WILDCARD,
-    resolveGlobalConfigPath,
-    resolveManifestPath,
-} from "../src/installation.js"
+import { resolveGlobalConfigPath, resolveManifestPath } from "../src/installation.js"
 import { validateManifest } from "../src/manifest.js"
 import { SpecOpsPluginWithManifest } from "../src/index.js"
 import { promptText } from "../src/prompts.generated.js"
-import { ALL_TOOL_IDS } from "../src/protocol.js"
+import { ALL_TOOL_IDS, TOOL_IDS } from "../src/protocol.js"
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME
 
@@ -69,6 +65,14 @@ describe.sequential("installed runtime contract", () => {
         const hooks = await SpecOpsPluginWithManifest(fakePluginInput())
         const config: Config = {}
         await hooks.config?.(config)
+
+        const changeSchema = hooks.tool?.[TOOL_IDS.getStatus]?.args.change as unknown as {
+            safeParse(value: unknown): { success: boolean }
+        }
+        expect(changeSchema.safeParse("a".repeat(200)).success).toBe(true)
+        expect(changeSchema.safeParse("a".repeat(201)).success).toBe(false)
+        expect(changeSchema.safeParse("invalid-").success).toBe(false)
+        expect(changeSchema.safeParse("invalid--name").success).toBe(false)
 
         const globalConfig = JSON.parse(await readFile(resolveGlobalConfigPath(), "utf8"))
         expect(globalConfig.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
@@ -132,7 +136,6 @@ describe.sequential("installed runtime contract", () => {
             expect(config.agent?.[id]?.prompt).toBe(promptText(id))
             if (!CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
                 expect(config.agent?.[id]?.mode).toBe("subagent")
-                expect(config.agent?.[id]?.tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
                 expect(
                     (config.agent?.[id]?.permission as Record<string, string> | undefined)?.task,
                 ).toBe("deny")
@@ -162,10 +165,25 @@ describe.sequential("installed runtime contract", () => {
         const worker = ALL_AGENT_IDS.find(
             id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
         )!
+        const hostMcp = {
+            example: { type: "remote" as const, url: "https://mcp.example.test", enabled: true },
+            "context7.remote": {
+                type: "remote" as const,
+                url: "https://mcp.context7.test",
+                enabled: true,
+            },
+        }
         const disabledHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
-        const disabledConfig: Config = {}
+        const disabledConfig: Config = { mcp: hostMcp }
         await disabledHooks.config?.(disabledConfig)
-        expect(disabledConfig.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBe(false)
+        expect(
+            (disabledConfig.agent?.[worker]?.permission as Record<string, string>)?.["example_*"],
+        ).toBe("deny")
+        expect(
+            (disabledConfig.agent?.[worker]?.permission as Record<string, string>)?.[
+                "context7_remote_*"
+            ],
+        ).toBe("deny")
 
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
@@ -173,9 +191,16 @@ describe.sequential("installed runtime contract", () => {
             "utf8",
         )
         const inheritedHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
-        const inheritedConfig: Config = {}
+        const inheritedConfig: Config = { mcp: hostMcp }
         await inheritedHooks.config?.(inheritedConfig)
-        expect(inheritedConfig.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
+        expect(
+            (inheritedConfig.agent?.[worker]?.permission as Record<string, string>)?.["example_*"],
+        ).toBe("allow")
+        expect(
+            (inheritedConfig.agent?.[worker]?.permission as Record<string, string>)?.[
+                "context7_remote_*"
+            ],
+        ).toBe("allow")
     })
 
     it.each(["global", "project"] as const)(
@@ -227,7 +252,8 @@ describe.sequential("installed runtime contract", () => {
             mcp: hostMcp,
             agent: {
                 [worker]: {
-                    tools: { [MCP_TOOL_WILDCARD]: true, bash: true },
+                    permission: dynamicMcpPermission("allow"),
+                    tools: { bash: true },
                 },
             },
         }
@@ -235,11 +261,11 @@ describe.sequential("installed runtime contract", () => {
         await hooks.config?.(config)
 
         for (const id of ALL_AGENT_IDS) {
-            const tools = config.agent?.[id]?.tools
+            const permission = config.agent?.[id]?.permission as Record<string, string> | undefined
             if (CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number])) {
-                expect(tools?.[MCP_TOOL_WILDCARD]).toBeUndefined()
+                expect(permission?.["example_*"]).toBeUndefined()
             } else {
-                expect(tools?.[MCP_TOOL_WILDCARD]).toBe(false)
+                expect(permission?.["example_*"]).toBe("deny")
             }
         }
         expect(config.agent?.[worker]?.tools?.bash).toBe(true)
@@ -254,12 +280,21 @@ describe.sequential("installed runtime contract", () => {
         )!
         const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
         const config: Config = {
-            agent: { [worker]: { tools: { [MCP_TOOL_WILDCARD]: true } } },
+            mcp: {
+                example: {
+                    type: "remote" as const,
+                    url: "https://mcp.example.test",
+                    enabled: true,
+                },
+            },
+            agent: { [worker]: { permission: dynamicMcpPermission("deny") } },
         }
 
         await hooks.config?.(config)
 
-        expect(config.agent?.[worker]?.tools?.[MCP_TOOL_WILDCARD]).toBe(true)
+        expect((config.agent?.[worker]?.permission as Record<string, string>)?.["example_*"]).toBe(
+            "deny",
+        )
     })
 
     it("keeps every public command connected to an agent or protocol tool", async () => {
@@ -292,4 +327,10 @@ function fakePluginInput(directory = process.cwd()): PluginInput {
         $: (() => undefined) as unknown as PluginInput["$"],
         experimental_workspace: { register() {} },
     }
+}
+
+function dynamicMcpPermission(action: "allow" | "deny") {
+    return { "example_*": action } as unknown as NonNullable<
+        NonNullable<Config["agent"]>[string]
+    >["permission"]
 }

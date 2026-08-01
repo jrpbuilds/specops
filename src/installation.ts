@@ -13,6 +13,9 @@ import {
     type SpecOpsManifest,
 } from "./manifest.js"
 
+type AgentConfig = NonNullable<NonNullable<Config["agent"]>[string]>
+type AgentPermissionConfig = NonNullable<AgentConfig["permission"]>
+
 /** Result of loading or materialising the agent model manifest. */
 export type ManifestMaterialisation = {
     status: "ready"
@@ -152,14 +155,42 @@ export async function saveAgentManifest(
     await writeManifestAtomically(destination, manifest)
 }
 
-/** OpenCode wildcard matching every tool exposed by an MCP server. */
-export const MCP_TOOL_WILDCARD = "mcp_*"
+/** Return OpenCode's wildcard for every tool exposed by one MCP server. */
+function mcpToolPattern(serverName: string): string {
+    return `${serverName.replace(/[^a-zA-Z0-9_-]/g, "_")}_*`
+}
+
+/** Build MCP permission rules for the effective OpenCode server catalogue. */
+function mcpPermissionRules(
+    config: Config,
+    mcpPolicy: SpecOpsConfig["integrations"]["mcp"],
+): Record<string, "allow" | "deny"> {
+    const action = mcpPolicy === "disabled" ? "deny" : "allow"
+    const servers = config.mcp ?? {}
+    return Object.fromEntries(
+        Object.entries(servers)
+            .filter(([, entry]) => entry?.enabled !== false)
+            .map(([serverName]) => [mcpToolPattern(serverName), action]),
+    )
+}
+
+/** Read an existing agent permission object without changing its shape. */
+function existingAgentPermission(agent: unknown): AgentPermissionConfig {
+    if (typeof agent !== "object" || agent === null || !("permission" in agent)) return {}
+    const permission = (agent as { permission?: unknown }).permission
+    return typeof permission === "object" && permission !== null
+        ? (permission as AgentPermissionConfig)
+        : {}
+}
 
 /**
  * Register canonical agents while preserving external registrations.
  *
- * When MCP access is disabled, the policy-owned wildcard is merged into every
- * canonical subagent. Other agent settings remain user- or host-owned.
+ * MCP rules are derived from OpenCode's effective server catalogue so they
+ * match the server-prefixed tool ids OpenCode exposes at runtime. Inherit mode
+ * preserves explicit existing permissions; disabled mode applies policy-owned
+ * denials after existing permissions. Other agent settings remain user- or
+ * host-owned.
  */
 export function registerManifestAgents(
     config: Config,
@@ -167,20 +198,22 @@ export function registerManifestAgents(
     mcpPolicy: SpecOpsConfig["integrations"]["mcp"] = "inherit",
 ): void {
     config.agent ??= {}
+    const mcpRules = mcpPermissionRules(config, mcpPolicy)
     for (const id of ALL_AGENT_IDS) {
         const agent = config.agent[id] ?? manifestAgentConfig(id, manifest.agents[id])
-        config.agent[id] =
-            mcpPolicy === "disabled" && AGENT_REGISTRY[id].mode === "subagent"
-                ? {
-                      ...agent,
-                      tools: {
-                          ...(typeof agent === "object" && agent !== null && "tools" in agent
-                              ? agent.tools
-                              : undefined),
-                          [MCP_TOOL_WILDCARD]: false,
-                      },
-                  }
-                : agent
+        if (AGENT_REGISTRY[id].mode !== "subagent" || Object.keys(mcpRules).length === 0) {
+            config.agent[id] = agent
+            continue
+        }
+
+        const existingPermission = existingAgentPermission(agent)
+        config.agent[id] = {
+            ...agent,
+            permission:
+                mcpPolicy === "disabled"
+                    ? ({ ...existingPermission, ...mcpRules } as AgentPermissionConfig)
+                    : ({ ...mcpRules, ...existingPermission } as AgentPermissionConfig),
+        }
     }
 }
 

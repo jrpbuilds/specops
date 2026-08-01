@@ -7,7 +7,13 @@ import { contextPacket } from "./capabilities/context.js"
 import { COMMANDS } from "./commands.js"
 import { doctor } from "./doctor.js"
 import { executeValidation } from "./evidence/commands.js"
-import { READ_ONLY_OPENSPEC_COMMANDS, openSpecOrThrow, onboard, readConfig } from "./openspec.js"
+import {
+    MAX_CHANGE_NAME_LENGTH,
+    READ_ONLY_OPENSPEC_COMMANDS,
+    openSpecOrThrow,
+    onboard,
+    readConfig,
+} from "./openspec.js"
 import { publishProgress, type MetadataContext } from "./progress.js"
 import { summarize } from "./summary.js"
 import { TOOL_IDS } from "./protocol.js"
@@ -29,7 +35,8 @@ import {
 import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js"
 
 /** Validated change-name pattern used by every tool that accepts a `change` argument. */
-const CHANGE_NAME = /^[a-z0-9][a-z0-9-]*$/
+const CHANGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const CHANGE_NAME_SCHEMA = tool.schema.string().max(MAX_CHANGE_NAME_LENGTH).regex(CHANGE_NAME)
 
 /**
  * Allow-list of artifact file names that may be requested through the
@@ -95,7 +102,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.nextAction]: tool({
             description:
                 "Return the next controller directive (dispatch, ask-question, checkpoint, block, finalize).",
-            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 return JSON.stringify(
                     await issueDirective(
@@ -111,7 +118,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.completeAction]: tool({
             description: "Validate and persist an issued deterministic worker result.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 dispatchId: tool.schema.string().min(1),
                 output: tool.schema.string(),
             },
@@ -139,7 +146,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.recoverDispatch]: tool({
             description: "Recover one interrupted issued dispatch and resume the run.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 dispatchId: tool.schema.string().min(1),
                 reason: tool.schema.string().min(1),
             },
@@ -162,7 +169,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.answerQuestion]: tool({
             description: "Record an answer to a worker-raised pending question.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 questionId: tool.schema.string().min(1),
                 selectedOption: tool.schema.string().optional(),
                 otherText: tool.schema.string().optional(),
@@ -190,7 +197,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.answerQuestions]: tool({
             description: "Answer multiple pending worker-raised questions in a single transaction.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 answers: tool.schema.array(
                     tool.schema.object({
                         questionId: tool.schema.string().min(1),
@@ -221,7 +228,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.dismissQuestion]: tool({
             description: "Record that the user dismissed the native question UI without answering.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 questionId: tool.schema.string().min(1),
             },
             async execute(args, context) {
@@ -243,7 +250,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             description:
                 "Resolve a pending interactive checkpoint and resume scheduling. Use resolution=apply-implementation-fixes for verification findings that require code changes.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 feedback: tool.schema.string().optional(),
                 resolution: tool.schema
                     .enum(["rerun-phase", "apply-implementation-fixes"])
@@ -269,7 +276,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.requestContext]: tool({
             description: "Read bounded, scheduler-safe run context and persisted artifacts.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 artifacts: tool.schema.array(tool.schema.string()).optional(),
             },
             async execute(args, context) {
@@ -292,7 +299,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.runValidation]: tool({
             description: "Execute a registered arbitrary validation command without a shell.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 dispatchId: tool.schema.string().min(1),
                 validationId: tool.schema.string().min(1),
                 executable: tool.schema.string().min(1),
@@ -364,7 +371,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         }),
         [TOOL_IDS.getStatus]: tool({
             description: "Read final-format deterministic run state.",
-            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 return JSON.stringify(await readRun(context.directory, args.change), null, 2)
             },
@@ -372,7 +379,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.cancelRun]: tool({
             description: "Persist a safe cancellation outcome for an active run.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 reason: tool.schema.string().min(1).optional(),
             },
             async execute(args, context) {
@@ -382,7 +389,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         }),
         [TOOL_IDS.finalize]: tool({
             description: "Finalize a run only when deterministic completion gates are satisfied.",
-            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 const state = await finalizeRun(
                     context.directory,
@@ -410,7 +417,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.archive]: tool({
             description:
                 "Request native user confirmation before archiving a passed OpenSpec change.",
-            args: { change: tool.schema.string().regex(CHANGE_NAME) },
+            args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 if (context.agent !== AGENT_IDS.controller.interactive) {
                     throw new Error(
@@ -474,7 +481,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
         [TOOL_IDS.confirmArchive]: tool({
             description: "Consume a native user archive decision and perform or decline archive.",
             args: {
-                change: tool.schema.string().regex(CHANGE_NAME),
+                change: CHANGE_NAME_SCHEMA,
                 confirmationId: tool.schema.string().min(1),
                 decision: tool.schema.enum(["archive", "decline"]),
             },

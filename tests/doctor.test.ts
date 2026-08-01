@@ -109,7 +109,7 @@ describe("doctor config-source warning", () => {
             integrations: { mcp: "disabled" },
         })
 
-        expect(output).toContain("MCP policy: disabled (mcp_* denied for")
+        expect(output).toContain("MCP policy: disabled (configured MCP server tools denied for")
         expect(output).toContain("SpecOps subagents)")
     })
 
