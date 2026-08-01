@@ -38,7 +38,7 @@
         "eval:review-fixer": "node scripts/evaluate-review-fixer.mjs",
         "onboard": "node scripts/onboard.mjs",
         "validate:openspec": "npm run onboard && openspec schema validate specops-lean && openspec schema validate specops-standard && openspec schema validate specops",
-        "docs:check": "node scripts/check-doc-links.mjs",
+        "docs:check": "node scripts/check-doc-links.mjs && node scripts/check-compatibility.mjs",
         "deadcode:check": "knip",
         "check": "npm run format:check && npm run generated:check && npm run typecheck && npm run deadcode:check && npm run test && npm run test:packed && npm run validate:openspec && npm run docs:check"
     },
@@ -67,7 +67,7 @@
     },
     "homepage": "https://github.com/jrpbuilds/specops#readme",
     "engines": {
-        "node": ">=20.19.0"
+        "node": ">=24.18.1"
     },
     "knip": {
         "ignoreBinaries": [
@@ -81,11 +81,11 @@
         "@fission-ai/openspec": "1.7.0"
     },
     "peerDependencies": {
-        "@opencode-ai/plugin": ">=1.16.2"
+        "@opencode-ai/plugin": ">=1.18.10"
     },
     "devDependencies": {
-        "@opencode-ai/plugin": "1.16.2",
-        "@types/node": "^22.0.0",
+        "@opencode-ai/plugin": "1.18.10",
+        "@types/node": "^24.0.0",
         "knip": "^6.29.0",
         "prettier": "^3.9.6",
         "typescript": "^5.9.0",

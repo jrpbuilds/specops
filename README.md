@@ -8,9 +8,9 @@
 
 [![npm version](https://img.shields.io/npm/v/@jrpbuilds/specops?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@jrpbuilds/specops)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node ≥ 20.19](https://img.shields.io/badge/node-%E2%89%A520.19-339933?logo=node.js&logoColor=white)](https://nodejs.org)
-[![OpenCode ≥ 1.16.2](https://img.shields.io/badge/opencode-%E2%89%A51.16.2-000?logo=opencode&logoColor=white)](https://opencode.ai)
-[![OpenSpec 1.6](https://img.shields.io/badge/openspec-1.6-6f42c1)](https://github.com/fission-ai/openspec)
+[![Node ≥ 24.18.1](https://img.shields.io/badge/node-%E2%89%A524.18.1-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![OpenCode ≥ 1.18.10](https://img.shields.io/badge/opencode-%E2%89%A51.18.10-000?logo=opencode&logoColor=white)](https://opencode.ai)
+[![OpenSpec 1.7.0](https://img.shields.io/badge/openspec-1.7.0-6f42c1)](https://github.com/fission-ai/openspec)
 [![release workflow](https://img.shields.io/badge/release-npm%20run%20check%20on%20tag-2ea44f?logo=githubactions&logoColor=white)](.github/workflows/release.yml)
 
 </div>
@@ -21,7 +21,7 @@ If you've used an AI coding agent before, you've probably noticed it does the ea
 
 ## Install
 
-Requires [OpenCode](https://opencode.ai) 1.16.2 or newer and [Node.js](https://nodejs.org) 20.19 or newer.
+Requires [OpenCode](https://opencode.ai) 1.18.10 or newer and [Node.js](https://nodejs.org) 24.18.1 or newer.
 
 ```bash
 opencode plugin @jrpbuilds/specops -g
@@ -92,7 +92,7 @@ npm run check
 npm run smoke:opencode
 ```
 
-`npm run check` runs formatting, strict TypeScript and unused-symbol checks, unit and integration tests, packed-output materialisation tests, generated-asset drift checks, and OpenSpec schema validation. `npm run smoke:opencode` additionally loads the packed plugin through a real isolated OpenCode installation and runs the documented CLI command until the first scheduler action or an external provider boundary. The release workflow runs `npm run check` on every version tag before publishing to npm and opening the GitHub release — there is no per-PR CI gate, so run `npm run check` locally before pushing. Full validation matrix in [docs/development.md](docs/development.md).
+`npm run check` runs formatting, strict TypeScript and unused-symbol checks, unit and integration tests, packed-output materialisation tests, generated-asset drift checks, OpenSpec schema validation, and documentation compatibility/link checks. `npm run smoke:opencode` additionally loads the packed plugin through a real isolated OpenCode installation and runs the documented CLI command until the first scheduler action or an external provider boundary. CI runs `npm run check` on pushes and pull requests, and the release workflow repeats it on every version tag before publishing to npm and opening the GitHub release. Full validation matrix in [docs/development.md](docs/development.md).
 
 If a command reports a missing controller, run `/specops-doctor`, inspect the manifest path it reports, rebuild and reinstall the package, restart OpenCode, and reach for `opencode debug config` or `opencode debug agent <controller-id>` as needed.
 

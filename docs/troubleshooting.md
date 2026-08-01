@@ -12,6 +12,29 @@ Start with `/specops-doctor`. It performs read-only checks against the installed
 OpenCode command registration, the materialised agent manifest, canonical agent catalogue,
 generated prompts, and bundled OpenSpec schemas. Every failure includes a repair action.
 
+## The installed versions are unsupported
+
+SpecOps 0.16 requires Node.js 24.18.1 or newer, OpenCode 1.18.10 or newer, and the bundled
+OpenSpec 1.7.0 assets. Check the active versions:
+
+```bash
+node --version
+opencode --version
+npm ls @opencode-ai/plugin @fission-ai/openspec
+```
+
+For an nvm-managed checkout, select the repository baseline and reinstall dependencies:
+
+```bash
+nvm install
+nvm use
+npm ci
+```
+
+If OpenCode is older than 1.18.10, upgrade OpenCode before reinstalling SpecOps. Do not work around
+an engine warning by using an older Node release; the package and CI baseline are intentionally
+Node.js 24.18.1.
+
 ## A command reports a missing controller
 
 `/specops` must resolve to `specops-interactive-controller`, and `/specops-auto` must resolve to

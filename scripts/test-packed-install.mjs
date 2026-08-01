@@ -638,7 +638,9 @@ async function runAutomaticCli(environment, directory, knownExternalBoundary = f
     }
 
     const providerBoundary =
-        /auth|credential|network|provider|rate.?limit|timeout|ECONN|fetch failed/i.test(combined) ||
+        /auth|credential|network|provider|rate.?limit|timeout|ECONN|fetch failed|APIError|third-party user token|chat\/completions/i.test(
+            combined,
+        ) ||
         (timedOut && (knownExternalBoundary || combined.includes(`"type":"step_start"`)))
     assert(
         providerBoundary,

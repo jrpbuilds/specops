@@ -176,4 +176,5 @@ native UI records a dismissal per question id and leaves the run paused and resu
 
 Answers are hashed into dispatch provenance, invalidate affected downstream artifacts, and cause
 a fresh dispatch for the interrupted phase with all recorded answers replayed as untrusted user
-content. Question budgets prevent unbounded loops.
+content. There is no separate question-count setting: each pending question remains bound to its
+run, phase, and one-time answer transaction.

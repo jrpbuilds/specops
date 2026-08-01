@@ -6,13 +6,16 @@ the same architecture.
 
 ## Prerequisites
 
-- Node.js 20.19 or newer
+- Node.js 24.18.1 or newer, selected by `.nvmrc`
 - npm
-- OpenCode for the optional real-host smoke test
+- OpenCode 1.18.10 or newer for the optional real-host smoke test
+- OpenSpec 1.7.0, installed as the bundled package dependency
 
 Install the pinned development dependencies:
 
 ```bash
+nvm install
+nvm use
 npm install
 ```
 
@@ -27,8 +30,8 @@ npm run generate
 ```
 
 This command builds the TypeScript, regenerates `src/workflow/contracts.generated.ts`
-and `docs/agents.md` and `docs/commands.md`, and formats the repository. Do not
-hand-edit those generated files.
+and `docs/agents.md` and `docs/commands.md`, checks the canonical compatibility declarations,
+and formats the repository. Do not hand-edit those generated files.
 
 `npm run generated:check` verifies:
 
@@ -38,6 +41,9 @@ hand-edit those generated files.
 - every public command targets a registered controller or protocol tool;
 - the generated artifact wire-format contracts match the canonical constants and templates;
 - generated documentation is current.
+
+`npm run docs:check` verifies both local documentation links and the supported Node, OpenCode, and
+OpenSpec versions across the maintained README, site, and compatibility guides.
 
 ## Formatting and static analysis
 
@@ -117,6 +123,7 @@ Publishing is automated through the GitHub Actions release workflow. A version t
 matching `v[0-9]+.[0-9]+.[0-9]+` triggers a single job that:
 
 - installs dependencies with `npm ci`;
+- uses the Node.js version pinned in `.nvmrc`;
 - runs the full validation matrix (`npm run check`);
 - publishes to the npm registry using `npm publish --provenance --access public`;
 - creates a GitHub release with generated release notes.

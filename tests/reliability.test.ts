@@ -29,11 +29,17 @@ describe("workflow reliability safeguards", () => {
         const change = "lock-test"
         await mkdir(changeRoot(directory, change), { recursive: true })
         const order: string[] = []
+        let signalFirstStarted!: () => void
+        const firstStarted = new Promise<void>(resolve => {
+            signalFirstStarted = resolve
+        })
         const first = withRunLock(directory, change, "first", async () => {
             order.push("first-start")
+            signalFirstStarted()
             await new Promise(resolve => setTimeout(resolve, 10))
             order.push("first-end")
         })
+        await firstStarted
         await expect(
             withRunLock(directory, change, "second", async () => undefined),
         ).rejects.toThrow("SpecOps run is busy")

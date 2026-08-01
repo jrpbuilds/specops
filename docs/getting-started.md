@@ -2,10 +2,10 @@
 
 ## Requirements
 
-- OpenCode 1.16.2 or newer;
-- Node.js 20.19 or newer;
+- OpenCode 1.18.10 or newer;
+- Node.js 24.18.1 or newer;
 - a Git repository with at least one baseline commit;
-- OpenSpec assets installed by SpecOps.
+- OpenSpec 1.7.0 assets installed by SpecOps.
 
 ## Published installation
 
@@ -134,6 +134,15 @@ narrow specialists.
 If an existing schema-v1 manifest is detected, it is treated as invalid and atomically replaced with the current defaults. Configure model choices through the command-palette editor afterward.
 
 ## Development installation
+
+The repository pins its development runtime in `.nvmrc`:
+
+```bash
+nvm install
+nvm use
+```
+
+Equivalent Node version-manager commands are fine as long as they select Node.js 24.18.1 or newer.
 
 ```bash
 npm install
