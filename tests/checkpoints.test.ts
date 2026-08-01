@@ -83,7 +83,7 @@ function leanState(mode: RunState["mode"]): RunState {
         policyHash: "policy",
     }
     return {
-        version: 5,
+        version: 6,
         revision: 0,
         mode,
         goal: "Update README",

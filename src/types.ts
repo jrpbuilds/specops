@@ -745,7 +745,7 @@ export type ResumeTarget = {
  * `resumable` describe the paused state.
  */
 export type RunState = {
-    version: 5
+    version: 6
     /** Monotonic optimistic-concurrency revision of the persisted run state. */
     revision: number
     mode: "automatic" | "interactive"
@@ -822,4 +822,30 @@ export type RunState = {
     /** Terminal outcome; required for non-running statuses except paused. */
     outcome?: WorkflowOutcome
     blockReason?: BlockReason
+    /**
+     * Pending archive-confirmation gate. Present only on a `passed` run whose
+     * change has not yet been archived; the interactive controller must present
+     * the native question and consume the resulting decision exactly once. The
+     * run stays `passed` while this is set.
+     */
+    archivePending?: {
+        /** Stable id binding the native user question to this request. */
+        id: string
+        /** Snapshot of the scope tier, deciding whether `--skip-specs` applies. */
+        scopeTier: ScopeTier
+        /** When the confirmation was raised. */
+        raisedAt: string
+    }
+    /**
+     * Retryable error from a failed `openspec archive` attempt. The run stays
+     * `passed`; clearing this record requires a subsequent successful archive.
+     */
+    archiveError?: {
+        /** One-based archive attempt counter for diagnostics. */
+        attempt: number
+        /** Redacted error text captured from the OpenSpec archive invocation. */
+        message: string
+        /** When the failure was recorded. */
+        at: string
+    }
 }

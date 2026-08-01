@@ -9,6 +9,7 @@ from the runtime command catalogue so controller and adapter targets cannot drif
 | `/specops`         | Run deterministic SpecOps workflow with checkpoints | primary agent `specops-interactive-controller` |
 | `/specops-onboard` | Install final SpecOps OpenSpec assets               | protocol tool `specops_onboard`                |
 | `/specops-status`  | Show final SpecOps run status                       | protocol tool `specops_get_status`             |
+| `/specops-archive` | Archive a passed SpecOps run's OpenSpec change      | primary agent `specops-interactive-controller` |
 | `/specops-doctor`  | Diagnose final SpecOps installation                 | protocol tool `specops_doctor`                 |
 
 Interactive and automatic execution both use the deterministic scheduler.

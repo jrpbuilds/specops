@@ -1,5 +1,5 @@
-import { readFile, readdir } from "node:fs/promises"
-import { createHash } from "node:crypto"
+import { readFile, readdir, stat } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
 import path from "node:path"
 import type { SpecOpsConfig } from "../config.js"
 import { AGENT_IDS } from "../capabilities/ids.js"
@@ -11,11 +11,19 @@ import {
     collectDiff,
     stashFingerprint,
 } from "../git.js"
-import { createChange, openSpecOrThrow, uniqueChangeName, writeArtifact } from "../openspec.js"
+import {
+    archiveChange,
+    countIncompleteTasks,
+    createChange,
+    openSpecOrThrow,
+    uniqueChangeName,
+    writeArtifact,
+} from "../openspec.js"
 import { parseAssessment } from "../routing/assessment.js"
 import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
 import {
     changeRoot,
+    withArchiveLock,
     readMachine,
     readRun,
     withRunLock,
@@ -146,7 +154,7 @@ export async function startRun(
     return withRunLock(directory, change, "start run", async () => {
         const now = new Date().toISOString()
         const state: RunState = {
-            version: 5,
+            version: 6,
             revision: 0,
             mode: input.mode,
             goal: input.goal,
@@ -1267,7 +1275,7 @@ async function finalizeRunLocked(
     state.status = "passed"
     state.outcome = {
         category: "completed",
-        message: "All deterministic workflow, evidence, review, and archive gates passed.",
+        message: "All deterministic workflow, evidence, and review gates passed.",
         at: new Date().toISOString(),
     }
     const receipt = {
@@ -1294,6 +1302,175 @@ async function finalizeRunLocked(
     await writeArtifactIndex(directory, change, state)
     await writeRun(directory, change, state)
     return state
+}
+
+/** Ensure archive operations never recreate a change directory after it moved. */
+async function requireRunState(directory: string, change: string): Promise<void> {
+    try {
+        await stat(path.join(changeRoot(directory, change), "specops-run.json"))
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        throw new Error(
+            `SpecOps archive: change '${change}' is already archived or has no run state`,
+        )
+    }
+}
+
+/** Raise an idempotent native-question confirmation request for a passed run. */
+async function archiveRunBegin(directory: string, change: string): Promise<RunState> {
+    const state = await readRun(directory, change)
+    if (state.status !== "passed") {
+        throw new Error(
+            `SpecOps archive: run '${change}' is ${state.status}, not passed; ` +
+                "only passed runs can be archived.",
+        )
+    }
+    if (!state.archivePending) {
+        state.archivePending = {
+            id: randomUUID(),
+            scopeTier: state.scopeTier,
+            raisedAt: new Date().toISOString(),
+        }
+        await writeRun(directory, change, state)
+    }
+    return state
+}
+
+/** Consume a native archive decision and prepare the state for the move. */
+async function consumeArchiveDecision(
+    directory: string,
+    change: string,
+    confirmationId: string,
+    decision: "archive" | "decline",
+): Promise<
+    | { action: "declined"; state: RunState }
+    | { action: "perform"; state: RunState; scopeTier: RunState["scopeTier"]; prevAttempt: number }
+> {
+    const state = await readRun(directory, change)
+    const pending = state.archivePending
+    if (!pending || pending.id !== confirmationId) {
+        throw new Error("SpecOps archive: confirmation is missing, stale, or already consumed")
+    }
+    if (decision === "decline") {
+        state.archivePending = undefined
+        await writeRun(directory, change, state)
+        return { action: "declined", state }
+    }
+
+    const incompleteTasks = await countIncompleteTasks(directory, change)
+    if (incompleteTasks > 0) {
+        throw new Error(
+            `SpecOps archive: ${incompleteTasks} incomplete task(s) remain; complete them before archiving`,
+        )
+    }
+
+    const scopeTier = pending.scopeTier
+    const prevAttempt = state.archiveError?.attempt ?? 0
+    state.archivePending = undefined
+    state.archiveError = undefined
+    await writeRun(directory, change, state)
+    return { action: "perform", state, scopeTier, prevAttempt }
+}
+
+/**
+ * Record a retryable archive failure under the run lock. The run stays
+ * `passed`; the caller may retry by re-raising and confirming the gate.
+ *
+ * @param directory - Project root directory.
+ * @param change - OpenSpec change identifier.
+ * @param message - Captured OpenSpec archive output or process error.
+ * @param prevAttempt - The attempt counter before this failure.
+ * @returns The updated {@link RunState} with a fresh `archiveError`.
+ */
+async function recordArchiveError(
+    directory: string,
+    change: string,
+    message: string,
+    prevAttempt: number,
+): Promise<RunState> {
+    const state = await readRun(directory, change)
+    state.archiveError = {
+        attempt: prevAttempt + 1,
+        message: redactSensitiveText(message).slice(0, 2_000),
+        at: new Date().toISOString(),
+    }
+    await writeRun(directory, change, state)
+    return state
+}
+
+/**
+ * Raise a persisted native-question confirmation request for a passed run.
+ *
+ * @param directory - Project root directory.
+ * @param change - OpenSpec change identifier to archive.
+ * @returns The passed state containing the confirmation question binding.
+ */
+export async function archiveRun(directory: string, change: string): Promise<RunState> {
+    return withArchiveLock(directory, change, async () => {
+        await requireRunState(directory, change)
+        return withRunLock(directory, change, "request archive", () =>
+            archiveRunBegin(directory, change),
+        )
+    })
+}
+
+/**
+ * Consume a native user archive decision and perform the OpenSpec move.
+ *
+ * The external archive lock remains held while OpenSpec moves the change, so
+ * another request cannot create a fresh confirmation during the move. State
+ * writes happen only in short-lived run-lock sections because that lock lives
+ * inside the directory OpenSpec relocates.
+ *
+ * @param directory - Project root directory.
+ * @param change - OpenSpec change identifier.
+ * @param config - Resolved config used to locate the OpenSpec binary.
+ * @param confirmationId - Persisted id from the native-question request.
+ * @param decision - User decision from the native question.
+ * @returns The updated passed state.
+ */
+export async function confirmArchiveRun(
+    directory: string,
+    change: string,
+    config: SpecOpsConfig,
+    confirmationId: string,
+    decision: "archive" | "decline",
+): Promise<RunState> {
+    return withArchiveLock(directory, change, async () => {
+        await requireRunState(directory, change)
+        const begin = await withRunLock(directory, change, "consume archive decision", () =>
+            consumeArchiveDecision(directory, change, confirmationId, decision),
+        )
+
+        if (begin.action !== "perform") return begin.state
+
+        try {
+            const result = await archiveChange(
+                directory,
+                config,
+                change,
+                begin.scopeTier === "lean",
+            )
+            if (result.code === 0) {
+                // The change directory moved with the persisted passed state.
+                return begin.state
+            }
+            return withRunLock(directory, change, "record archive error", () =>
+                recordArchiveError(
+                    directory,
+                    change,
+                    result.stderr ||
+                        result.stdout ||
+                        `OpenSpec archive exited with code ${result.code}`,
+                    begin.prevAttempt,
+                ),
+            )
+        } catch (error) {
+            return withRunLock(directory, change, "record archive error", () =>
+                recordArchiveError(directory, change, String(error), begin.prevAttempt),
+            )
+        }
+    })
 }
 
 /**

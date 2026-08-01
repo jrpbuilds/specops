@@ -106,7 +106,7 @@ describe("final SpecOps policy", () => {
     it("accepts a bounded escalation only when it adds a new requirement", () => {
         const routed = requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements
         const state = {
-            version: 5 as const,
+            version: 6 as const,
             revision: 0,
             mode: "automatic" as const,
             goal: "test",
@@ -526,7 +526,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function automaticState(): RunState {
     const assessed = assessment()
     return {
-        version: 5,
+        version: 6,
         revision: 0,
         mode: "automatic",
         goal: "test",

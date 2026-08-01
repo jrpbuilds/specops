@@ -69,7 +69,7 @@ const QUESTION_MARKER = (q: Partial<WorkerQuestion> = {}): string =>
 function automaticState(overrides: Partial<RunState> = {}): RunState {
     const assessed = assessment()
     return {
-        version: 5,
+        version: 6,
         revision: 0,
         mode: "automatic",
         goal: "test",

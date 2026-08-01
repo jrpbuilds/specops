@@ -6,7 +6,7 @@
  * with a deliberately narrow environment.
  */
 
-import { copyFile, mkdir, readdir, stat, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -153,6 +153,70 @@ export async function createChange(
         goal,
         "--json",
     ])
+}
+
+/**
+ * Archive a completed OpenSpec change deterministically, returning the raw
+ * process result rather than throwing so the caller can record a retryable
+ * {@link RunState}["archiveError"] without unwinding the run lock.
+ *
+ * The invocation is non-interactive (`--json --yes`). `--skip-specs` is used
+ * for changes with no spec deltas (e.g. the lean tier) so archive only moves
+ * the change directory without touching `openspec/specs/`. Archive re-validates
+ * the change by default; a validation failure surfaces as a non-zero exit code
+ * that the caller records as `archiveError`.
+ *
+ * @param directory - Project root directory.
+ * @param config - Resolved config used to locate the OpenSpec binary.
+ * @param change - Unique change identifier to archive.
+ * @param skipSpecs - When `true`, pass `--skip-specs` (no main-spec merge).
+ * @returns Captured stdout, stderr, and exit code from the OpenSpec process.
+ */
+export async function archiveChange(
+    directory: string,
+    config: SpecOpsConfig,
+    change: string,
+    skipSpecs: boolean,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+    const args = ["archive", change, "--json", "--yes"]
+    if (skipSpecs) args.push("--skip-specs")
+    return runOpenSpec(directory, config, args)
+}
+
+/**
+ * Count unchecked Markdown task boxes in a change's task artifacts.
+ *
+ * OpenSpec 1.7's `--yes` option intentionally bypasses its incomplete-task
+ * confirmation. SpecOps performs this deterministic preflight itself so an
+ * archive cannot silently discard unfinished implementation work.
+ *
+ * @param directory - Project root directory.
+ * @param change - OpenSpec change identifier.
+ * @returns The number of unchecked task boxes found in `tasks.md` files.
+ */
+export async function countIncompleteTasks(directory: string, change: string): Promise<number> {
+    const root = path.join(directory, "openspec", "changes", change)
+    let incomplete = 0
+
+    async function visit(current: string): Promise<void> {
+        for (const entry of await readdir(current, { withFileTypes: true })) {
+            const target = path.join(current, entry.name)
+            if (entry.isDirectory()) {
+                await visit(target)
+                continue
+            }
+            if (entry.name.toLowerCase() !== "tasks.md") continue
+            const content = await readFile(target, "utf8")
+            for (const line of content.split("\n")) {
+                if (/^[-*]\s+\[[\sx]\]/i.test(line) && !/^[-*]\s+\[x\]/i.test(line)) {
+                    incomplete += 1
+                }
+            }
+        }
+    }
+
+    await visit(root)
+    return incomplete
 }
 
 /**

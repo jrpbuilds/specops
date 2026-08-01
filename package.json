@@ -78,7 +78,7 @@
         ]
     },
     "dependencies": {
-        "@fission-ai/openspec": "1.6.0"
+        "@fission-ai/openspec": "1.7.0"
     },
     "peerDependencies": {
         "@opencode-ai/plugin": ">=1.16.2"

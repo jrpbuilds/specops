@@ -91,6 +91,18 @@ may:
 Worker prose cannot silently change routing. Every accepted or rejected claim is retained in run
 state.
 
+## Archiving
+
+After a run passes its final validation gates, the change directory persists in
+`openspec/changes/<change>/` until an explicit archive is confirmed. `/specops-archive` raises a
+native user confirmation on the interactive controller; the resulting decision is consumed once
+against the persisted confirmation id. On confirmation, OpenSpec moves the change directory to
+`openspec/changes/archive/<date>-<change>/` and, for standard and full tiers, merges the specification
+deltas into `openspec/specs/<capability>/spec.md`. The lean tier archives with `--skip-specs` so only
+the directory is moved. Archive failures leave the run `passed` with a retryable `archiveError`; a
+decline clears the gate without archiving. The automatic workflow never initiates or confirms this
+mutating user-controlled operation.
+
 ## Reviews and repair
 
 Verification is followed by independent correctness judgment, compliance judgment when required,

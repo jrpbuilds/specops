@@ -44,7 +44,14 @@ if (COMMANDS["specops-auto"]?.agent !== AGENT_IDS.controller.automatic) {
 }
 assertEqual(
     Object.keys(COMMANDS).sort(),
-    ["specops", "specops-auto", "specops-doctor", "specops-onboard", "specops-status"].sort(),
+    [
+        "specops",
+        "specops-archive",
+        "specops-auto",
+        "specops-doctor",
+        "specops-onboard",
+        "specops-status",
+    ].sort(),
     "public command catalogue",
 )
 

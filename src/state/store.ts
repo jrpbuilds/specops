@@ -149,6 +149,70 @@ export async function withRunLock<T>(
     }
 }
 
+/**
+ * Execute an archive mutation under a lock that is not inside the change
+ * directory. OpenSpec moves that directory during archive, so a normal run
+ * lock would move away from its owner and could not serialize concurrent
+ * archive attempts safely.
+ *
+ * @param directory - The repository root.
+ * @param change - The OpenSpec change id.
+ * @param callback - Archive operation to execute exclusively.
+ * @returns The callback result.
+ */
+export async function withArchiveLock<T>(
+    directory: string,
+    change: string,
+    callback: () => Promise<T>,
+): Promise<T> {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(change)) {
+        throw new Error("invalid OpenSpec change id")
+    }
+    const lockRoot = path.join(directory, "openspec", ".specops-archive-locks")
+    const lockPath = path.join(lockRoot, `${change}.lock`)
+    const lock: RunLock = {
+        token: randomUUID(),
+        pid: process.pid,
+        operation: "archive change",
+        acquiredAt: new Date().toISOString(),
+    }
+    await mkdir(lockRoot, { recursive: true })
+    let acquired = false
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+            await mkdir(lockPath)
+            acquired = true
+            await atomicWritePhysical(
+                path.join(lockPath, "owner.json"),
+                `${JSON.stringify(lock)}\n`,
+            )
+            break
+        } catch (error) {
+            if (acquired) {
+                await rm(lockPath, { recursive: true, force: true })
+                acquired = false
+            }
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+            if (attempt === 1 || !(await reclaimDeadLock(lockPath))) {
+                throw new Error(`SpecOps archive is busy: ${change} is being archived`)
+            }
+        }
+    }
+    if (!acquired) throw new Error(`SpecOps could not acquire the archive lock for ${change}`)
+    try {
+        return await callback()
+    } finally {
+        try {
+            const current = JSON.parse(
+                await readFile(path.join(lockPath, "owner.json"), "utf8"),
+            ) as Partial<RunLock>
+            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true })
+        } catch {
+            // A recovered lock has already been removed; the archive remains complete.
+        }
+    }
+}
+
 /** Start a transaction whose writes remain invisible until the callback ends. */
 async function beginTransaction(root: string): Promise<RunTransaction> {
     const id = randomUUID()
@@ -372,7 +436,7 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 
     if (
         !isCurrentRunStateShape(raw) ||
-        raw.version !== 5 ||
+        raw.version !== 6 ||
         !isNonNegativeInteger(raw.revision) ||
         (raw.mode !== "interactive" && raw.mode !== "automatic") ||
         typeof raw.status !== "string" ||
@@ -380,10 +444,42 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     ) {
         const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable"
         throw new Error(
-            `invalid SpecOps run state (expected version 5 with a numeric revision; found ${version})`,
+            `invalid SpecOps run state (expected version 6 with a numeric revision; found ${version})`,
         )
     }
     const value = raw as RunState
+
+    if (value.archivePending !== undefined) {
+        const pending = value.archivePending
+        if (
+            !isRecord(pending) ||
+            typeof pending.id !== "string" ||
+            !UUID_PATTERN.test(pending.id) ||
+            !isScopeTier(pending.scopeTier) ||
+            !isIsoTimestamp(pending.raisedAt)
+        ) {
+            throw new Error("invalid SpecOps archive confirmation state")
+        }
+        if (value.status !== "passed") {
+            throw new Error("archive confirmation may only be pending for a passed run")
+        }
+    }
+    if (value.archiveError !== undefined) {
+        const failure = value.archiveError
+        if (
+            !isRecord(failure) ||
+            !isPositiveInteger(failure.attempt) ||
+            typeof failure.message !== "string" ||
+            !failure.message.trim() ||
+            failure.message.length > 2_000 ||
+            !isIsoTimestamp(failure.at)
+        ) {
+            throw new Error("invalid SpecOps archive error state")
+        }
+        if (value.status !== "passed") {
+            throw new Error("archive errors may only be recorded for a passed run")
+        }
+    }
 
     const issuedCount = value.dispatches.filter(dispatch => dispatch.status === "issued").length
     if (issuedCount > 1) {
@@ -554,6 +650,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Return whether a value is an integer counter that cannot be negative. */
 function isNonNegativeInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
+/** UUID format used for persisted confirmation ids. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** Return whether a persisted scope tier is one of the supported values. */
+function isScopeTier(value: unknown): value is RunState["scopeTier"] {
+    return value === "lean" || value === "standard" || value === "full"
+}
+
+/** Return whether a value is an ISO-8601 timestamp. */
+function isIsoTimestamp(value: unknown): value is string {
+    return typeof value === "string" && !Number.isNaN(Date.parse(value))
+}
+
+/** Return whether a value is a strictly positive integer. */
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value > 0
 }
 
 /**

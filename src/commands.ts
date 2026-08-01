@@ -41,6 +41,15 @@ export const COMMANDS: NonNullable<Config["command"]> = {
         description: "Show final SpecOps run status",
         template: `Call ${TOOL_IDS.getStatus} for the active change.`,
     },
+    /** Archive a passed SpecOps run's OpenSpec change after confirmation. */
+    "specops-archive": {
+        agent: AGENT_IDS.controller.interactive,
+        subtask: false,
+        description: "Archive a passed SpecOps run's OpenSpec change",
+        template:
+            `Request archive confirmation with ${TOOL_IDS.archive}, ask the user with the native question tool, ` +
+            `then submit the decision through ${TOOL_IDS.confirmArchive}.`,
+    },
     /** Diagnose the final SpecOps installation and configuration. */
     "specops-doctor": {
         description: "Diagnose final SpecOps installation",

@@ -184,6 +184,16 @@ OpenCode command session completed; success additionally requires outcome catego
 If results differ from the visible command, compare project configuration, goal, repository
 revision, provider manifest, and registered evidence commands.
 
+## Archive failures
+
+A passed run may fail to archive (e.g., `openspec archive` re-validation detects drift, or the
+filesystem move fails). The run stays `passed`; a retryable `archiveError` is recorded with the
+OpenSpec error message and attempt counter. Inspect the error via `/specops-status`, address the
+underlying cause (fix the spec, free disk space, resolve Git worktree conflicts), and call
+`/specops-archive` again to re-raise the native confirmation gate and retry. To leave the passed
+change unarchived, choose **Keep unarchived** in that native question. A decline is only valid while
+the confirmation request is pending.
+
 ## Collecting a useful diagnostic report
 
 Include the following when reporting an issue:

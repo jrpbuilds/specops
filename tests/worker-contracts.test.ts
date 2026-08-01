@@ -79,7 +79,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function standardState(): RunState {
     const assessed = standardAssessment
     return {
-        version: 5,
+        version: 6,
         revision: 0,
         mode: "automatic",
         goal: "test",

@@ -140,6 +140,8 @@ export function promptText(id: AgentId): string {
             "DIRECTIVE HANDLING:",
             "- dispatch: launch exactly the returned worker via task, then submit the unmodified output through " +
                 `${TOOL_IDS.completeAction}.`,
+            `- Archive is user-confirmed only: never call ${TOOL_IDS.confirmArchive} from the automatic controller. ` +
+                `Do not initiate archive from the automatic workflow.`,
             "- ask-question: do NOT attempt to ask the user and do NOT dispatch another worker; call " +
                 `${TOOL_IDS.finalize} to persist the resumable paused block, then stop.`,
             "- block: stop; resumable true means the run is paused, resumable false means terminal.",
@@ -169,6 +171,10 @@ export function promptText(id: AgentId): string {
             "DIRECTIVE HANDLING:",
             "- dispatch: launch exactly the returned worker via task, then submit the unmodified output through " +
                 `${TOOL_IDS.completeAction}.`,
+            `- Archive command: call ${TOOL_IDS.archive}; when it returns an archive-confirmation object, ` +
+                "call the native `question` tool with its `questionTools` array unchanged. " +
+                `Map Archive to decision=archive and Keep unarchived to decision=decline, then call ${TOOL_IDS.confirmArchive} ` +
+                "with the exact confirmationId. Never invent a confirmation or skip the native question.",
             "- ask-question: Call the `question` tool passing the directive's `questionTools` array " +
                 "directly as the `questions` array parameter. " +
                 "When only one question is present, this renders a single-question UI; " +

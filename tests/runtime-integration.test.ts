@@ -35,9 +35,11 @@ describe.sequential("installed runtime contract", () => {
     it("derives command controllers and worker resolution from the canonical IDs", () => {
         expect(COMMANDS.specops?.agent).toBe(AGENT_IDS.controller.interactive)
         expect(COMMANDS["specops-auto"]?.agent).toBe(AGENT_IDS.controller.automatic)
+        expect(COMMANDS["specops-archive"]?.agent).toBe(AGENT_IDS.controller.interactive)
         expect(Object.keys(COMMANDS).sort()).toEqual(
             [
                 "specops",
+                "specops-archive",
                 "specops-auto",
                 "specops-doctor",
                 "specops-onboard",

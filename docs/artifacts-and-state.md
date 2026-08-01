@@ -74,6 +74,25 @@ artifact stale. Important examples:
 The replacement artifact itself is recorded as valid after invalidation. Finalization checks every
 required artifact and refuses stale provenance.
 
+## Archiving
+
+After a run passes, the change directory remains in `openspec/changes/<change>/` until a user
+confirms archival through `/specops-archive`. The interactive controller presents a native
+question, and the persisted confirmation id binds the user's decision to exactly one archive
+operation:
+
+- The change directory moves to `openspec/changes/archive/<date>-<change>/`.
+- For **standard** and **full** tiers, OpenSpec merges any specification deltas under `specs/`
+  into the main `openspec/specs/<capability>/spec.md` files.
+- For the **lean** tier, `--skip-specs` is used so archive only moves the directory without touching
+  main specs (lean runs have no spec deltas).
+- The terminal `passed` state moves with the archived directory.
+
+If `openspec archive` fails (e.g., re-validation detects drift, incomplete tasks, or a filesystem
+error), the run stays `passed` and a retryable `archiveError` is recorded. The user may re-run
+`/specops-archive` to retry the operation after addressing the failure. A declined confirmation
+clears the gate and leaves the run passed without archiving.
+
 ## Machine-readable outcomes
 
 `specops-run.json` exposes one stable outcome category for humans and CI:

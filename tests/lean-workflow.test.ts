@@ -1011,7 +1011,7 @@ describe("compact Lean workflow", () => {
 function leanState(mode: RunState["mode"]): RunState {
     const requirements = requirementsFor(assessment, "auto", DEFAULT_CONFIG).requirements
     return {
-        version: 5,
+        version: 6,
         revision: 0,
         mode,
         goal: "Update README",
