@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const documentationFiles = [
     "README.md",
+    "CHANGELOG.md",
     "docs/agents.md",
     "docs/architecture.md",
     "docs/artifacts-and-state.md",

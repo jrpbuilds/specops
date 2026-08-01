@@ -81,6 +81,7 @@ The full product tour — scope tiers, workflow stages, agent catalogue, configu
 - [Security, evidence, and integrations](docs/security-and-integrations.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Development and testing](docs/development.md)
+- [Changelog](CHANGELOG.md)
 
 ## Contributing
 
