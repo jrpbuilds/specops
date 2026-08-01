@@ -138,14 +138,19 @@ This is not a command allowlist. It is a run-specific evidence registry.
 
 ## MCP integration
 
-`integrations.mcp` is `inherit` or `disabled` and defaults to `inherit`.
+`integrations.mcp` is `allow` or `disabled` and defaults to `allow`.
 
-`inherit` leaves the host OpenCode MCP server definitions unchanged and passes
-through tools from every configured MCP server to SpecOps subagents. OpenCode
-exposes those tools with a `<server>_<tool>` name, such as `codegraph_explore`.
-`disabled` denies the corresponding `<server>_*` tool patterns for SpecOps
-subagents while leaving MCP server definitions and primary controller agents
-unchanged. This policy does not alter deterministic scheduler state.
+`allow` grants SpecOps subagents access to every enabled MCP server already
+configured in OpenCode, exposing each server's tools through `<server>_<tool>`
+agent-level permission rules (for example `codegraph_explore`). MCP server
+definitions, credentials, OAuth, and connection lifecycle remain owned by
+OpenCode configuration. Because the permission is applied at the agent level,
+`allow` intentionally overrides host-level MCP permission or `tools` denials
+for SpecOps subagents — set `integrations.mcp` to `disabled` when SpecOps
+workers must not use MCP tools. `disabled` denies the corresponding
+`<server>_*` tool patterns for SpecOps subagents while leaving MCP server
+definitions and primary controller agents unchanged. This policy does not
+alter deterministic scheduler state.
 
 The non-interactive CLI adapter uses this same project configuration. Set
 `workflow.defaultTier` when CI requires a minimum tier; there is deliberately no separate CLI tier

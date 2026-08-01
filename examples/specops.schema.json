@@ -154,7 +154,7 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["mcp"],
-            "properties": { "mcp": { "enum": ["inherit", "disabled"] } }
+            "properties": { "mcp": { "enum": ["allow", "disabled"] } }
         }
     }
 }

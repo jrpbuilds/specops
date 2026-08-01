@@ -35,5 +35,5 @@
         "commandTimeoutSeconds": 300,
         "commandOutputBytes": 32000
     },
-    "integrations": { "mcp": "inherit" }
+    "integrations": { "mcp": "allow" }
 }

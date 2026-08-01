@@ -7,8 +7,10 @@ import {
     deepMergeConfig,
     materializeGlobalConfig,
     resolveConfig,
+    resetConfigRepairs,
     SPECOPS_CONFIG_SCHEMA_URL,
     validateConfig,
+    validateConfigLenient,
     validatePartialConfig,
 } from "../src/config.js"
 import { resolveGlobalConfigPath } from "../src/installation.js"
@@ -45,6 +47,10 @@ describe("validateConfig", () => {
         expect(
             validateConfig({ ...DEFAULT_CONFIG, integrations: { mcp: "disabled" } }),
         ).toMatchObject({ integrations: { mcp: "disabled" } })
+    })
+
+    it("accepts the allow MCP policy", () => {
+        expect(validateConfig(DEFAULT_CONFIG)).toMatchObject({ integrations: { mcp: "allow" } })
     })
 
     it("rejects an unknown MCP policy", () => {
@@ -263,19 +269,169 @@ describe("resolveConfig", () => {
         expect(config.automation.requireCleanWorktree).toBe(false)
     })
 
-    it("reports the offending file path in validation errors", async () => {
+    it("salvages valid sections and rewrites a bad global file in place", async () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
-        await writeFile(globalPath, JSON.stringify({ openspec: { command: "bad" } }))
-        await expect(resolveConfig(projectDirectory)).rejects.toThrow(globalPath)
+        // Valid `review` section survives; bad `routing` section is dropped.
+        await writeFile(
+            globalPath,
+            JSON.stringify({
+                version: 2,
+                review: { ...DEFAULT_CONFIG.review, transientRetries: 3 },
+                routing: { forceFullForFacets: ["not-a-facet"] },
+            }),
+        )
+
+        const config = await resolveConfig(projectDirectory)
+        expect(config.review.transientRetries).toBe(3)
+        expect(config.routing.forceFullForFacets).toEqual([])
+
+        const rewritten = JSON.parse(await readFile(globalPath, "utf8"))
+        expect(rewritten.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(rewritten.review.transientRetries).toBe(3)
+        expect(rewritten.routing.forceFullForFacets).toEqual([])
+        expect(validateConfig(rewritten)).toEqual({
+            ...DEFAULT_CONFIG,
+            review: { ...DEFAULT_CONFIG.review, transientRetries: 3 },
+        })
     })
 
-    it("reports project file path in validation errors", async () => {
+    it("salvages valid sections and rewrites a bad project file in place", async () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
         const projectPath = path.join(projectDirectory, ".opencode", "specops.json")
-        await writeFile(projectPath, JSON.stringify({ openspec: { command: "bad" } }))
-        await expect(resolveConfig(projectDirectory)).rejects.toThrow(projectPath)
+        await writeFile(
+            projectPath,
+            JSON.stringify({
+                version: 2,
+                integrations: { mcp: "disabled" },
+                workflow: { defaultTier: "not-a-tier" },
+            }),
+        )
+
+        const config = await resolveConfig(projectDirectory)
+        expect(config.integrations.mcp).toBe("disabled")
+        expect(config.workflow.defaultTier).toBe(DEFAULT_CONFIG.workflow.defaultTier)
+
+        const rewritten = JSON.parse(await readFile(projectPath, "utf8"))
+        expect(rewritten.integrations.mcp).toBe("disabled")
+        expect(rewritten.workflow.defaultTier).toBe(DEFAULT_CONFIG.workflow.defaultTier)
+    })
+
+    it("repairs a malformed-JSON file back to defaults", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
+        await writeFile(globalPath, "{ version: 2")
+
+        const config = await resolveConfig(projectDirectory)
+        expect(config).toEqual(DEFAULT_CONFIG)
+        const rewritten = JSON.parse(await readFile(globalPath, "utf8"))
+        expect(validateConfig(rewritten)).toEqual(DEFAULT_CONFIG)
+    })
+
+    it("drops unknown top-level keys and repairs the file", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const projectPath = path.join(projectDirectory, ".opencode", "specops.json")
+        await writeFile(
+            projectPath,
+            JSON.stringify({
+                version: 2,
+                automation: { requireCleanWorktree: false },
+                bogusKey: true,
+            }),
+        )
+
+        const config = await resolveConfig(projectDirectory)
+        expect(config.automation.requireCleanWorktree).toBe(false)
+        const rewritten = JSON.parse(await readFile(projectPath, "utf8"))
+        expect(rewritten.automation.requireCleanWorktree).toBe(false)
+        expect("bogusKey" in rewritten).toBe(false)
+    })
+
+    it("repairs both files when both are invalid and still loads defaults", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
+        const projectPath = path.join(projectDirectory, ".opencode", "specops.json")
+        await writeFile(globalPath, "{ not-json")
+        await writeFile(projectPath, "{ also not-json")
+
+        const config = await resolveConfig(projectDirectory)
+        expect(config).toEqual(DEFAULT_CONFIG)
+        expect(validateConfig(JSON.parse(await readFile(globalPath, "utf8")))).toEqual(
+            DEFAULT_CONFIG,
+        )
+        expect(validateConfig(JSON.parse(await readFile(projectPath, "utf8")))).toEqual(
+            DEFAULT_CONFIG,
+        )
+    })
+
+    it("leaves valid files untouched", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
+        const original = JSON.stringify(
+            { version: 2, workflow: { defaultTier: "standard" } },
+            null,
+            2,
+        )
+        await writeFile(globalPath, `${original}\n`)
+
+        await resolveConfig(projectDirectory)
+        expect(await readFile(globalPath, "utf8")).toBe(`${original}\n`)
+    })
+
+    it("records repairs for doctor and clears them after consumption", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
+        await writeFile(globalPath, "{ not-json")
+
+        resetConfigRepairs()
+        await resolveConfig(projectDirectory)
+        // doctor consumes via consumeConfigRepairs through surfaceConfigRepairs;
+        // import it to assert the recorded repairs are observable.
+        const { consumeConfigRepairs } = await import("../src/config.js")
+        const repairs = consumeConfigRepairs()
+        expect(repairs).toHaveLength(1)
+        expect(repairs[0].path).toBe(globalPath)
+        expect(repairs[0].recoveredSections).toEqual([])
+        expect(consumeConfigRepairs()).toEqual([])
+    })
+})
+
+describe("validateConfigLenient", () => {
+    it("returns empty partial for non-object input", () => {
+        expect(validateConfigLenient(null)).toEqual({ partial: {}, recoveredSections: [] })
+        expect(validateConfigLenient("string")).toEqual({ partial: {}, recoveredSections: [] })
+    })
+
+    it("drops a section whose strict parser rejects", () => {
+        const { partial, recoveredSections } = validateConfigLenient({
+            version: 2,
+            review: { ...DEFAULT_CONFIG.review, transientRetries: 2 },
+            routing: { forceFullForFacets: ["not-a-facet"] },
+        })
+        expect(recoveredSections).toEqual(["review"])
+        expect(partial.review).toEqual({ ...DEFAULT_CONFIG.review, transientRetries: 2 })
+        expect("routing" in partial).toBe(false)
+    })
+
+    it("ignores unknown top-level keys", () => {
+        const { partial, recoveredSections } = validateConfigLenient({
+            version: 2,
+            automation: { requireCleanWorktree: false },
+            bogusKey: true,
+        })
+        expect(recoveredSections).toEqual(["automation"])
+        expect("bogusKey" in partial).toBe(false)
+    })
+
+    it("keeps a version field only when it equals 2", () => {
+        expect(validateConfigLenient({ version: 2 }).partial).toEqual({ version: 2 })
+        expect(validateConfigLenient({ version: 1 }).partial).toEqual({})
     })
 })

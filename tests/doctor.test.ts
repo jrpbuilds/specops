@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DEFAULT_CONFIG } from "../src/config.js"
+import { DEFAULT_CONFIG, resolveConfig, resetConfigRepairs } from "../src/config.js"
 import { doctor } from "../src/doctor.js"
 import { DEFAULT_MANIFEST } from "../src/manifest.js"
 
@@ -113,6 +113,13 @@ describe("doctor config-source warning", () => {
         expect(output).toContain("SpecOps subagents)")
     })
 
+    it("reports the allow MCP policy by default", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const output = await doctor(projectDirectory, DEFAULT_CONFIG)
+        expect(output).toContain("MCP policy: allow")
+    })
+
     it("reports FAIL diagnostic with file path for malformed JSON", async () => {
         const projectDirectory = path.join(temporaryDirectory, "project")
         await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
@@ -121,5 +128,27 @@ describe("doctor config-source warning", () => {
         const output = await doctor(projectDirectory, DEFAULT_CONFIG)
         expect(output).toContain("FAIL")
         expect(output).toContain(projectPath)
+    })
+
+    it("surfaces WARN diagnostics for files repaired at load time", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const globalPath = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "specops.json")
+        // Valid `review` survives; bad `routing` is dropped; file is rewritten.
+        await writeFile(
+            globalPath,
+            JSON.stringify({
+                version: 2,
+                review: { ...DEFAULT_CONFIG.review, transientRetries: 3 },
+                routing: { forceFullForFacets: ["not-a-facet"] },
+            }),
+        )
+        resetConfigRepairs()
+        await resolveConfig(projectDirectory)
+        const output = await doctor(projectDirectory, DEFAULT_CONFIG)
+        expect(output).toMatch(/WARN configuration file .* was repaired at load time/)
+        expect(output).toContain(globalPath)
+        expect(output).toContain("review")
+        expect(output).toContain("routing")
     })
 })

@@ -9,7 +9,7 @@ import {
     agentForCapability,
 } from "./capabilities/registry.js"
 import { COMMANDS } from "./commands.js"
-import { type SpecOpsConfig, validatePartialConfig } from "./config.js"
+import { type SpecOpsConfig, consumeConfigRepairs, validatePartialConfig } from "./config.js"
 import { runProcess } from "./git.js"
 import {
     inspectAgentManifest,
@@ -50,11 +50,12 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
             message:
                 config.integrations.mcp === "disabled"
                     ? `MCP policy: disabled (configured MCP server tools denied for ${subagentCount} SpecOps subagents)`
-                    : "MCP policy: inherit (configured host MCP server tools passed through)",
+                    : "MCP policy: allow (configured host MCP server tools granted to SpecOps subagents)",
         },
     ]
 
     await checkConfigSources(diagnostics, directory)
+    surfaceConfigRepairs(diagnostics)
     await checkPackageVersion(diagnostics)
     await checkManifest(diagnostics)
     checkCommandMappings(diagnostics)
@@ -72,6 +73,26 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
                 : base
         })
         .join("\n")
+}
+
+/**
+ * Surface a `WARN` diagnostic for every configuration file repaired during
+ * the most recent `resolveConfig` call.
+ *
+ * Repairs are consumed (cleared) so each load-time repair is reported exactly
+ * once. A repaired file is currently valid — it was rewritten at load time —
+ * so the diagnostic is `WARN`, not `FAIL`.
+ */
+function surfaceConfigRepairs(diagnostics: Diagnostic[]): void {
+    for (const repair of consumeConfigRepairs()) {
+        const kept =
+            repair.recoveredSections.length > 0 ? repair.recoveredSections.join(", ") : "none"
+        diagnostics.push({
+            status: "WARN",
+            message: `configuration file ${repair.path} was repaired at load time: ${repair.reason}; kept sections: ${kept}`,
+            repair: `Edit ${repair.path} and rerun /specops-doctor to confirm.`,
+        })
+    }
 }
 
 /**

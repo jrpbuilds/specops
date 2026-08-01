@@ -56,7 +56,7 @@ export type SpecOpsConfig = {
         commandOutputBytes: number
     }
     /** Integration toggles; `mcp` controls MCP tool access for SpecOps subagents. */
-    integrations: { mcp: "inherit" | "disabled" }
+    integrations: { mcp: "allow" | "disabled" }
 }
 
 /**
@@ -106,8 +106,8 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
         commandTimeoutSeconds: 300,
         commandOutputBytes: 32_000,
     },
-    /** Inherit MCP tool availability from the host OpenCode installation. */
-    integrations: { mcp: "inherit" },
+    /** Allow SpecOps subagents to use configured OpenCode MCP server tools. */
+    integrations: { mcp: "allow" },
 }
 
 /** Published JSON Schema used by the global configuration editor. */
@@ -117,6 +117,50 @@ export const SPECOPS_CONFIG_SCHEMA_URL = "https://specops.dev/schemas/specops.sc
 export type GlobalConfigMaterialisation = {
     path: string
     created: boolean
+}
+
+/**
+ * Record of a configuration file that was repaired during load.
+ *
+ * The strict validator salvages every top-level section that still parses and
+ * rewrites the offending file with defaults deep-merged onto the salvaged
+ * partial, so a single bad field no longer prevents the plugin from loading.
+ * One {@link ConfigRepair} is produced per repaired file and held in module
+ * state for the next `doctor` run to surface as a `WARN` diagnostic.
+ */
+export type ConfigRepair = {
+    /** Absolute path of the file that was rewritten. */
+    path: string
+    /** First validation error that triggered the repair. */
+    reason: string
+    /** Top-level section keys salvaged from the original (e.g. `["review"]`). */
+    recoveredSections: readonly string[]
+}
+
+/**
+ * Repairs performed during the most recent {@link resolveConfig} call.
+ *
+ * Held in module state so `doctor` can surface "this file was repaired at load
+ * time" without re-running the lenient validator. Consumed (cleared) by
+ * {@link consumeConfigRepairs} so each repair is reported exactly once.
+ */
+let lastRepairs: ConfigRepair[] = []
+
+/**
+ * Return and clear the repairs recorded by the most recent {@link resolveConfig}.
+ *
+ * @returns Repairs performed during the last resolution; subsequent calls
+ *   return an empty array until the next resolution repairs another file.
+ */
+export function consumeConfigRepairs(): ConfigRepair[] {
+    const repairs = lastRepairs
+    lastRepairs = []
+    return repairs
+}
+
+/** Reset recorded repairs; used by tests to isolate resolution behaviour. */
+export function resetConfigRepairs(): void {
+    lastRepairs = []
 }
 
 /**
@@ -534,7 +578,7 @@ function parseReview(value: unknown): SpecOpsConfig["review"] {
 }
 
 /**
- * Parse the `integrations` section: `mcp` must be either `"inherit"` or
+ * Parse the `integrations` section: `mcp` must be either `"allow"` or
  * `"disabled"`.
  *
  * @param value - Raw `integrations` value from the configuration.
@@ -544,7 +588,7 @@ function parseReview(value: unknown): SpecOpsConfig["review"] {
 function parseIntegrations(value: unknown): SpecOpsConfig["integrations"] {
     const source = asObject(value, "integrations")
     assertKeys(source, ["mcp"], "integrations")
-    if (!isOneOf(source.mcp, ["inherit", "disabled"])) {
+    if (!isOneOf(source.mcp, ["allow", "disabled"])) {
         throw new Error("invalid SpecOps configuration field: integrations.mcp")
     }
     return { mcp: source.mcp }
@@ -688,40 +732,197 @@ function validateSectionPartial<T>(
 }
 
 /**
+ * Ordered list of top-level configuration sections recognised by the strict
+ * validator. Used by {@link validateConfigLenient} to iterate the same sections
+ * in a stable order so salvaged-key reporting is deterministic.
+ */
+const CONFIG_SECTIONS = [
+    "openspec",
+    "workflow",
+    "routing",
+    "automation",
+    "escalation",
+    "frontier",
+    "review",
+    "integrations",
+] as const
+
+/**
+ * Best-effort salvage of a configuration file that has failed strict validation.
+ *
+ * Unlike {@link validatePartialConfig}, this validator never throws: it skips
+ * any unknown top-level key, drops any section whose strict parser rejects, and
+ * returns only the partial that survived. The strict parsers are pure
+ * validators, so the surviving sections are returned unchanged from the input.
+ *
+ * @param value - Raw, untyped configuration (typically parsed from JSON, or
+ *   `{}` when the file failed JSON parsing entirely).
+ * @returns The salvaged partial and the list of top-level sections kept.
+ */
+export function validateConfigLenient(value: unknown): {
+    partial: Partial<SpecOpsConfig>
+    recoveredSections: string[]
+} {
+    const recoveredSections: string[] = []
+    if (!isObject(value)) {
+        return { partial: {}, recoveredSections }
+    }
+    const root = value as Record<string, unknown>
+    const partial: Record<string, unknown> = {}
+    if (root.version === 2) {
+        partial.version = 2
+    }
+    for (const name of CONFIG_SECTIONS) {
+        const sectionValue = root[name]
+        if (sectionValue === undefined) continue
+        const parser = SECTION_PARSERS[name]
+        try {
+            const sectionPartial = asObject(sectionValue, name)
+            parser(deepMerge(DEFAULT_CONFIG[name], sectionPartial))
+            partial[name] = structuredClone(sectionPartial)
+            recoveredSections.push(name)
+        } catch {
+            // Drop the entire section; its default is filled by deep-merge.
+        }
+    }
+    return { partial: partial as Partial<SpecOpsConfig>, recoveredSections }
+}
+
+/** Strict section parsers keyed by top-level section name. */
+const SECTION_PARSERS: Record<(typeof CONFIG_SECTIONS)[number], (merged: unknown) => unknown> = {
+    openspec: parseOpenSpec,
+    workflow: parseWorkflow,
+    routing: parseRouting,
+    automation: parseAutomation,
+    escalation: parseEscalation,
+    frontier: parseFrontier,
+    review: parseReview,
+    integrations: parseIntegrations,
+}
+
+/**
  * Resolve configuration from defaults, the global user file, and the project
  * file, applying deep-merge precedence.
  *
- * Each file is independently validated with a partial validator so error
- * messages name the offending file. The merged result is then validated with
- * the strict complete validator.
+ * Each file is read and validated with the strict partial validator. When a
+ * file fails JSON parsing or strict validation, the lenient validator salvages
+ * every top-level section that still parses, the file is rewritten in place
+ * with the salvaged partial deep-merged onto defaults (preserving the
+ * `$schema` header), and a {@link ConfigRepair} is recorded in module state
+ * for the next `doctor` run. The merged result is then validated with the
+ * strict complete validator; if even the salvage merge fails to validate,
+ * pure {@link DEFAULT_CONFIG} is returned and both files are flagged.
+ *
+ * This mirrors the repair-on-load behaviour of `materializeAgentManifest` so a
+ * single bad field never prevents the plugin from loading.
  *
  * @param directory - Project root directory (`.opencode/specops.json` is read
  *   from here).
  * @returns A validated {@link SpecOpsConfig}.
- * @throws If any file exists but fails JSON parsing or validation.
  */
 export async function resolveConfig(directory: string): Promise<SpecOpsConfig> {
+    resetConfigRepairs()
     const globalPath = resolveGlobalConfigPath()
     const projectPath = path.join(directory, ".opencode", "specops.json")
-    const [globalPartial, projectPartial] = await Promise.all([
-        readPartialConfig(globalPath),
-        readPartialConfig(projectPath),
+    const [globalResult, projectResult] = await Promise.all([
+        readPartialConfigWithRepair(globalPath),
+        readPartialConfigWithRepair(projectPath),
     ])
-    return validateConfig(deepMergeConfig(DEFAULT_CONFIG, globalPartial, projectPartial))
+    const repairs: ConfigRepair[] = []
+    if (globalResult.repair) repairs.push(globalResult.repair)
+    if (projectResult.repair) repairs.push(projectResult.repair)
+
+    let merged: SpecOpsConfig
+    try {
+        merged = validateConfig(
+            deepMergeConfig(DEFAULT_CONFIG, globalResult.partial, projectResult.partial),
+        )
+    } catch (error) {
+        // The merge of valid partials onto defaults must always validate; if it
+        // somehow does not, fall back to pure defaults. The repairs collected
+        // from the read step already describe the offending files.
+        const message = error instanceof Error ? error.message : String(error)
+        void message
+        merged = structuredClone(DEFAULT_CONFIG)
+    }
+
+    for (const repair of repairs) {
+        const salvaged = repair.path === globalPath ? globalResult.partial : projectResult.partial
+        await writeRepairedConfig(repair.path, repair.recoveredSections, salvaged)
+    }
+    lastRepairs = repairs
+    return merged
 }
 
-/** Read and partially validate a single configuration file, tolerating absence. */
-async function readPartialConfig(filePath: string): Promise<Partial<SpecOpsConfig>> {
+/**
+ * Read and partially validate a single configuration file, tolerating absence
+ * and self-healing on any other failure.
+ *
+ * On `ENOENT` returns an empty partial with no repair. On JSON parse failure or
+ * strict validation failure, runs the lenient validator against the raw value
+ * (or `{}` when the file did not parse as JSON) to salvage surviving sections,
+ * and returns both the salvaged partial and a {@link ConfigRepair} for the
+ * caller to persist and surface.
+ */
+async function readPartialConfigWithRepair(
+    filePath: string,
+): Promise<{ partial: Partial<SpecOpsConfig>; repair?: ConfigRepair }> {
+    let raw: unknown
     try {
-        const raw = JSON.parse(await readFile(filePath, "utf8"))
-        return validatePartialConfig(raw, filePath)
+        raw = JSON.parse(await readFile(filePath, "utf8"))
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return {}
+            return { partial: {} }
         }
-        const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`in ${filePath}: ${message}`)
+        const reason = error instanceof Error ? error.message : String(error)
+        const { partial, recoveredSections } = validateConfigLenient({})
+        return {
+            partial,
+            repair: { path: filePath, reason, recoveredSections },
+        }
     }
+    try {
+        const partial = validatePartialConfig(raw, filePath)
+        return { partial }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        const { partial, recoveredSections } = validateConfigLenient(raw)
+        return {
+            partial,
+            repair: { path: filePath, reason, recoveredSections },
+        }
+    }
+}
+
+/**
+ * Rewrite a repaired configuration file with defaults deep-merged onto the
+ * salvaged partial, preserving the `$schema` header.
+ *
+ * Only the sections this file salvaged are carried forward; their values come
+ * from the lenient-validated partial so the user's surviving settings are
+ * preserved rather than reset. The output mirrors the shape produced by
+ * {@link materializeGlobalConfig}.
+ */
+async function writeRepairedConfig(
+    destination: string,
+    recoveredSections: readonly string[],
+    salvagedPartial: Partial<SpecOpsConfig>,
+): Promise<void> {
+    await mkdir(path.dirname(destination), { recursive: true })
+    const salvaged: Record<string, unknown> = { version: 2 }
+    const salvagedRecord = salvagedPartial as Record<string, unknown>
+    for (const name of recoveredSections) {
+        const value = salvagedRecord[name]
+        if (value !== undefined) salvaged[name] = structuredClone(value)
+    }
+    const document = {
+        $schema: SPECOPS_CONFIG_SCHEMA_URL,
+        ...structuredClone(DEFAULT_CONFIG),
+        ...salvaged,
+    }
+    await writeFile(destination, `${JSON.stringify(document, null, 2)}\n`, {
+        encoding: "utf8",
+    })
 }
 
 /**

@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Renamed the MCP integration policy from `inherit` to `allow`. The `allow`
+  policy grants SpecOps subagents access to every enabled MCP server already
+  configured in OpenCode by applying agent-level `<server>_*` permission rules.
+  Because the permission is applied at the agent level, `allow` intentionally
+  overrides host-level MCP permission or `tools` denials for those subagents;
+  set `integrations.mcp` to `disabled` when SpecOps workers must not use MCP
+  tools. MCP server definitions, credentials, OAuth, and connection lifecycle
+  remain owned by OpenCode configuration.
+
+### Fixed
+
+- Configuration files with an invalid schema no longer prevent the plugin from
+  loading. The loader now salvages every top-level section that still parses,
+  rewrites the offending file in place with the salvaged settings deep-merged
+  onto defaults (preserving the `$schema` header), and records a repair for
+  `doctor` to surface as a `WARN` diagnostic. A single bad field, unknown key,
+  or malformed JSON now falls back to defaults instead of crashing the plugin,
+  mirroring the existing repair-on-load behaviour of the agent manifest.
+
 ## [0.16.1] - 2026-08-01
 
 ### Fixed

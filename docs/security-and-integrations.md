@@ -68,8 +68,10 @@ and provider availability remain external boundaries. SpecOps does not retry bey
 transient budgets or translate those failures into successful workflow outcomes.
 
 OpenSpec ships as a package dependency and is invoked directly with telemetry and color disabled.
-MCP server tools are inherited by default. Setting `integrations.mcp` to `disabled`
-denies the configured server-prefixed MCP tool patterns for SpecOps subagents;
-it does not remove or globally shut down host MCP server definitions.
+MCP server tools are allowed for SpecOps subagents by default. Setting `integrations.mcp` to
+`disabled` denies the configured server-prefixed MCP tool patterns for SpecOps subagents;
+the `allow` policy applies agent-level permission rules that intentionally override host-level
+MCP denials for those workers. Server definitions, credentials, OAuth, and connection
+lifecycle remain owned by OpenCode configuration and are never duplicated by SpecOps.
 Provider/model choices belong to the user manifest, while deterministic state
 and safety authority remain provider-independent.

@@ -596,7 +596,7 @@ async function runOpenCodeSmoke(
     assertProcess(worker, "OpenCode MCP worker resolution")
     assert(
         worker.stdout.includes("example_*") && worker.stdout.includes("allow"),
-        "OpenCode worker omitted the inherited MCP server permission",
+        "OpenCode worker omitted the allowed MCP server permission",
     )
 
     const cli = await runAutomaticCli(environment, smokeProjectDirectory)

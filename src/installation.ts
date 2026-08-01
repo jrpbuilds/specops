@@ -187,15 +187,16 @@ function existingAgentPermission(agent: unknown): AgentPermissionConfig {
  * Register canonical agents while preserving external registrations.
  *
  * MCP rules are derived from OpenCode's effective server catalogue so they
- * match the server-prefixed tool ids OpenCode exposes at runtime. Inherit mode
- * preserves explicit existing permissions; disabled mode applies policy-owned
+ * match the server-prefixed tool ids OpenCode exposes at runtime. Allow mode
+ * applies policy-owned allowances before existing permissions (so a host-level
+ * MCP denial cannot block SpecOps workers); disabled mode applies policy-owned
  * denials after existing permissions. Other agent settings remain user- or
  * host-owned.
  */
 export function registerManifestAgents(
     config: Config,
     manifest: SpecOpsManifest,
-    mcpPolicy: SpecOpsConfig["integrations"]["mcp"] = "inherit",
+    mcpPolicy: SpecOpsConfig["integrations"]["mcp"] = "allow",
 ): void {
     config.agent ??= {}
     const mcpRules = mcpPermissionRules(config, mcpPolicy)

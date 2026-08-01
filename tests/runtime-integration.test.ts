@@ -187,24 +187,58 @@ describe.sequential("installed runtime contract", () => {
 
         await writeFile(
             path.join(projectDirectory, ".opencode", "specops.json"),
-            `${JSON.stringify({ integrations: { mcp: "inherit" } })}\n`,
+            `${JSON.stringify({ integrations: { mcp: "allow" } })}\n`,
             "utf8",
         )
-        const inheritedHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
-        const inheritedConfig: Config = { mcp: hostMcp }
-        await inheritedHooks.config?.(inheritedConfig)
+        const allowedHooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        const allowedConfig: Config = { mcp: hostMcp }
+        await allowedHooks.config?.(allowedConfig)
         expect(
-            (inheritedConfig.agent?.[worker]?.permission as Record<string, string>)?.["example_*"],
+            (allowedConfig.agent?.[worker]?.permission as Record<string, string>)?.["example_*"],
         ).toBe("allow")
         expect(
-            (inheritedConfig.agent?.[worker]?.permission as Record<string, string>)?.[
+            (allowedConfig.agent?.[worker]?.permission as Record<string, string>)?.[
                 "context7_remote_*"
             ],
         ).toBe("allow")
     })
 
+    it("allow policy overrides host-level MCP permission denials for SpecOps subagents", async () => {
+        const projectDirectory = await mkdtemp(
+            path.join(os.tmpdir(), "specops-mcp-allow-override-"),
+        )
+        process.env.XDG_CONFIG_HOME = path.join(projectDirectory, "config")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        await writeFile(
+            path.join(projectDirectory, ".opencode", "specops.json"),
+            `${JSON.stringify({ integrations: { mcp: "allow" } })}\n`,
+            "utf8",
+        )
+        const worker = ALL_AGENT_IDS.find(
+            id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
+        )!
+        const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
+        // The host denies every MCP tool globally; the SpecOps allow policy must
+        // still grant configured server tools to the subagent by overriding the
+        // host-level denial through an agent-specific permission rule.
+        const config: Config = {
+            mcp: {
+                example: {
+                    type: "remote" as const,
+                    url: "https://mcp.example.test",
+                    enabled: true,
+                },
+            },
+            permission: { "example_*": "deny" } as unknown as Config["permission"],
+        }
+        await hooks.config?.(config)
+        expect((config.agent?.[worker]?.permission as Record<string, string>)?.["example_*"]).toBe(
+            "allow",
+        )
+    })
+
     it.each(["global", "project"] as const)(
-        "rejects invalid %s MCP configuration before mutating host config",
+        "repairs invalid %s MCP configuration and loads with the default policy",
         async source => {
             const temporaryRoot = await mkdtemp(
                 path.join(os.tmpdir(), `specops-mcp-invalid-${source}-`),
@@ -226,8 +260,12 @@ describe.sequential("installed runtime contract", () => {
 
             const hooks = await SpecOpsPluginWithManifest(fakePluginInput(projectDirectory))
             const config: Config = {}
-            await expect(hooks.config?.(config)).rejects.toThrow(configPath)
-            expect(config).toEqual({})
+            await hooks.config?.(config)
+            // The invalid file was repaired in place and now parses as a valid
+            // complete configuration with the default allow MCP policy.
+            const repaired = JSON.parse(await readFile(configPath, "utf8"))
+            expect(repaired.integrations.mcp).toBe("allow")
+            expect(repaired.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
         },
     )
 
@@ -272,8 +310,8 @@ describe.sequential("installed runtime contract", () => {
         expect(config.mcp).toEqual(hostMcp)
     })
 
-    it("preserves inherited MCP settings on externally registered subagents", async () => {
-        const projectDirectory = await mkdtemp(path.join(os.tmpdir(), "specops-mcp-inherit-"))
+    it("preserves allow MCP settings on externally registered subagents", async () => {
+        const projectDirectory = await mkdtemp(path.join(os.tmpdir(), "specops-mcp-allow-"))
         process.env.XDG_CONFIG_HOME = path.join(projectDirectory, "config")
         const worker = ALL_AGENT_IDS.find(
             id => !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]),
