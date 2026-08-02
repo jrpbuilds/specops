@@ -108,7 +108,7 @@ SpecOps does not install obsolete schemas or migrate old run formats.
 `/specops-status` reports the current scheduler phase and the blocking gate. Common causes are:
 
 - a required planning artifact failed validation;
-- registered command evidence is missing, stale, timed out, or failed;
+- the controller validation barrier found registered command evidence missing, stale, timed out, or failed;
 - an independent judgment or selected specialist review is incomplete;
 - a sustained review finding still requires repair;
 - a configured repair or dispatch budget is exhausted.
@@ -131,7 +131,9 @@ rerunning the original worker.
 When `blockReason` is `budget-exhausted`, `policy-rejected`, `validation-failed`, or
 `workflow-stalled`, the run is
 terminal. Do not edit machine state to bypass the gate. Correct the underlying artifact, command
-registration, implementation, or configuration and start a fresh run.
+registration, implementation, or configuration and start a fresh run. Required command validations
+are run automatically by the controller before verification; running a command directly in a worker
+does not create authoritative evidence.
 
 ### Verification findings need implementation changes
 
@@ -190,6 +192,9 @@ The controller still enforces:
 
 If a command needs shell expansion, pipelines, redirection, or command substitution, replace it
 with a project script that implements the operation and register that script as the executable.
+Required commands are normally run by the controller validation barrier. The public
+`specops_run_validation` tool remains available for explicit worker or diagnostic evidence, but it
+is not required for the normal completion path.
 
 ## CLI automatic execution
 

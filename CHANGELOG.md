@@ -15,6 +15,10 @@
 
 ### Fixed
 
+- Required command validations are now executed by a controller-owned pre-verification barrier
+  after the implementation diff is bound. Results are persisted atomically with current diff and
+  policy hashes, so normal workflows no longer depend on a verifier remembering to call
+  `specops_run_validation`; stale evidence is rerun and failed commands terminate safely.
 - Configuration files with an invalid schema no longer prevent the plugin from
   loading. The loader now salvages every top-level section that still parses,
   rewrites the offending file in place with the salvaged settings deep-merged

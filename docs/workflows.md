@@ -30,6 +30,12 @@ or an actual diff above configured file/module limits upgrades the run,
 invalidates downstream Lean work, and continues through the complete higher
 tier workflow.
 
+After a valid implementation diff is bound and before verification is dispatched, the controller
+executes every missing registered command validation through the evidence registry. Each result is
+bound to the current implementation diff and requirements policy. A failed, timed-out, or malformed
+required command terminates the run with `validation-failed`; direct worker shell output does not
+replace controller-recorded evidence.
+
 ## Standard
 
 Standard covers features, behavioral changes, bounded refactors, compatible public-contract work,

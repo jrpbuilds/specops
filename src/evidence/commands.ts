@@ -34,7 +34,7 @@ function confined(root: string, cwd: string | undefined): string {
  * {@link CommandEvidence} record with hashes, excerpts, and timestamps.
  *
  * @param root - The project root directory.
- * @param config - SpecOps configuration containing timeout and output limits.
+ * @param config - Review configuration containing timeout and output limits.
  * @param input - The validation descriptor: executable, arguments, optional
  * working directory, and the ids linking this execution back to the run.
  * @param signal - Optional external abort signal forwarded to the child
@@ -45,7 +45,7 @@ function confined(root: string, cwd: string | undefined): string {
  */
 export async function executeValidation(
     root: string,
-    config: SpecOpsConfig,
+    config: Pick<SpecOpsConfig, "review">,
     input: {
         executable: string
         args: string[]

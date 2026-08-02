@@ -29,7 +29,7 @@ status, doctor, and workflow commands to inspect or continue a run.
 | ------------------------ | -------------------------------------------------------------------------------------- |
 | `specops-run.json`       | Sole final run state, requirements, budgets, dispatches, repairs, and terminal status. |
 | `specops-context.json`   | Bounded repository context and decisions for workers.                                  |
-| `specops-evidence.json`  | Registered command invocations and immutable result hashes.                            |
+| `specops-evidence.json`  | Controller-recorded command invocations and immutable result hashes.                   |
 | `specops-artifacts.json` | Artifact provenance, input/output hashes, and validity.                                |
 | `specops-progress.json`  | Compact UI projection; not a second run-state format.                                  |
 | `specops-frontier.json`  | Bounded frontier policy, usage counters, and escalation episode history.               |
@@ -70,6 +70,8 @@ artifact stale. Important examples:
 - proposal replacement stales specifications, design, tasks, implementation, and assurance;
 - design replacement stales tasks and everything derived from implementation;
 - implementation mutation stales verification, judgments, review ledger, and receipt.
+- implementation mutation also invalidates command evidence through its diff binding; the
+  controller barrier reruns missing validations before issuing downstream verification work.
 
 The replacement artifact itself is recorded as valid after invalidation. Finalization checks every
 required artifact and refuses stale provenance.

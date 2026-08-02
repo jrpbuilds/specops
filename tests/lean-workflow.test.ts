@@ -7,6 +7,7 @@ import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { hash } from "../src/artifacts/lifecycle.js"
 import { DEFAULT_CONFIG } from "../src/config.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
+import { readEvidenceRegistry } from "../src/evidence/registry.js"
 import { onboard } from "../src/openspec.js"
 import { promptText } from "../src/prompts.generated.js"
 import { requirementsFor, scopeForActualDiff } from "../src/routing/policy.js"
@@ -137,7 +138,16 @@ describe("compact Lean workflow", () => {
             await onboard(directory)
             const started = await startRun(directory, DEFAULT_CONFIG, {
                 goal: "Update README wording",
-                assessmentOutput: JSON.stringify(assessment),
+                assessmentOutput: JSON.stringify({
+                    ...assessment,
+                    likelyValidations: [
+                        {
+                            executable: process.execPath,
+                            args: ["-e", "process.exit(0)"],
+                            purpose: "Verify the implementation-bound validation barrier.",
+                        },
+                    ],
+                }),
                 requestedTier: "auto",
                 mode,
             })
@@ -182,6 +192,9 @@ describe("compact Lean workflow", () => {
             expect(verification.action).toMatchObject({
                 capability: "verification",
                 mode: "lean-assurance-bundle",
+            })
+            await expect(readEvidenceRegistry(directory, started.change)).resolves.toMatchObject({
+                commands: [expect.objectContaining({ exitCode: 0 })],
             })
             await completeAction(
                 directory,

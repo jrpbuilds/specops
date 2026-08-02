@@ -24,7 +24,6 @@ import { requirementsFor, scopeForActualDiff } from "../routing/policy.js"
 import {
     changeRoot,
     withArchiveLock,
-    readMachine,
     readRun,
     withRunLock,
     writeMachine,
@@ -73,6 +72,13 @@ import {
 import { parseWorkerOutput } from "../worker_output.js"
 import { SPEC_NAME_REGEX, validateSpecContent } from "./contracts.js"
 import { redactSensitiveText } from "../security/redact.js"
+import {
+    appendEvidence,
+    executeValidation,
+    latestImplementationDispatch,
+    missingCommandRequirements,
+    readEvidenceRegistry,
+} from "../evidence/registry.js"
 import {
     canPromotePending,
     completeFrontierEpisode,
@@ -335,6 +341,13 @@ async function issueDirectiveLocked(
 
     await refreshImplementationBinding(directory, state, config.review.maxDiffBytes)
 
+    const validationFailure = await runValidationBarrier(directory, change, state, config)
+    if (validationFailure) {
+        setOutcome(state, "failed", "validation-failed", validationFailure, "validation-failed")
+        await writeRun(directory, change, state)
+        return { type: "block", reason: "validation-failed", resumable: false }
+    }
+
     const directive = nextDirective(state)
 
     if (directive.type === "dispatch") {
@@ -530,10 +543,7 @@ async function completeActionLocked(
             if (state.frontierPolicy?.mode !== "adaptive") {
                 await persistActionResult(directory, change, state, action, parsed.prose, config)
             } else {
-                const evidenceRegistry = await readMachine<{
-                    version: number
-                    commands: CommandEvidence[]
-                }>(directory, change, "specops-evidence.json", { version: 2, commands: [] })
+                const evidenceRegistry = await readEvidenceRegistry(directory, change)
                 if (
                     !(await verifyFrontierEvidence(
                         directory,
@@ -1489,6 +1499,70 @@ export async function confirmArchiveRun(
 // orchestrator and tests import it directly.
 
 /**
+ * Run missing registered command validations after implementation binding and
+ * before any downstream verification or review dispatch is issued.
+ *
+ * This barrier is controller-owned. Workers may still request optional command
+ * evidence through the public validation tool, but required completion evidence
+ * is never dependent on a model remembering to call that tool.
+ *
+ * @param directory - Repository root directory.
+ * @param change - OpenSpec change id.
+ * @param state - Mutable current run state.
+ * @param config - Review configuration used by the confined command executor.
+ * @returns A failure message when validation cannot complete, otherwise
+ *   `undefined`.
+ */
+async function runValidationBarrier(
+    directory: string,
+    change: string,
+    state: RunState,
+    config: Pick<SpecOpsConfig, "review">,
+): Promise<string | undefined> {
+    if (
+        state.status !== "running" ||
+        state.pendingQuestions ||
+        state.pendingCheckpoint ||
+        state.artifacts.implementation?.validity !== "valid"
+    ) {
+        return undefined
+    }
+
+    const registry = await readEvidenceRegistry(directory, change)
+    const missing = missingCommandRequirements(directory, state, registry)
+    if (missing.length === 0) return undefined
+
+    const sourceDispatch = latestImplementationDispatch(state)
+    if (!sourceDispatch) {
+        return "Registered validation evidence cannot be bound to an implementation dispatch."
+    }
+
+    for (const requirement of missing) {
+        let evidence: CommandEvidence
+        try {
+            evidence = await executeValidation(directory, config, {
+                executable: requirement.executable,
+                args: requirement.args,
+                cwd: requirement.cwd,
+                validationId: requirement.id,
+                dispatchId: sourceDispatch.id,
+                implementationDiffHash: state.implementationDiffHash,
+                policyHash: state.requirements.policyHash,
+            })
+            await appendEvidence(directory, change, evidence)
+        } catch (error) {
+            return `Registered validation ${requirement.id} could not execute: ${String(error)}`
+        }
+
+        if (evidence.exitCode !== 0) {
+            return `Registered validation ${requirement.id} failed with exit code ${evidence.exitCode}.`
+        }
+    }
+
+    return undefined
+}
+
+/**
  * Return registered command validations that cannot satisfy the completion receipt.
  *
  * Cross-references `requiredValidations` of kind `command` against the
@@ -1506,28 +1580,8 @@ async function missingEvidenceGates(
     change: string,
     state: RunState,
 ): Promise<string[]> {
-    const registry = await readMachine<{ version: number; commands: CommandEvidence[] }>(
-        directory,
-        change,
-        "specops-evidence.json",
-        { version: 2, commands: [] },
-    )
-    const missingCommands = state.requirements.requiredValidations
-        .filter(requirement => requirement.kind === "command")
-        .filter(
-            requirement =>
-                !registry.commands.some(
-                    evidence =>
-                        evidence.validationId === requirement.id &&
-                        evidence.executable === requirement.executable &&
-                        JSON.stringify(evidence.args) === JSON.stringify(requirement.args) &&
-                        evidence.exitCode === 0 &&
-                        evidence.implementationDiffHash === state.implementationDiffHash &&
-                        evidence.policyHash === state.requirements.policyHash,
-                ),
-        )
-        .map(requirement => requirement.id)
-    return missingCommands
+    const registry = await readEvidenceRegistry(directory, change)
+    return missingCommandRequirements(directory, state, registry).map(requirement => requirement.id)
 }
 
 /**
@@ -1690,10 +1744,7 @@ async function persistActionResult(
         case "frontier":
             {
                 const response = parseFrontierResponse(output)
-                const registry = await readMachine<{
-                    version: number
-                    commands: CommandEvidence[]
-                }>(directory, change, "specops-evidence.json", { version: 2, commands: [] })
+                const registry = await readEvidenceRegistry(directory, change)
                 if (
                     !(await verifyFrontierEvidence(directory, response.evidence, registry.commands))
                 ) {
@@ -1865,12 +1916,7 @@ async function verifySubmissionEvidence(
     findings: AssuranceFinding[],
     config: Pick<SpecOpsConfig, "review">,
 ): Promise<void> {
-    const registry = await readMachine<{ version: number; commands: CommandEvidence[] }>(
-        directory,
-        change,
-        "specops-evidence.json",
-        { version: 2, commands: [] },
-    )
+    const registry = await readEvidenceRegistry(directory, change)
     const changedPaths = findings.some(finding =>
         finding.evidence.some(reference => reference.kind === "changed-path"),
     )

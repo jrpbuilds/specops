@@ -7,6 +7,7 @@ import { contextPacket } from "./capabilities/context.js"
 import { COMMANDS } from "./commands.js"
 import { doctor } from "./doctor.js"
 import { executeValidation } from "./evidence/commands.js"
+import { appendEvidence, findCommandRequirement } from "./evidence/registry.js"
 import {
     MAX_CHANGE_NAME_LENGTH,
     READ_ONLY_OPENSPEC_COMMANDS,
@@ -17,7 +18,7 @@ import {
 import { publishProgress, type MetadataContext } from "./progress.js"
 import { summarize } from "./summary.js"
 import { TOOL_IDS } from "./protocol.js"
-import { changeRoot, readMachine, readRun, withRunLock, writeMachine } from "./state/store.js"
+import { changeRoot, readRun, withRunLock } from "./state/store.js"
 import {
     archiveRun,
     confirmArchiveRun,
@@ -319,14 +320,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                         throw new Error("validation requires an issued dispatch")
                     }
 
-                    const requirement = state.requirements.requiredValidations.find(
-                        (
-                            candidate,
-                        ): candidate is Extract<
-                            (typeof state.requirements.requiredValidations)[number],
-                            { kind: "command" }
-                        > => candidate.id === args.validationId && candidate.kind === "command",
-                    )
+                    const requirement = findCommandRequirement(state, args.validationId)
                     if (
                         !requirement ||
                         requirement.executable !== args.executable ||
@@ -348,23 +342,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                         },
                         context.abort,
                     )
-                    const registry = await readMachine(
-                        context.directory,
-                        args.change,
-                        "specops-evidence.json",
-                        {
-                            version: 2,
-                            commands: [] as unknown[],
-                        },
-                    )
-                    registry.version = 2
-                    registry.commands.push(evidence)
-                    await writeMachine(
-                        context.directory,
-                        args.change,
-                        "specops-evidence.json",
-                        registry,
-                    )
+                    await appendEvidence(context.directory, args.change, evidence)
                     return JSON.stringify(evidence, null, 2)
                 })
             },

@@ -119,7 +119,7 @@ export type DispatchPurpose =
  *   success criteria.
  * - `traceability` — a spec→implementation traceability check.
  */
-type ValidationRequirement =
+export type ValidationRequirement =
     | { id: string; kind: "openspec-strict" }
     | {
           id: string

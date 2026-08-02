@@ -9,9 +9,10 @@ import { AGENT_REGISTRY, agentForCapability } from "../src/capabilities/registry
 import { parseAssessment } from "../src/routing/assessment.js"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { executeValidation } from "../src/evidence/commands.js"
+import { readEvidenceRegistry } from "../src/evidence/registry.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
-import { changeRoot, writeMachine, writeRun } from "../src/state/store.js"
-import type { Assessment, RunState } from "../src/types.js"
+import { changeRoot, readRun, writeMachine, writeRun } from "../src/state/store.js"
+import type { ArtifactId, Assessment, RunState } from "../src/types.js"
 import {
     cancelRun,
     completeAction,
@@ -344,6 +345,78 @@ describe("final SpecOps policy", () => {
         )
     })
 
+    it("runs required command evidence before issuing verification", async () => {
+        const { directory, change, state } = await validationReadyRun([
+            process.execPath,
+            ["-e", "process.exit(0)"],
+        ])
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+
+        expect(directive.type).toBe("dispatch")
+        if (directive.type !== "dispatch") throw new Error("expected verification dispatch")
+        expect(directive.action.capability).toBe("verification")
+
+        const evidence = await readEvidenceRegistry(directory, change)
+        expect(evidence.commands).toHaveLength(1)
+        expect(evidence.commands[0]).toMatchObject({
+            validationId: "required-command",
+            executable: process.execPath,
+            args: ["-e", "process.exit(0)"],
+            exitCode: 0,
+            dispatchId: "implementation",
+            implementationDiffHash: "diff",
+            policyHash: state.requirements.policyHash,
+        })
+    })
+
+    it("fails before verification when a required command exits non-zero", async () => {
+        const { directory, change } = await validationReadyRun([
+            process.execPath,
+            ["-e", "process.exit(7)"],
+        ])
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        const state = await readRun(directory, change)
+
+        expect(directive).toEqual({ type: "block", reason: "validation-failed", resumable: false })
+        expect(state.status).toBe("failed")
+        expect(state.outcome?.category).toBe("validation-failed")
+        expect(state.outcome?.message).toContain("required-command")
+        await expect(readEvidenceRegistry(directory, change)).resolves.toMatchObject({
+            commands: [expect.objectContaining({ validationId: "required-command", exitCode: 7 })],
+        })
+    })
+
+    it("reruns evidence that is bound to an old implementation diff", async () => {
+        const { directory, change, state } = await validationReadyRun([
+            process.execPath,
+            ["-e", "process.exit(0)"],
+        ])
+        const stale = await executeValidation(directory, DEFAULT_CONFIG, {
+            executable: process.execPath,
+            args: ["-e", "process.exit(0)"],
+            validationId: "required-command",
+            dispatchId: "implementation",
+            implementationDiffHash: "old-diff",
+            policyHash: state.requirements.policyHash,
+        })
+        await writeMachine(directory, change, "specops-evidence.json", {
+            version: 2,
+            commands: [stale],
+        })
+
+        const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
+        const evidence = await readEvidenceRegistry(directory, change)
+
+        expect(directive.type).toBe("dispatch")
+        expect(evidence.commands).toHaveLength(2)
+        expect(evidence.commands.at(-1)).toMatchObject({
+            exitCode: 0,
+            implementationDiffHash: "diff",
+        })
+    })
+
     it("recovers an interrupted dispatch without cancelling the run", async () => {
         const { directory, change, state } = await persistedRun()
         state.dispatches.push(dispatch("interrupted", "exploration", "workflow"))
@@ -521,6 +594,47 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
     const change = "outcome-test"
     await mkdir(changeRoot(directory, change), { recursive: true })
     return { directory, change, state: automaticState() }
+}
+
+async function validationReadyRun(
+    command: [string, string[]],
+): Promise<{ directory: string; change: string; state: RunState }> {
+    const run = await persistedRun()
+    const [executable, args] = command
+    run.state.requirements.requiredValidations.push({
+        id: "required-command",
+        kind: "command",
+        executable,
+        args,
+        purpose: "Required barrier command.",
+        requirements: [],
+    })
+    run.state.artifacts.routing = validArtifact(run.state, "routing")
+    run.state.artifacts.exploration = validArtifact(run.state, "exploration")
+    run.state.artifacts.tasks = validArtifact(run.state, "tasks")
+    run.state.artifacts.implementation = validArtifact(run.state, "implementation")
+    run.state.implementationDiffHash = "diff"
+    run.state.dispatches.push({
+        ...dispatch("implementation", "implementation", "workflow"),
+        status: "completed",
+        finishedAt: "later",
+    })
+    await writeRun(run.directory, run.change, run.state)
+    return run
+}
+
+function validArtifact(state: RunState, artifact: ArtifactId) {
+    return {
+        artifact,
+        producer: "test",
+        purpose: "workflow" as const,
+        generatedAt: "now",
+        inputHashes: {},
+        outputHash: `${artifact}-output`,
+        scopeTier: state.scopeTier,
+        capabilities: state.requirements.requiredCapabilities,
+        validity: "valid" as const,
+    }
 }
 
 function automaticState(): RunState {

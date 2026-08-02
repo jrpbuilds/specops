@@ -28,7 +28,9 @@ requirements.
 Validation commands use executable/argument arrays and never pass through a shell. Working
 directories are resolved beneath the project root. The environment contains only explicit
 execution controls such as `PATH`, `CI`, and telemetry/color flags. Output is bounded while hashes
-and timestamps are retained in `specops-evidence.json`.
+and timestamps are retained in `specops-evidence.json`. The controller automatically executes
+required commands after implementation binding and before verification; a worker does not need to
+remember to invoke the public validation tool for mandatory evidence.
 
 Finalization requires successful matching evidence for every command validation registered in the
 run.

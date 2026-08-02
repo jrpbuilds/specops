@@ -18,13 +18,16 @@ their role.
 5. **State and artifact stores** are updated safely and can recover interrupted work beneath one
    OpenSpec change.
 6. **Evidence registry** executes declared project commands without a shell and records immutable
-   hashes and bounded excerpts.
+   hashes and bounded excerpts. The controller invokes required command validations through a
+   pre-verification barrier after the implementation diff is bound; workers are not responsible
+   for completing this gate.
 
 ## Shared execution engine
 
 Interactive and automatic runs differ only in question presentation. Both use
 OpenCode's native task mechanism and call the same `issueDirective`,
-`completeAction`, validation, and finalization functions. The scheduler follows
+`completeAction`, validation, and finalization functions. The controller runs the
+required validation barrier before issuing verification work. The scheduler follows
 the routed requirement envelope rather than adding mode-specific phases.
 
 A normal Lean run consolidates inspection into assessment and correctness
@@ -42,18 +45,18 @@ registered protocol tool or controller.
 
 ## Ownership boundaries
 
-| Concern                         | Owner                        |
-| ------------------------------- | ---------------------------- |
-| Scope and required capabilities | Deterministic routing policy |
-| Next executable action          | Scheduler                    |
-| Proposal/spec/task reasoning    | Planner                      |
-| Independent Full-tier design    | Designer                     |
-| Artifact validation and writes  | Controller                   |
-| Repository code mutation        | Implementer or repairer      |
-| Command execution               | Evidence registry            |
-| Correctness/compliance verdicts | Independent judges           |
-| Review deduplication            | Refuter                      |
-| Invalidation and completion     | Controller                   |
+| Concern                         | Owner                              |
+| ------------------------------- | ---------------------------------- |
+| Scope and required capabilities | Deterministic routing policy       |
+| Next executable action          | Scheduler                          |
+| Proposal/spec/task reasoning    | Planner                            |
+| Independent Full-tier design    | Designer                           |
+| Artifact validation and writes  | Controller                         |
+| Repository code mutation        | Implementer or repairer            |
+| Command execution               | Controller-owned evidence registry |
+| Correctness/compliance verdicts | Independent judges                 |
+| Review deduplication            | Refuter                            |
+| Invalidation and completion     | Controller                         |
 
 Planner and designer agents are read-only. Their responses become authoritative only after
 controller validation and atomic persistence. This keeps artifact reasoning separate from
