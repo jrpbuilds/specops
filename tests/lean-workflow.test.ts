@@ -37,7 +37,7 @@ const assessment: Assessment = {
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -1024,7 +1024,7 @@ describe("compact Lean workflow", () => {
 function leanState(mode: RunState["mode"]): RunState {
     const requirements = requirementsFor(assessment, "auto", DEFAULT_CONFIG).requirements
     return {
-        version: 6,
+        version: 7,
         revision: 0,
         mode,
         goal: "Update README",
@@ -1034,7 +1034,7 @@ function leanState(mode: RunState["mode"]): RunState {
         assessment,
         requirements,
         riskFacets: [],
-        uncertainty: assessment.uncertainty,
+        confidence: assessment.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},

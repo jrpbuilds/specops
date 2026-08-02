@@ -333,7 +333,7 @@ const assessment = JSON.stringify({
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -363,7 +363,7 @@ const change = changeMatch[0]
 const state = JSON.parse(
     await hooks.tool[protocolModule.TOOL_IDS.getStatus].execute({ change }, smokeContext),
 )
-assert(state.version === 6, "packed start-run did not persist final state")
+assert(state.version === 7, "packed start-run did not persist final state")
 
 let archiveGuardMessage = ""
 try {

@@ -4,7 +4,7 @@ import type { RunState } from "../src/types.js"
 
 function state(overrides: Partial<RunState> = {}): RunState {
     const base: RunState = {
-        version: 6,
+        version: 7,
         revision: 0,
         mode: "interactive",
         goal: "test",
@@ -29,7 +29,7 @@ function state(overrides: Partial<RunState> = {}): RunState {
             },
         },
         riskFacets: [],
-        uncertainty: {
+        confidence: {
             requirements: "high",
             repository: "high",
             design: "high",

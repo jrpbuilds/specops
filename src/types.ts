@@ -51,10 +51,11 @@ export type TouchedSurface =
     | "documentation"
 
 /**
- * Per-concern uncertainty profile recorded by the assessor and reused by
- * routing and refuter policies.
+ * Per-concern confidence profile recorded by the assessor and reused by
+ * routing and refuter policies. `low` means low confidence and therefore high
+ * uncertainty; `high` means high confidence and therefore low uncertainty.
  */
-type UncertaintyProfile = Record<
+type ConfidenceProfile = Record<
     "requirements" | "repository" | "design" | "implementation" | "verification",
     ConfidenceLevel
 >
@@ -200,7 +201,7 @@ export type Assessment = {
     publicContract: "none" | "compatible" | "breaking"
     riskFacets: RiskFacet[]
     touchedSurfaces: TouchedSurface[]
-    uncertainty: UncertaintyProfile
+    confidence: ConfidenceProfile
     suggestedTier: ScopeTier
     inspectedPaths: string[]
     unresolvedQuestions: string[]
@@ -260,7 +261,8 @@ export type EscalationPatch = {
  *
  * `category` drives controller verification and `requestedPatch` is what the
  * claimant believes must change; the controller may accept, narrow, or
- * reject it (see {@link EscalationDecision}).
+ * reject it (see {@link EscalationDecision}). `confidence` uses the shared
+ * scale: low is tentative, medium is partial, and high is strongly supported.
  */
 export type EscalationClaim = {
     category:
@@ -750,7 +752,7 @@ export type ResumeTarget = {
  * `resumable` describe the paused state.
  */
 export type RunState = {
-    version: 6
+    version: 7
     /** Monotonic optimistic-concurrency revision of the persisted run state. */
     revision: number
     mode: "automatic" | "interactive"
@@ -761,7 +763,7 @@ export type RunState = {
     assessment: Assessment
     requirements: WorkflowRequirements
     riskFacets: RiskFacet[]
-    uncertainty: UncertaintyProfile
+    confidence: ConfidenceProfile
     routingReasons: string[]
     decisions: EscalationDecision[]
     budgetUsage: Partial<Record<keyof EscalationBudget, number>>

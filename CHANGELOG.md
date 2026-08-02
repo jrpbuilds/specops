@@ -15,6 +15,11 @@
 
 ### Fixed
 
+- Clarified assessment confidence semantics across routing, persisted run state, frontier decisions,
+  prompts, tests, and documentation. Low now consistently means low confidence/high uncertainty,
+  while the assessor is explicitly told not to promote generic documentation drift into a material
+  maintainability facet, preventing simple changes from being routed through unnecessary Full and
+  specialist workflows.
 - Required command validations are now executed by a controller-owned pre-verification barrier
   after the implementation diff is bound. Results are persisted atomically with current diff and
   policy hashes, so normal workflows no longer depend on a verifier remembering to call

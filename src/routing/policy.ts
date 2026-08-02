@@ -145,7 +145,7 @@ export function capabilitiesFor(tier: ScopeTier, specialists: CapabilityId[] = [
  * deterministic safety floors.
  *
  * Computes the scope floor from assessment fields (change kind, file/module
- * counts, risk facets, uncertainty), then applies requested and configured
+ * counts, risk facets, confidence), then applies requested and configured
  * tier overrides — each can only raise scope, never lower it.
  *
  * @param assessment - The canonical assessor output for the change.
@@ -172,9 +172,9 @@ export function requirementsFor(
             `expected modules ${assessment.expectedModules} >= ${thresholds.fullMinModules}`,
         )
     }
-    if (assessment.uncertainty.requirements === "low")
-        fullReasons.push("low requirements uncertainty")
-    if (assessment.uncertainty.design === "low") fullReasons.push("low design uncertainty")
+    if (assessment.confidence.requirements === "low")
+        fullReasons.push("low requirements confidence")
+    if (assessment.confidence.design === "low") fullReasons.push("low design confidence")
     const requiresFull =
         assessment.publicContract === "breaking" ||
         assessment.changeKind === "migration" ||
@@ -187,8 +187,8 @@ export function requirementsFor(
                 facet === "infrastructure" ||
                 config.routing.forceFullForFacets.includes(facet),
         ) ||
-        assessment.uncertainty.requirements === "low" ||
-        assessment.uncertainty.design === "low"
+        assessment.confidence.requirements === "low" ||
+        assessment.confidence.design === "low"
     const requiresStandard =
         assessment.changesRequirements ||
         assessment.publicContract !== "none" ||
@@ -200,7 +200,7 @@ export function requirementsFor(
 
     const floor: ScopeTier = requiresFull ? "full" : requiresStandard ? "standard" : "lean"
     if (requiresFull) {
-        reasons.push("A deterministic Full safety, scope, or uncertainty floor applies.")
+        reasons.push("A deterministic Full safety, scope, or confidence floor applies.")
     } else if (requiresStandard) {
         reasons.push("The change exceeds Lean behavioral or risk limits.")
     }

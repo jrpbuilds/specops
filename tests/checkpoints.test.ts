@@ -43,7 +43,7 @@ const assessment: Assessment = {
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -83,7 +83,7 @@ function leanState(mode: RunState["mode"]): RunState {
         policyHash: "policy",
     }
     return {
-        version: 6,
+        version: 7,
         revision: 0,
         mode,
         goal: "Update README",
@@ -93,7 +93,7 @@ function leanState(mode: RunState["mode"]): RunState {
         assessment,
         requirements,
         riskFacets: [],
-        uncertainty: assessment.uncertainty,
+        confidence: assessment.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},

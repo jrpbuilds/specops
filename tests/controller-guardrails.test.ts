@@ -222,12 +222,15 @@ describe("assessor prompt documents the assessment schema", () => {
         }
     })
 
-    it("inlines every uncertainty confidence level and key", () => {
+    it("inlines every assessment confidence level and key", () => {
         // Assert the exact schema substring rather than bare words: "low" and
         // "high" also appear in the appended QUESTION_POLICY/FRONTIER_POLICY
         // ("low-risk", "high tier"), so bare-word assertions would pass even if
         // the schema block were missing.
+        expect(text).toContain('"confidence": {')
         expect(text).toContain('"low" | "medium" | "high"')
+        expect(text).toContain("low confidence / high uncertainty")
+        expect(text).toContain("suggestedTier` is advisory")
         for (const key of [
             "requirements",
             "repository",
@@ -237,6 +240,11 @@ describe("assessor prompt documents the assessment schema", () => {
         ]) {
             expect(text).toContain(key)
         }
+    })
+
+    it("explains that risk facets must be material", () => {
+        expect(text).toContain("material risk")
+        expect(text).toContain("ordinary documentation drift")
     })
 
     it("documents the expectedFiles/expectedModules numeric shape and likelyValidations cwd rule", () => {

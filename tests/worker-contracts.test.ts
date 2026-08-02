@@ -36,7 +36,7 @@ const standardAssessment: Assessment = {
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "medium",
         repository: "medium",
         design: "medium",
@@ -79,7 +79,7 @@ async function persistedRun(): Promise<{ directory: string; change: string; stat
 function standardState(): RunState {
     const assessed = standardAssessment
     return {
-        version: 6,
+        version: 7,
         revision: 0,
         mode: "automatic",
         goal: "test",
@@ -89,7 +89,7 @@ function standardState(): RunState {
         assessment: assessed,
         requirements: requirementsFor(assessed, "auto", DEFAULT_CONFIG).requirements,
         riskFacets: [],
-        uncertainty: assessed.uncertainty,
+        confidence: assessed.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},

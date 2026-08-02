@@ -66,7 +66,7 @@ export function parseAssessment(output: string): Assessment {
     }
 
     const assessment = asObject(parsed, "assessment")
-    const uncertainty = parseUncertainty(assessment.uncertainty)
+    const confidence = parseConfidence(assessment.confidence)
     if (!CHANGE_KINDS.has(assessment.changeKind as Assessment["changeKind"])) {
         throw enumError("changeKind", assessment.changeKind, [...CHANGE_KINDS])
     }
@@ -107,7 +107,7 @@ export function parseAssessment(output: string): Assessment {
         publicContract: assessment.publicContract,
         riskFacets: [...new Set(riskFacets)],
         touchedSurfaces: [...new Set(touchedSurfaces)],
-        uncertainty: uncertainty as Assessment["uncertainty"],
+        confidence: confidence as Assessment["confidence"],
         suggestedTier: assessment.suggestedTier,
         inspectedPaths: stringArray(assessment.inspectedPaths, "inspectedPaths"),
         unresolvedQuestions: stringArray(assessment.unresolvedQuestions, "unresolvedQuestions"),
@@ -118,21 +118,21 @@ export function parseAssessment(output: string): Assessment {
 }
 
 /**
- * Parse and validate the `uncertainty` object.
+ * Parse and validate the `confidence` object.
  *
  * Each of the five concern keys must be present and map to a valid
  * confidence level. The error message lists both the required keys and the
  * accepted values so callers know why an assessment was rejected without
  * reading the schema directly.
  *
- * @param value - The raw value of `assessment.uncertainty`.
- * @returns A validated {@link UncertaintyProfile}.
+ * @param value - The raw value of `assessment.confidence`.
+ * @returns A validated {@link ConfidenceProfile}.
  * @throws {Error} If any required key is missing or has an invalid level.
  */
-function parseUncertainty(value: unknown): Assessment["uncertainty"] {
+function parseConfidence(value: unknown): Assessment["confidence"] {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error(
-            "invalid assessment.uncertainty — expected an object with requirements, repository, " +
+            "invalid assessment.confidence — expected an object with requirements, repository, " +
                 "design, implementation, and verification confidence fields; each value must be low, medium, or high",
         )
     }
@@ -140,10 +140,10 @@ function parseUncertainty(value: unknown): Assessment["uncertainty"] {
     const keys = ["requirements", "repository", "design", "implementation", "verification"] as const
     for (const key of keys) {
         if (!CONFIDENCE.has(source[key] as ConfidenceLevel)) {
-            throw enumError(`uncertainty.${key}`, source[key], [...CONFIDENCE])
+            throw enumError(`confidence.${key}`, source[key], [...CONFIDENCE])
         }
     }
-    return source as Assessment["uncertainty"]
+    return source as Assessment["confidence"]
 }
 
 /**

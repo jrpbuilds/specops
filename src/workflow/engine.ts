@@ -160,7 +160,7 @@ export async function startRun(
     return withRunLock(directory, change, "start run", async () => {
         const now = new Date().toISOString()
         const state: RunState = {
-            version: 6,
+            version: 7,
             revision: 0,
             mode: input.mode,
             goal: input.goal,
@@ -170,7 +170,7 @@ export async function startRun(
             assessment,
             requirements: routed.requirements,
             riskFacets: assessment.riskFacets,
-            uncertainty: assessment.uncertainty,
+            confidence: assessment.confidence,
             routingReasons: routed.reasons,
             decisions: [],
             budgetUsage: {

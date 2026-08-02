@@ -5,9 +5,13 @@ same scheduler. Execution mode changes only how unresolved questions are
 presented or paused, and whether phase-boundary checkpoints are emitted; it
 does not change routing, stages, or assurance.
 
-Scope tier, risk facets, and uncertainty are separate dimensions. A small security-sensitive change
+Scope tier, risk facets, and confidence are separate dimensions. A small security-sensitive change
 may require a specialist while remaining Standard; a large low-risk refactor may require Full
-because of size and design uncertainty.
+because of size and low design confidence.
+
+Assessment confidence values are explicit: `low` means low confidence and high uncertainty,
+`medium` means partial confidence, and `high` means high confidence and low uncertainty. The
+assessor's suggested tier is advisory; deterministic scope and safety floors may raise it.
 
 ## Lean
 
@@ -74,7 +78,10 @@ be produced before design is persisted.
 ## Risk facets
 
 The assessor may select security, data, public-contract, concurrency, resilience, performance,
-infrastructure, migration, usability, or maintainability. Each selected facet adds:
+infrastructure, migration, usability, or maintainability. A facet must represent a concrete,
+material risk that warrants additional planning or specialist review. Generic concerns such as
+ordinary documentation drift or routine maintainability do not count as a facet. Each selected
+facet adds:
 
 - a focused planning consultation when useful;
 - a distinct post-implementation independent review;

@@ -38,7 +38,7 @@ const assessment = (overrides: Partial<Assessment> = {}): Assessment => ({
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -69,7 +69,7 @@ const QUESTION_MARKER = (q: Partial<WorkerQuestion> = {}): string =>
 function automaticState(overrides: Partial<RunState> = {}): RunState {
     const assessed = assessment()
     return {
-        version: 6,
+        version: 7,
         revision: 0,
         mode: "automatic",
         goal: "test",
@@ -79,7 +79,7 @@ function automaticState(overrides: Partial<RunState> = {}): RunState {
         assessment: assessed,
         requirements: requirementsFor(assessed, "auto", DEFAULT_CONFIG).requirements,
         riskFacets: [],
-        uncertainty: assessed.uncertainty,
+        confidence: assessed.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},
@@ -1256,6 +1256,21 @@ describe("run-state version strictness", () => {
         await mkdir(changeRoot(directory, change), { recursive: true })
         const legacy = JSON.parse(JSON.stringify(automaticState())) as Record<string, unknown>
         legacy.version = 1
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(legacy, null, 2)}\n`,
+        )
+        await expect(readRun(directory, change)).rejects.toThrow(/invalid SpecOps run state/)
+    })
+
+    it("rejects the prior v6 uncertainty-shaped run state", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-reject-"))
+        const change = "v6-state"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const legacy = JSON.parse(JSON.stringify(automaticState())) as Record<string, unknown>
+        legacy.version = 6
+        legacy.uncertainty = legacy.confidence
+        delete legacy.confidence
         await writeFile(
             path.join(changeRoot(directory, change), "specops-run.json"),
             `${JSON.stringify(legacy, null, 2)}\n`,

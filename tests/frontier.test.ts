@@ -30,7 +30,7 @@ const assessment: Assessment = {
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -637,7 +637,7 @@ describe("adaptive frontier escalation", () => {
 function completedPlanningState(): RunState {
     const requirements = requirementsFor(assessment, "auto", adaptiveConfig).requirements
     const state: RunState = {
-        version: 6,
+        version: 7,
         revision: 0,
         mode: "automatic",
         goal: "test frontier replay",
@@ -647,7 +647,7 @@ function completedPlanningState(): RunState {
         assessment,
         requirements,
         riskFacets: [],
-        uncertainty: assessment.uncertainty,
+        confidence: assessment.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},

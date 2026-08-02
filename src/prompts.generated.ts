@@ -25,9 +25,9 @@ const ROLE_INSTRUCTIONS: Partial<Record<AgentId, string>> = {
         '  "restoresExistingBehavior": boolean,\n' +
         '  "changesRequirements": boolean,\n' +
         '  "publicContract": "none" | "compatible" | "breaking",\n' +
-        '  "riskFacets": RiskFacet[],          // de-duplicated array of kebab-case strings\n' +
+        '  "riskFacets": RiskFacet[],          // material risks requiring extra review; [] when none\n' +
         '  "touchedSurfaces": TouchedSurface[],// de-duplicated array of kebab-case strings\n' +
-        '  "uncertainty": {\n' +
+        '  "confidence": {\n' +
         '    "requirements": "low" | "medium" | "high",\n' +
         '    "repository": "low" | "medium" | "high",\n' +
         '    "design": "low" | "medium" | "high",\n' +
@@ -46,6 +46,8 @@ const ROLE_INSTRUCTIONS: Partial<Record<AgentId, string>> = {
         '  "facts": string[],                  // non-empty array of verifiable observations\n' +
         '  "inferences": string[]             // array of conclusions with stated reasoning\n' +
         "}\n" +
+        "CONFIDENCE SEMANTICS: `low` means low confidence / high uncertainty and may force Full; `medium` means partial confidence; `high` means high confidence / low uncertainty. The `suggestedTier` is advisory only because deterministic routing floors may raise it.\n" +
+        "RISK FACET POLICY: select a risk facet only when the change has a concrete, material risk that warrants additional planning or specialist review. Do not report generic concerns such as ordinary documentation drift or routine maintainability; use an empty array for a simple low-risk change.\n" +
         'RiskFacet = one of: "security", "data", "public-contract", "concurrency", "resilience", "performance", "infrastructure", "migration", "usability", "maintainability".\n' +
         'TouchedSurface = one of: "api", "auth", "database", "filesystem", "network", "queue", "cli", "ui", "configuration", "build", "deployment", "documentation".',
     [AGENT_IDS.core.explorer]: "Return evidence-backed exploration Markdown. Do not edit files.",
@@ -99,6 +101,7 @@ const QUESTION_POLICY = [
     "NEVER raise a question for naming, formatting, minor implementation preferences, progress updates, permission to continue, ordinary uncertainty, or anything resolvable from repository conventions.",
     'Mark options with `"recommended": true` only when the recommendation is useful; recommendations are optional.',
     "Use the typed escalation marker for requirement changes that do not require a human decision.",
+    "Escalation confidence uses the shared scale: low is tentative, medium is partial, and high is strongly supported by the supplied evidence.",
     "Never emit both an escalation marker and a question marker in the same output.",
 ].join(" ")
 

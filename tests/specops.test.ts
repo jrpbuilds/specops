@@ -31,7 +31,7 @@ const assessment = (overrides: Partial<Assessment> = {}): Assessment => ({
     publicContract: "none",
     riskFacets: [],
     touchedSurfaces: [],
-    uncertainty: {
+    confidence: {
         requirements: "high",
         repository: "high",
         design: "high",
@@ -52,6 +52,45 @@ describe("final SpecOps policy", () => {
         expect(requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements.scopeTier).toBe(
             "lean",
         )
+    })
+
+    it("routes a high-confidence documentation-only change to Lean", () => {
+        const result = requirementsFor(
+            assessment({
+                changeKind: "documentation",
+                expectedModules: 0,
+                touchedSurfaces: ["documentation"],
+                suggestedTier: "lean",
+            }),
+            "auto",
+            DEFAULT_CONFIG,
+        ).requirements
+
+        expect(result.scopeTier).toBe("lean")
+        expect(result.requiredCapabilities).toEqual([
+            "assessment",
+            "planning",
+            "implementation",
+            "verification",
+        ])
+    })
+
+    it("raises low requirements confidence to Full", () => {
+        const result = requirementsFor(
+            assessment({
+                confidence: {
+                    requirements: "low",
+                    repository: "high",
+                    design: "high",
+                    implementation: "high",
+                    verification: "high",
+                },
+            }),
+            "auto",
+            DEFAULT_CONFIG,
+        ).requirements
+
+        expect(result.scopeTier).toBe("full")
     })
 
     it("snapshots run budgets without mutating project defaults", () => {
@@ -107,7 +146,7 @@ describe("final SpecOps policy", () => {
     it("accepts a bounded escalation only when it adds a new requirement", () => {
         const routed = requirementsFor(assessment(), "auto", DEFAULT_CONFIG).requirements
         const state = {
-            version: 6 as const,
+            version: 7 as const,
             revision: 0,
             mode: "automatic" as const,
             goal: "test",
@@ -117,7 +156,7 @@ describe("final SpecOps policy", () => {
             assessment: assessment(),
             requirements: routed,
             riskFacets: [],
-            uncertainty: assessment().uncertainty,
+            confidence: assessment().confidence,
             routingReasons: [],
             decisions: [],
             budgetUsage: {},
@@ -499,7 +538,7 @@ describe("parseAssessment", () => {
             publicContract: "none",
             riskFacets: [],
             touchedSurfaces: [],
-            uncertainty: {
+            confidence: {
                 requirements: "high",
                 repository: "high",
                 design: "high",
@@ -514,11 +553,11 @@ describe("parseAssessment", () => {
             inferences: [],
         })
 
-    it("presets uncertainty in error when missing", () => {
+    it("preserves confidence in error when missing", () => {
         const payload = JSON.parse(valid())
-        delete payload.uncertainty
+        delete payload.confidence
         expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
-            /invalid assessment\.uncertainty/,
+            /invalid assessment\.confidence/,
         )
     })
 
@@ -556,11 +595,11 @@ describe("parseAssessment", () => {
         )
     })
 
-    it("echoes back an invalid uncertainty level with choices", () => {
+    it("echoes back an invalid confidence level with choices", () => {
         const payload = JSON.parse(valid())
-        payload.uncertainty.requirements = "sure"
+        payload.confidence.requirements = "sure"
         expect(() => parseAssessment(JSON.stringify(payload))).toThrow(
-            `invalid assessment.uncertainty.requirements "sure" — must be one of: low, medium, high`,
+            `invalid assessment.confidence.requirements "sure" — must be one of: low, medium, high`,
         )
     })
 })
@@ -640,7 +679,7 @@ function validArtifact(state: RunState, artifact: ArtifactId) {
 function automaticState(): RunState {
     const assessed = assessment()
     return {
-        version: 6,
+        version: 7,
         revision: 0,
         mode: "automatic",
         goal: "test",
@@ -650,7 +689,7 @@ function automaticState(): RunState {
         assessment: assessed,
         requirements: requirementsFor(assessed, "auto", DEFAULT_CONFIG).requirements,
         riskFacets: [],
-        uncertainty: assessed.uncertainty,
+        confidence: assessed.confidence,
         routingReasons: [],
         decisions: [],
         budgetUsage: {},

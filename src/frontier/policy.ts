@@ -397,7 +397,7 @@ function selectTier(
         state.assessment.changeKind === "migration" ||
         request.evidence.some(item => item.kind === "contract") ||
         (state.scopeTier === "full" &&
-            (state.uncertainty.requirements === "low" || state.uncertainty.design === "low"))
+            (state.confidence.requirements === "low" || state.confidence.design === "low"))
     return critical && canDispatch(state, "high") ? "high" : "low"
 }
 

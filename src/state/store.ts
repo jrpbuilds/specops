@@ -436,7 +436,7 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 
     if (
         !isCurrentRunStateShape(raw) ||
-        raw.version !== 6 ||
+        raw.version !== 7 ||
         !isNonNegativeInteger(raw.revision) ||
         (raw.mode !== "interactive" && raw.mode !== "automatic") ||
         typeof raw.status !== "string" ||
@@ -444,7 +444,7 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     ) {
         const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable"
         throw new Error(
-            `invalid SpecOps run state (expected version 6 with a numeric revision; found ${version})`,
+            `invalid SpecOps run state (expected version 7 with a numeric revision; found ${version})`,
         )
     }
     const value = raw as RunState
@@ -614,6 +614,7 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         !Array.isArray(value.checkpointHistory) ||
         !Array.isArray(value.schedulerHistory) ||
         !isRecord(value.budgetUsage) ||
+        !isConfidenceProfile(value.confidence) ||
         !isRecord(value.frontierPolicy) ||
         !isRecord(value.frontierUsage)
     ) {
@@ -645,6 +646,14 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
 /** Return whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/** Return whether a persisted run has the complete current confidence profile. */
+function isConfidenceProfile(value: unknown): boolean {
+    if (!isRecord(value)) return false
+    return ["requirements", "repository", "design", "implementation", "verification"].every(
+        key => value[key] === "low" || value[key] === "medium" || value[key] === "high",
+    )
 }
 
 /** Return whether a value is an integer counter that cannot be negative. */
