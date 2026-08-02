@@ -296,21 +296,28 @@ work are never checkpoint boundaries.
    `pauseReason: "checkpoint"` and `resumable: true`.
 3. `specops_next_action` returns a `checkpoint` directive naming the completed
    artifacts.
-4. The interactive controller presents a native question with a `Continue`
+4. The controller formats structured planning and Lean assurance envelopes into
+   presentation-ready Markdown and presents that preview before the native
+   question. It may add concise transition commentary, but copies the complete
+   preview unchanged, including JSON examples and internal code fences; it must
+   not wrap the complete preview in an additional code fence or transport
+   container. The underlying artifact files remain the authoritative persisted
+   outputs.
+5. The interactive controller presents a native question with a `Continue`
    option and an `Other / provide feedback` option. Verification checkpoints
    also provide `Apply implementation fixes` only when current, diff-bound
    assurance findings target implementation work.
-5. On Continue (or dismissal) the controller calls `specops_resume_checkpoint`
+6. On Continue (or dismissal) the controller calls `specops_resume_checkpoint`
    with no feedback; the run resumes scheduling.
-6. On Other text the controller calls `specops_resume_checkpoint` with the
+7. On Other text the controller calls `specops_resume_checkpoint` with the
    user's feedback. The checkpoint artifact group and its downstream closure are
    invalidated, and the phase is re-dispatched with the feedback injected as
    untrusted task content.
-7. When the implementation-fix option is present, the controller calls
+8. When the implementation-fix option is present, the controller calls
    `specops_resume_checkpoint` with `resolution: "apply-implementation-fixes"`.
    The implementation dispatch receives the feedback, and verification and all
    downstream assurance are re-run after the diff changes.
-8. A regenerated phase produces a fresh checkpoint for its new output, even if
+9. A regenerated phase produces a fresh checkpoint for its new output, even if
    it is the same phase as before.
 
 ### Automatic and CLI execution

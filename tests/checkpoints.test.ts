@@ -142,6 +142,14 @@ function planningDispatch(): DispatchRecord {
     }
 }
 
+function bundlePlanningDispatch(): DispatchRecord {
+    return {
+        ...planningDispatch(),
+        id: "planning-bundle",
+        action: "standard-bundle",
+    }
+}
+
 function verificationDispatch(): DispatchRecord {
     return {
         id: "verification",
@@ -409,6 +417,46 @@ describe("interactive mode queuing", () => {
         expect(after.pendingCheckpoint).toBeDefined()
         expect(after.pendingCheckpoint?.artifacts.map(s => s.artifact)).toEqual(["tasks"])
         expect(after.pendingCheckpoint?.output).toBe("# Tasks\n\n- Do work.")
+    })
+
+    it("formats a structured planning bundle in the checkpoint preview", async () => {
+        const directory = await initializedRepository()
+        const change = "ckpt-planning-preview"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+
+        const state = leanState("interactive")
+        state.dispatches.push(bundlePlanningDispatch())
+        await writeRun(directory, change, state)
+        const output = JSON.stringify({
+            proposal: "# Proposal\n\nUpdate the shared component.",
+            specs: {
+                component: [
+                    "## ADDED Requirements",
+                    "",
+                    "### Requirement: Shared component",
+                    "The system SHALL use the shared component.",
+                    "",
+                    "#### Scenario: Render",
+                    "- **WHEN** the page loads",
+                    "- **THEN** the shared component is used",
+                ].join("\n"),
+            },
+            tasks: "# Tasks\n\n- Update the shared component.",
+        })
+
+        const after = await completeAction(
+            directory,
+            change,
+            "planning-bundle",
+            output,
+            DEFAULT_CONFIG,
+        )
+
+        expect(after.pendingCheckpoint?.output).toContain("# Planning Bundle")
+        expect(after.pendingCheckpoint?.output).toContain("## Proposal")
+        expect(after.pendingCheckpoint?.output).toContain("### component")
+        expect(after.pendingCheckpoint?.output).toContain("## Tasks")
+        expect(after.pendingCheckpoint?.output).not.toContain('"proposal"')
     })
 
     it("never queues a checkpoint in automatic mode", async () => {

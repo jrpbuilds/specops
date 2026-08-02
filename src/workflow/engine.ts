@@ -61,6 +61,7 @@ import {
     type ControllerDirective,
 } from "./scheduler.js"
 import type { WorkflowAction } from "./actions.js"
+import { formatCheckpointPreview } from "./previews.js"
 import {
     answerQuestion,
     consumeResumeTarget,
@@ -622,7 +623,7 @@ async function completeActionLocked(
                         // Show the accepted worker output before the approval
                         // question; markers are already stripped. Apply the
                         // same redaction boundary used for persisted artifacts.
-                        output: redactSensitiveText(parsed.prose),
+                        output: redactSensitiveText(formatCheckpointPreview(action, parsed.prose)),
                         policyHash: state.requirements.policyHash,
                         implementationDiffHash: state.implementationDiffHash,
                         bindingHash,

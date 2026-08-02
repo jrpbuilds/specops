@@ -79,7 +79,14 @@ describe("controller guardrails", () => {
     it("interactive controller prompt renders checkpoint output before the question", () => {
         const text = promptText(AGENT_IDS.controller.interactive)
         expect(text).toContain("checkpoint.output")
-        expect(text).toContain("normal assistant markdown")
+        expect(text).toContain("presentation-ready")
+        expect(text).toContain("normal Markdown response")
+        expect(text).toContain("Preserve every character")
+        expect(text).toContain("JSON examples")
+        expect(text).toContain("internal code fences")
+        expect(text).toContain("transition commentary")
+        expect(text).toContain("outer")
+        expect(text).toContain("Do not rewrite, omit, escape, or serialize")
         expect(text).toContain("do NOT move it into the `question` text")
     })
 

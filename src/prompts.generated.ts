@@ -197,8 +197,12 @@ export function promptText(id: AgentId): string {
                 "and STOP — wait for the user's reply. " +
                 `Only after the user replies, call ${TOOL_IDS.answerQuestions} ` +
                 "(or dismissQuestion if they decline). Never call resume tools as a default.",
-            "- checkpoint: First, present the directive's `checkpoint.output` field to the user verbatim " +
-                "as normal assistant markdown. Then call the `question` tool passing the directive's " +
+            "- checkpoint: First, present the directive's presentation-ready `checkpoint.output` field " +
+                "in the assistant's normal Markdown response. Preserve every character of that field, " +
+                "including introductory prose, JSON examples, headings, tables, lists, and internal code fences. " +
+                "You may add concise transition commentary before or after the preview, but do not add an outer " +
+                "code fence, quote, JSON object, XML wrapper, or other container around the complete field. " +
+                "Do not rewrite, omit, escape, or serialize the field. Then call the `question` tool passing the directive's " +
                 "`questionTool` object verbatim as the single element of the `questions` array parameter. " +
                 "The preview contains the accepted worker response and may be lengthy; " +
                 "do NOT move it into the `question` text or options. " +
@@ -208,7 +212,7 @@ export function promptText(id: AgentId): string {
                 "Never dispatch a worker while a checkpoint is pending. " +
                 "QUESTION TOOL UNAVAILABLE FALLBACK: if the `question` tool is not present in your toolset, " +
                 "do NOT silently call resumeCheckpoint and do NOT dispatch a worker. " +
-                "Instead, present `checkpoint.output` as plain text in the chat, then present the checkpoint " +
+                "Instead, present the already-formatted `checkpoint.output` in the chat with all content unchanged, then present the checkpoint " +
                 "options, explicitly ask the user to reply 'Continue' or with their feedback, and STOP — " +
                 "wait for the user's reply. " +
                 `Only after the user replies, call ${TOOL_IDS.resumeCheckpoint} ` +

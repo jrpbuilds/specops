@@ -1,6 +1,6 @@
 {
     "name": "@jrpbuilds/specops",
-    "version": "0.16.1",
+    "version": "0.16.2",
     "description": "Spec-driven development orchestration plugin for OpenCode, powered by OpenSpec.",
     "type": "module",
     "main": "./dist/index.js",

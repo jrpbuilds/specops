@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-08-02
+
+### Fixed
+
+- Structured planning and Lean assurance checkpoint previews are now rendered as readable Markdown
+  instead of exposing their JSON transport envelopes to the user.
+- Interactive checkpoint controllers now preserve transition commentary, JSON examples, and internal
+  code fences while avoiding an outer wrapper that causes the entire preview to render as raw Markdown.
+
 ## [0.16.1] - 2026-08-02
 
 ### Changed
