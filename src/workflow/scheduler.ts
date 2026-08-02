@@ -22,7 +22,7 @@ import {
     REVIEW_LEDGER_CONTRACT,
     STANDARD_BUNDLE_TASKS_CONTRACT,
 } from "./contracts.generated.js"
-import { currentReviewSubmissions } from "./reviews.js"
+import { currentReviewSubmissions, repairTargetForMode } from "./reviews.js"
 import {
     getResumeTarget,
     resumePromptForAnswer,
@@ -512,13 +512,18 @@ function questionToolsForPending(questions: PendingQuestion[]): QuestionToolPayl
  * Build a {@link QuestionToolPayload} for an interactive checkpoint.
  *
  * Checkpoints present Continue and feedback options. Verification checkpoints
- * also offer an explicit implementation-fix replay so user intent cannot be
- * mistaken for another consultation.
+ * offer an explicit implementation-fix replay only when current assurance
+ * findings target implementation work.
  *
  * @param checkpoint - The pending interactive checkpoint.
+ * @param allowImplementationFixes - Whether current findings support an
+ *   implementation-fix replay.
  * @returns A payload shaped exactly like OpenCode's `QuestionInfo`.
  */
-function questionToolForCheckpoint(checkpoint: PendingCheckpoint): QuestionToolPayload {
+function questionToolForCheckpoint(
+    checkpoint: PendingCheckpoint,
+    allowImplementationFixes: boolean,
+): QuestionToolPayload {
     const phase = checkpoint.capability
     const options = [
         {
@@ -530,19 +535,31 @@ function questionToolForCheckpoint(checkpoint: PendingCheckpoint): QuestionToolP
             description: "Provide feedback to re-run this phase with your guidance.",
         },
     ]
-    if (phase === "verification") {
+    if (phase === "verification" && allowImplementationFixes) {
         options.push({
             label: "Apply implementation fixes",
             description:
                 'Re-dispatch the implementer with this feedback. Pass resolution="apply-implementation-fixes".',
         })
     }
+    const actionDescription = allowImplementationFixes
+        ? "Continue, re-run the phase with feedback, or apply implementation fixes."
+        : "Continue or re-run the phase with your feedback."
     return {
-        question: `${phase} checkpoint: the just-completed phase produced artifacts that are now valid. Continue, re-run the phase with feedback, or apply implementation fixes.`,
+        question: `${phase} checkpoint: the just-completed phase produced artifacts that are now valid. ${actionDescription}`,
         header: `${phase} checkpoint`,
         options,
         custom: true,
     }
+}
+
+/** Return whether current assurance findings support an implementation replay. */
+function hasActionableImplementationFindings(state: RunState): boolean {
+    return currentReviewSubmissions(state).some(submission =>
+        submission.findings.some(
+            finding => repairTargetForMode(finding.mode ?? "review-finding") === "implementation",
+        ),
+    )
 }
 
 /**
@@ -615,7 +632,10 @@ export function nextDirective(state: RunState): ControllerDirective {
             return {
                 type: "checkpoint",
                 checkpoint: state.pendingCheckpoint,
-                questionTool: questionToolForCheckpoint(state.pendingCheckpoint),
+                questionTool: questionToolForCheckpoint(
+                    state.pendingCheckpoint,
+                    hasActionableImplementationFindings(state),
+                ),
             }
         }
         return {

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-02
+
 ### Changed
 
 - Renamed the MCP integration policy from `inherit` to `allow`. The `allow`
@@ -15,6 +17,8 @@
 
 ### Fixed
 
+- Verification checkpoints no longer show `Apply implementation fixes` when the current assurance
+  result has no implementation findings, or only contains stale or planning/design findings.
 - Clarified assessment confidence semantics across routing, persisted run state, frontier decisions,
   prompts, tests, and documentation. Low now consistently means low confidence/high uncertainty,
   while the assessor is explicitly told not to promote generic documentation drift into a material
@@ -31,10 +35,6 @@
   `doctor` to surface as a `WARN` diagnostic. A single bad field, unknown key,
   or malformed JSON now falls back to defaults instead of crashing the plugin,
   mirroring the existing repair-on-load behaviour of the agent manifest.
-
-## [0.16.1] - 2026-08-01
-
-### Fixed
 
 - Exposed configured OpenCode MCP server tools to SpecOps subagents using server-prefixed permission rules. Previously workers fell back to OpenCode's implicit `ask` prompt, which subagents cannot satisfy, effectively blocking all MCP tool access including `codegraph_explore`.
 - Aligned generated OpenSpec change names with the 200-character kebab-case contract.

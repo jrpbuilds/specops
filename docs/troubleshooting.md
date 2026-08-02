@@ -137,10 +137,11 @@ does not create authoritative evidence.
 
 ### Verification findings need implementation changes
 
-At an interactive verification checkpoint, choose `Apply implementation fixes` when the findings
-require repository changes. The controller must call `specops_resume_checkpoint` with the recorded
-feedback and `resolution: "apply-implementation-fixes"`. This dispatches the implementer directly;
-it does not re-run planning consultations.
+At an interactive verification checkpoint, `Apply implementation fixes` is shown only when current
+findings require repository changes. When present, choose it and the controller must call
+`specops_resume_checkpoint` with the recorded feedback and
+`resolution: "apply-implementation-fixes"`. This dispatches the implementer directly; it does not
+re-run planning consultations.
 
 If an implementation worker returns only a status report, produces no repository diff, changes Git
 `HEAD`, or changes the stash list, the dispatch is rejected and the run remains available for a

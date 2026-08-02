@@ -156,6 +156,25 @@ function verificationDispatch(): DispatchRecord {
     }
 }
 
+function verificationCheckpointState(): RunState {
+    const state = leanState("interactive")
+    state.status = "paused"
+    state.pauseReason = "checkpoint"
+    state.resumable = true
+    state.pendingCheckpoint = {
+        dispatchId: "verification",
+        capability: "verification",
+        purpose: "workflow",
+        action: "lean-assurance-bundle",
+        artifacts: [{ artifact: "verification", outputHash: "verification" }],
+        output: "# Verification\n\nPASS",
+        policyHash: state.requirements.policyHash,
+        bindingHash: "binding",
+        raisedAt: "now",
+    }
+    return state
+}
+
 const tmpDirectories: string[] = []
 
 async function initializedRepository(): Promise<string> {
@@ -438,6 +457,104 @@ describe("interactive mode queuing", () => {
         // The preview markdown must live outside the selection widget.
         expect(directive.questionTool.question).not.toContain("First task")
         expect(directive.questionTool.options.some(o => o.label.includes("First task"))).toBe(false)
+    })
+
+    it("omits implementation fixes for verification with no current findings", () => {
+        const directive = nextDirective(verificationCheckpointState())
+
+        expect(directive.type).toBe("checkpoint")
+        if (directive.type !== "checkpoint") return
+        expect(directive.questionTool.options.map(option => option.label)).toEqual([
+            "Continue",
+            "Other / provide feedback",
+        ])
+        expect(directive.questionTool.question).not.toContain("implementation fixes")
+    })
+
+    it("offers implementation fixes for current implementation findings", () => {
+        const state = verificationCheckpointState()
+        state.dispatches.push(verificationDispatch())
+        state.reviewSubmissions.push({
+            id: "submission",
+            dispatchId: "verification",
+            capability: "verification",
+            inputHash: "input",
+            policyHash: state.requirements.policyHash,
+            findings: [
+                {
+                    id: "finding",
+                    severity: "HIGH",
+                    mode: "implementation-defect",
+                    summary: "The implementation is incomplete.",
+                    evidence: [],
+                    acceptanceCriteria: [],
+                },
+            ],
+            at: "now",
+        })
+
+        const directive = nextDirective(state)
+
+        expect(directive.type).toBe("checkpoint")
+        if (directive.type !== "checkpoint") return
+        expect(directive.questionTool.options.map(option => option.label)).toEqual([
+            "Continue",
+            "Other / provide feedback",
+            "Apply implementation fixes",
+        ])
+        expect(directive.questionTool.question).toContain("implementation fixes")
+    })
+
+    it("ignores stale and non-implementation findings for the fix option", () => {
+        const state = verificationCheckpointState()
+        state.implementationDiffHash = "current-diff"
+        state.dispatches.push(verificationDispatch())
+        state.reviewSubmissions.push(
+            {
+                id: "stale",
+                dispatchId: "verification",
+                capability: "verification",
+                inputHash: "input",
+                implementationDiffHash: "old-diff",
+                policyHash: state.requirements.policyHash,
+                findings: [
+                    {
+                        id: "stale-finding",
+                        severity: "HIGH",
+                        mode: "implementation-defect",
+                        summary: "This finding belongs to an old diff.",
+                        evidence: [],
+                        acceptanceCriteria: [],
+                    },
+                ],
+                at: "now",
+            },
+            {
+                id: "planning",
+                dispatchId: "verification",
+                capability: "verification",
+                inputHash: "input",
+                implementationDiffHash: "current-diff",
+                policyHash: state.requirements.policyHash,
+                findings: [
+                    {
+                        id: "planning-finding",
+                        severity: "HIGH",
+                        mode: "spec-mismatch",
+                        summary: "The plan does not match the implementation.",
+                        evidence: [],
+                        acceptanceCriteria: [],
+                    },
+                ],
+                at: "now",
+            },
+        )
+
+        const directive = nextDirective(state)
+
+        expect(directive.type).toBe("checkpoint")
+        if (directive.type !== "checkpoint") return
+        expect(directive.questionTool.options).toHaveLength(2)
     })
 
     it("repeats the same checkpoint preview on subsequent nextAction calls", async () => {

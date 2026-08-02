@@ -267,7 +267,8 @@ not mutate persisted run state.
 
 Interactive runs pause once after each checkpoint-eligible phase artifact group
 is produced, so the user may continue, re-run the phase with feedback, or apply
-verification findings through the implementer before the next phase.
+current verification findings through the implementer when they target
+implementation work before the next phase.
 Automatic runs never checkpoint and run start to finish.
 
 ### Checkpoint boundaries
@@ -297,14 +298,15 @@ work are never checkpoint boundaries.
    artifacts.
 4. The interactive controller presents a native question with a `Continue`
    option and an `Other / provide feedback` option. Verification checkpoints
-   also provide `Apply implementation fixes`.
+   also provide `Apply implementation fixes` only when current, diff-bound
+   assurance findings target implementation work.
 5. On Continue (or dismissal) the controller calls `specops_resume_checkpoint`
    with no feedback; the run resumes scheduling.
 6. On Other text the controller calls `specops_resume_checkpoint` with the
    user's feedback. The checkpoint artifact group and its downstream closure are
    invalidated, and the phase is re-dispatched with the feedback injected as
    untrusted task content.
-7. On `Apply implementation fixes`, the controller calls
+7. When the implementation-fix option is present, the controller calls
    `specops_resume_checkpoint` with `resolution: "apply-implementation-fixes"`.
    The implementation dispatch receives the feedback, and verification and all
    downstream assurance are re-run after the diff changes.
