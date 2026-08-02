@@ -190,9 +190,9 @@ function checkpointSnapshotHash(artifacts: CheckpointArtifactSnapshot[]): string
 /**
  * Compute the stable binding hash for a checkpoint using the current run state.
  *
- * Binds the checkpoint to the policy hash, the implementation diff hash, and
- * the immutable artifact snapshot so a regenerated phase produces a different
- * binding and may checkpoint again.
+ * Binds the checkpoint to the policy hash, the dispatch input/output hashes,
+ * the implementation diff hash, and the immutable artifact snapshot so a
+ * regenerated phase produces a different binding and may checkpoint again.
  *
  * @param state - The current run state.
  * @param dispatch - The dispatch that produced the checkpoint artifacts.
@@ -201,7 +201,7 @@ function checkpointSnapshotHash(artifacts: CheckpointArtifactSnapshot[]): string
  */
 export function computeCheckpointBindingHash(
     state: RunState,
-    dispatch: { inputHash: string },
+    dispatch: { inputHash: string; outputHash?: string },
     artifacts: CheckpointArtifactSnapshot[],
 ): string {
     return createHash("sha256")
@@ -209,6 +209,7 @@ export function computeCheckpointBindingHash(
             JSON.stringify({
                 policyHash: state.requirements.policyHash,
                 dispatchInputHash: dispatch.inputHash,
+                dispatchOutputHash: dispatch.outputHash ?? "",
                 implementationDiffHash: state.implementationDiffHash,
                 artifacts: checkpointSnapshotHash(artifacts),
             }),

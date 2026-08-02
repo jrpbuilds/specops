@@ -609,6 +609,10 @@ async function completeActionLocked(
                         purpose: dispatch.purpose,
                         action: dispatch.action,
                         artifacts: snapshot,
+                        // Show the accepted worker output before the approval
+                        // question; markers are already stripped. Apply the
+                        // same redaction boundary used for persisted artifacts.
+                        output: redactSensitiveText(parsed.prose),
                         policyHash: state.requirements.policyHash,
                         implementationDiffHash: state.implementationDiffHash,
                         bindingHash,

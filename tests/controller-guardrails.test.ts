@@ -76,6 +76,13 @@ describe("controller guardrails", () => {
         expect(text).toContain("specops_answer_questions")
     })
 
+    it("interactive controller prompt renders checkpoint output before the question", () => {
+        const text = promptText(AGENT_IDS.controller.interactive)
+        expect(text).toContain("checkpoint.output")
+        expect(text).toContain("normal assistant markdown")
+        expect(text).toContain("do NOT move it into the `question` text")
+    })
+
     it("interactive controller prompt forbids silently advancing without the question tool", () => {
         const text = promptText(AGENT_IDS.controller.interactive)
         // Both ask-question and checkpoint handlers must include an explicit

@@ -682,6 +682,11 @@ export type PendingCheckpoint = {
     action: string
     /** Immutable snapshot of the checkpoint artifacts and their output hashes. */
     artifacts: CheckpointArtifactSnapshot[]
+    /**
+     * Accepted worker output captured from the completed dispatch, with control
+     * markers stripped and line endings normalised.
+     */
+    output: string
     /** Policy hash at the moment the checkpoint was queued. */
     policyHash: string
     /** Implementation diff hash at the moment the checkpoint was queued. */

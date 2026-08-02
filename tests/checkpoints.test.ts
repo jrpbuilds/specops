@@ -291,7 +291,7 @@ describe("checkpoint artifact groups", () => {
 })
 
 describe("checkpoint binding and duplicate detection", () => {
-    it("produces a stable binding hash from the dispatch input and artifact snapshots", () => {
+    it("produces a stable binding hash from dispatch and artifact snapshots", () => {
         const state = leanState("interactive")
         const dispatch = planningDispatch()
         state.dispatches.push(dispatch)
@@ -301,6 +301,19 @@ describe("checkpoint binding and duplicate detection", () => {
         state.artifacts.tasks = validArtifact(state, "tasks", "hash-2")
         const snap2 = snapshotCheckpointArtifacts(state, ["tasks"])
         const second = computeCheckpointBindingHash(state, dispatch, snap2)
+        expect(first).not.toBe(second)
+    })
+
+    it("binds the checkpoint to the accepted worker output hash", () => {
+        const state = leanState("interactive")
+        const dispatch = planningDispatch()
+        dispatch.outputHash = "output-1"
+        state.dispatches.push(dispatch)
+        state.artifacts.tasks = validArtifact(state, "tasks")
+        const snap = snapshotCheckpointArtifacts(state, ["tasks"])
+        const first = computeCheckpointBindingHash(state, dispatch, snap)
+        dispatch.outputHash = "output-2"
+        const second = computeCheckpointBindingHash(state, dispatch, snap)
         expect(first).not.toBe(second)
     })
 
@@ -376,6 +389,7 @@ describe("interactive mode queuing", () => {
         expect(after.resumable).toBe(true)
         expect(after.pendingCheckpoint).toBeDefined()
         expect(after.pendingCheckpoint?.artifacts.map(s => s.artifact)).toEqual(["tasks"])
+        expect(after.pendingCheckpoint?.output).toBe("# Tasks\n\n- Do work.")
     })
 
     it("never queues a checkpoint in automatic mode", async () => {
@@ -406,12 +420,14 @@ describe("interactive mode queuing", () => {
         const state = leanState("interactive")
         state.dispatches.push(planningDispatch())
         await writeRun(directory, change, state)
-        await completeAction(directory, change, "planning", "# Tasks", DEFAULT_CONFIG)
+        const output = "# Tasks\n\n- [ ] First task\n- [ ] Second task"
+        await completeAction(directory, change, "planning", output, DEFAULT_CONFIG)
 
         const directive = await issueDirective(directory, change, DEFAULT_CONFIG)
         expect(directive.type).toBe("checkpoint")
         if (directive.type !== "checkpoint") return
         expect(directive.checkpoint.artifacts.map(s => s.artifact)).toEqual(["tasks"])
+        expect(directive.checkpoint.output).toBe(output)
         expect(directive.questionTool).toBeDefined()
         expect(directive.questionTool.question).toBeTruthy()
         expect(directive.questionTool.header).toBeTruthy()
@@ -419,6 +435,30 @@ describe("interactive mode queuing", () => {
         expect(directive.questionTool.options).toHaveLength(2)
         expect(directive.questionTool.options[0].label).toBe("Continue")
         expect(directive.questionTool.custom).toBe(true)
+        // The preview markdown must live outside the selection widget.
+        expect(directive.questionTool.question).not.toContain("First task")
+        expect(directive.questionTool.options.some(o => o.label.includes("First task"))).toBe(false)
+    })
+
+    it("repeats the same checkpoint preview on subsequent nextAction calls", async () => {
+        const directory = await initializedRepository()
+        const change = "ckpt-preview-repeat"
+        await mkdir(changeRoot(directory, change), { recursive: true })
+
+        const state = leanState("interactive")
+        state.dispatches.push(planningDispatch())
+        await writeRun(directory, change, state)
+        const output = "# Tasks\n\nRepeated preview."
+        await completeAction(directory, change, "planning", output, DEFAULT_CONFIG)
+
+        const first = await issueDirective(directory, change, DEFAULT_CONFIG)
+        const second = await issueDirective(directory, change, DEFAULT_CONFIG)
+        expect(first.type).toBe("checkpoint")
+        expect(second.type).toBe("checkpoint")
+        if (first.type !== "checkpoint" || second.type !== "checkpoint") return
+        expect(first.checkpoint.output).toBe(output)
+        expect(second.checkpoint.output).toBe(output)
+        expect(first.questionTool.question).toBe(second.questionTool.question)
     })
 
     it("does not queue a duplicate checkpoint for the same dispatch and outputs", async () => {
@@ -479,6 +519,7 @@ describe("checkpoint resume", () => {
             purpose: dispatch.purpose,
             action: dispatch.action,
             artifacts,
+            output: "Preview content",
             policyHash: state.requirements.policyHash,
             implementationDiffHash: state.implementationDiffHash,
             bindingHash: computeCheckpointBindingHash(state, dispatch, artifacts),
@@ -654,6 +695,7 @@ describe("checkpoint resume", () => {
             purpose: "workflow",
             action: "lean-plan",
             artifacts: [snapshot("tasks")],
+            output: "Preview content",
             policyHash: "p",
             implementationDiffHash: undefined,
             bindingHash: "h",
@@ -819,6 +861,7 @@ describe("store validator checkpoint invariants", () => {
             purpose: "workflow",
             action: "lean-plan",
             artifacts: [snapshot("tasks")],
+            output: "Preview content",
             policyHash: "p",
             implementationDiffHash: undefined,
             bindingHash: "h",
@@ -844,6 +887,7 @@ describe("store validator checkpoint invariants", () => {
             purpose: "workflow",
             action: "lean-plan",
             artifacts: [snapshot("tasks")],
+            output: "Preview content",
             policyHash: "p",
             implementationDiffHash: undefined,
             bindingHash: "h",
@@ -885,6 +929,7 @@ describe("binding validation", () => {
             purpose: "workflow" as const,
             action: "lean-plan",
             artifacts: snap,
+            output: "Preview content",
             policyHash: state.requirements.policyHash,
             implementationDiffHash: state.implementationDiffHash,
             bindingHash: computeCheckpointBindingHash(state, dispatch, snap),
@@ -905,6 +950,7 @@ describe("binding validation", () => {
             purpose: "workflow" as const,
             action: "lean-plan",
             artifacts: snap,
+            output: "Preview content",
             policyHash: state.requirements.policyHash,
             implementationDiffHash: state.implementationDiffHash,
             bindingHash: computeCheckpointBindingHash(state, dispatch, snap),
@@ -927,6 +973,7 @@ describe("binding validation", () => {
             purpose: "workflow" as const,
             action: "lean-plan",
             artifacts: snap,
+            output: "Preview content",
             policyHash: state.requirements.policyHash,
             implementationDiffHash: state.implementationDiffHash,
             bindingHash: computeCheckpointBindingHash(state, dispatch, snap),
