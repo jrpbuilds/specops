@@ -2,7 +2,29 @@
 
 ## [Unreleased]
 
-## [0.16.2] - 2026-08-02
+## [0.16.2] - 2026-08-03
+
+### Changed
+
+- Archival is now part of finalization, governed by `openspec.autoArchive` (default `true`).
+  `specops_finalize` transitions a passed run to `completed` and, when auto-archive is enabled,
+  runs `openspec archive` as part of that transition: the change directory moves to
+  `openspec/changes/archive/<date>-<change>/`, spec deltas merge into `openspec/specs/` for
+  standard and full tiers, and the `completed` state (carrying `archivedAt`) moves with the
+  archived directory. When auto-archive is disabled, the run transitions straight to `completed`
+  and the change stays in `openspec/changes/<change>/`; `/specops-archive` is a maintenance entry
+  point that archives such a run without rerunning verification.
+- Crash recovery is identity-based, not filename-based. SpecOps records run identity in a recovery
+  sidecar before archiving, and a crash between the directory move and the final `completed` write
+  is recovered on the next call only when the sidecar and the moved `specops-run.json` prove the
+  same identity. Missing, malformed, or mismatched sidecars raise a controlled diagnostic instead
+  of guessing from the archive directory name. Run locks moved outside the change directory and
+  in-flight transactions are recovered before the directory move.
+- Removed the unsafe sidecar-less terminal filename fallback: `RunState` has no persisted original
+  change identifier, so sidecar-less candidate matching could recover a foreign same-suffix
+  archive. Archive failures are reported as `archive_failed` with a structured `archiveError`
+  (`kind`, `attempt`, `message`) and are retryable via `specops_finalize` or the maintenance
+  command without rerunning implementation or verification.
 
 ### Fixed
 
