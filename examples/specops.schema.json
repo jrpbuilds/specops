@@ -20,7 +20,7 @@
         "openspec": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["command"],
+            "required": ["command", "autoArchive"],
             "properties": {
                 "command": {
                     "oneOf": [
@@ -31,7 +31,8 @@
                             "items": { "type": "string", "minLength": 1 }
                         }
                     ]
-                }
+                },
+                "autoArchive": { "type": "boolean" }
             }
         },
         "workflow": {

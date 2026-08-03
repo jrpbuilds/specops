@@ -312,6 +312,11 @@ assertProcess(
 const smokeContext = fakeToolContext(smokeProjectDirectory)
 const onboardOutput = await hooks.tool[protocolModule.TOOL_IDS.onboard].execute({}, smokeContext)
 assert(onboardOutput === "SpecOps final assets installed.", "packed onboarding failed")
+await mkdir(path.join(smokeProjectDirectory, ".opencode"), { recursive: true })
+await writeFile(
+    path.join(smokeProjectDirectory, ".opencode", "specops.json"),
+    `${JSON.stringify({ openspec: { autoArchive: false } })}\n`,
+)
 assertProcess(
     spawnSync("git", ["add", "."], { cwd: smokeProjectDirectory, encoding: "utf8" }),
     "smoke project git add",
@@ -375,8 +380,8 @@ try {
     archiveGuardMessage = String(error)
 }
 assert(
-    archiveGuardMessage.includes("not passed"),
-    "packed archive tool did not guard non-passed runs",
+    archiveGuardMessage.includes("not archivable"),
+    "packed archive tool did not guard non-archivable runs",
 )
 
 const directive = JSON.parse(
@@ -396,6 +401,86 @@ assert(
     ),
     "packed status did not report first scheduler dispatch",
 )
+
+await hooks.tool[protocolModule.TOOL_IDS.completeAction].execute(
+    {
+        change,
+        dispatchId: firstAction.id,
+        output: "# Tasks\n\n- Update the packed smoke project.",
+    },
+    smokeContext,
+)
+const implementationDirective = JSON.parse(
+    await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),
+)
+assert(
+    implementationDirective.type === "dispatch" && implementationDirective.action?.id,
+    "packed scheduler did not issue implementation action",
+)
+await writeFile(path.join(smokeProjectDirectory, "README.md"), "# Packed smoke project updated\n")
+await hooks.tool[protocolModule.TOOL_IDS.completeAction].execute(
+    {
+        change,
+        dispatchId: implementationDirective.action.id,
+        output: "Updated the packed smoke project.",
+    },
+    smokeContext,
+)
+const verificationDirective = JSON.parse(
+    await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),
+)
+assert(
+    verificationDirective.type === "dispatch" && verificationDirective.action?.id,
+    "packed scheduler did not issue verification action",
+)
+await hooks.tool[protocolModule.TOOL_IDS.completeAction].execute(
+    {
+        change,
+        dispatchId: verificationDirective.action.id,
+        output: JSON.stringify({
+            verification: "# Verification\n\nPASS",
+            correctnessJudgment: { verdict: "PASS", summary: "Correct.", findings: [] },
+            reviewLedger: { findings: [] },
+        }),
+    },
+    smokeContext,
+)
+const finalizeDirective = JSON.parse(
+    await hooks.tool[protocolModule.TOOL_IDS.nextAction].execute({ change }, smokeContext),
+)
+assert(finalizeDirective.type === "finalize", "packed scheduler did not issue finalize action")
+const unarchivedSummary = await hooks.tool[protocolModule.TOOL_IDS.finalize].execute(
+    { change },
+    smokeContext,
+)
+assert(
+    String(unarchivedSummary).includes("auto-archive disabled"),
+    "packed finalize did not preserve the unarchived completion state",
+)
+const maintenanceSummary = await hooks.tool[protocolModule.TOOL_IDS.archive].execute(
+    { change },
+    { ...smokeContext, agent: "specops-interactive-controller" },
+)
+assert(String(maintenanceSummary).includes("Run archived"), "packed maintenance archive failed")
+const archivedEntry = (
+    await readdir(path.join(smokeProjectDirectory, "openspec", "changes", "archive"))
+).find(entry => entry.endsWith(change))
+assert(archivedEntry, "packed archive directory was not created")
+const archivedStatus = JSON.parse(
+    await readFile(
+        path.join(
+            smokeProjectDirectory,
+            "openspec",
+            "changes",
+            "archive",
+            archivedEntry,
+            "specops-run.json",
+        ),
+        "utf8",
+    ),
+)
+assert(archivedStatus.status === "completed", "packed archive did not complete the run")
+assert(archivedStatus.archivedAt, "packed archive did not persist archivedAt")
 
 const packagedFiles = await recursiveFiles(packageDirectory)
 assert(

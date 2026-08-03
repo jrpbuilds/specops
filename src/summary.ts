@@ -46,6 +46,15 @@ export function summarize(state: RunState, change: string, label?: string): stri
 
     if ((state.status === "failed" || state.status === "blocked") && state.outcome?.message) {
         line += `\nFailed: ${state.outcome.message}`
+    } else if (state.status === "completed") {
+        if (state.archivedAt) {
+            line += `\nOpenSpec change archived to openspec/changes/archive/.`
+        } else {
+            line += `\nOpenSpec auto-archive disabled; change remains in openspec/changes/.`
+        }
+    } else if (state.status === "archive_failed" && state.archiveError) {
+        line += `\nArchival failed (${state.archiveError.kind}, attempt ${state.archiveError.attempt}): ${state.archiveError.message}`
+        line += `\nRetry via specops_finalize or specops_archive_run after addressing the failure.`
     } else if (state.status === "passed" && state.outcome?.message) {
         line += `\n${state.outcome.message}`
     }
@@ -61,15 +70,19 @@ export function summarize(state: RunState, change: string, label?: string): stri
  */
 function statusIcon(status: RunState["status"]): string {
     switch (status) {
+        case "completed":
         case "passed":
             return "✓"
         case "failed":
             return "✗"
+        case "archive_failed":
+            return "⚠"
         case "cancelled":
             return "⊘"
         case "paused":
             return "⏸"
         case "running":
+        case "archiving":
         default:
             return "○"
     }

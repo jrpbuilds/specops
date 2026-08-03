@@ -1,8 +1,7 @@
-import { readFile, stat } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import path from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { AGENT_IDS } from "./capabilities/ids.js"
 import { contextPacket } from "./capabilities/context.js"
 import { COMMANDS } from "./commands.js"
 import { doctor } from "./doctor.js"
@@ -20,8 +19,7 @@ import { summarize } from "./summary.js"
 import { TOOL_IDS } from "./protocol.js"
 import { changeRoot, readRun, withRunLock } from "./state/store.js"
 import {
-    archiveRun,
-    confirmArchiveRun,
+    archiveCompletedRun,
     cancelRun,
     completeAction,
     recoverDispatch,
@@ -388,105 +386,36 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     state,
                 )
-                const label = state.status === "passed" ? "Run passed" : "Run finalized"
+                const label =
+                    state.status === "completed"
+                        ? "Run completed"
+                        : state.status === "archive_failed"
+                          ? "Run passed, archival failed"
+                          : state.status === "passed"
+                            ? "Run passed"
+                            : "Run finalized"
                 return summarize(state, args.change, label)
             },
         }),
         [TOOL_IDS.archive]: tool({
             description:
-                "Request native user confirmation before archiving a passed OpenSpec change.",
+                "Maintenance: archive or retry-archive a verified OpenSpec change (not used by the normal workflow).",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                if (context.agent !== AGENT_IDS.controller.interactive) {
-                    throw new Error(
-                        "SpecOps archive requires the interactive controller and native user confirmation",
-                    )
-                }
-                // A successfully archived change directory is no longer present at
-                // its original path; report that deterministically rather than
-                // surfacing a low-level read error.
-                try {
-                    await stat(
-                        path.join(changeRoot(context.directory, args.change), "specops-run.json"),
-                    )
-                } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-                    return `Change '${args.change}' has no SpecOps run (already archived or never created).`
-                }
-                const state = await archiveRun(context.directory, args.change)
-                const pending = state.archivePending
-                if (!pending)
-                    throw new Error("SpecOps archive: confirmation request was not persisted")
-                const merge =
-                    pending.scopeTier === "lean"
-                        ? "skip spec updates (--skip-specs)"
-                        : "merge spec deltas into openspec/specs/ and re-validate"
-                return JSON.stringify(
-                    {
-                        version: 1,
-                        type: "archive-confirmation",
-                        change: args.change,
-                        status: state.status,
-                        confirmationId: pending.id,
-                        questionTools: [
-                            {
-                                question:
-                                    `Archive '${args.change}'? This moves the completed change to ` +
-                                    `openspec/changes/archive/ and will ${merge}.`,
-                                header: "Archive change",
-                                options: [
-                                    {
-                                        label: "Archive",
-                                        description:
-                                            "Perform the irreversible OpenSpec archive operation.",
-                                    },
-                                    {
-                                        label: "Keep unarchived",
-                                        description:
-                                            "Leave the passed change in openspec/changes/ for later.",
-                                    },
-                                ],
-                                multiple: false,
-                                custom: false,
-                            },
-                        ],
-                    },
-                    null,
-                    2,
-                )
-            },
-        }),
-        [TOOL_IDS.confirmArchive]: tool({
-            description: "Consume a native user archive decision and perform or decline archive.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                confirmationId: tool.schema.string().min(1),
-                decision: tool.schema.enum(["archive", "decline"]),
-            },
-            async execute(args, context) {
-                if (context.agent !== AGENT_IDS.controller.interactive) {
-                    throw new Error(
-                        "SpecOps archive confirmation requires the interactive controller",
-                    )
-                }
-                const state = await confirmArchiveRun(
+                const state = await archiveCompletedRun(
                     context.directory,
                     args.change,
                     await readConfig(context.directory),
-                    args.confirmationId,
-                    args.decision,
                 )
-                if (args.decision === "decline") {
-                    return summarize(state, args.change, "Archive declined")
-                }
                 if (state.archiveError) {
                     return (
                         summarize(state, args.change, "Archive failed") +
-                        `\nArchive error (attempt ${state.archiveError.attempt}): ${state.archiveError.message}` +
+                        `\nArchive error (${state.archiveError.kind}, attempt ${state.archiveError.attempt}): ${state.archiveError.message}` +
                         `\nCall specops_archive_run again after addressing the failure.`
                     )
                 }
-                return summarize(state, args.change, "Run archived")
+                const label = state.archivedAt ? "Run archived" : "Archive not completed"
+                return summarize(state, args.change, label)
             },
         }),
         [TOOL_IDS.onboard]: tool({

@@ -13,8 +13,14 @@ import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js"
 export type SpecOpsConfig = {
     /** Schema version; currently always `2`. */
     version: 2
-    /** OpenSpec integration: `command` is the argv used to invoke the OpenSpec CLI, or `null` to disable. */
-    openspec: { command: string[] | null }
+    /**
+     * OpenSpec integration.
+     *
+     * `command` is the argv used to invoke the OpenSpec CLI, or `null` to use the
+     * bundled executable. `autoArchive` controls whether a successful workflow
+     * finalization archives the change automatically (default `true`).
+     */
+    openspec: { command: string[] | null; autoArchive: boolean }
     /** Workflow routing and scope-tier configuration. */
     workflow: {
         /** Default tier selected when no assessment-level suggestion overrides it. */
@@ -67,8 +73,8 @@ export type SpecOpsConfig = {
  */
 export const DEFAULT_CONFIG: SpecOpsConfig = {
     version: 2,
-    /** OpenSpec CLI disabled by default; users opt in by setting `openspec.command`. */
-    openspec: { command: null },
+    /** OpenSpec CLI disabled by default; users opt in by setting `openspec.command`. Auto-archive defaults to enabled. */
+    openspec: { command: null, autoArchive: true },
     workflow: {
         /** Routing selects the tier from the assessment unless overridden. */
         defaultTier: "auto",
@@ -373,17 +379,20 @@ function parseFrontier(value: unknown): SpecOpsConfig["frontier"] {
 
 /**
  * Parse the `openspec` section: `command` must be a non-empty string array or
- * `null` (disabled).
+ * `null` (disabled), and `autoArchive` must be a boolean.
  *
  * @param value - Raw `openspec` value from the configuration.
  * @returns The parsed {@link SpecOpsConfig}["openspec"] object.
- * @throws {Error} If `command` is a non-string, empty, or empty-element array.
+ * @throws {Error} If `command` is invalid or `autoArchive` is not a boolean.
  */
 function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
     const source = asObject(value, "openspec")
-    assertKeys(source, ["command"], "openspec")
+    assertKeys(source, ["command", "autoArchive"], "openspec")
+    if (typeof source.autoArchive !== "boolean") {
+        throw new Error("invalid SpecOps configuration field: openspec.autoArchive")
+    }
     if (source.command === null) {
-        return { command: null }
+        return { command: null, autoArchive: source.autoArchive }
     }
     if (
         !Array.isArray(source.command) ||
@@ -392,7 +401,7 @@ function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
     ) {
         throw new Error("invalid SpecOps configuration field: openspec.command")
     }
-    return { command: source.command as string[] }
+    return { command: source.command as string[], autoArchive: source.autoArchive }
 }
 
 /**

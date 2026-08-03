@@ -193,13 +193,29 @@ export async function archiveChange(
  * confirmation. SpecOps performs this deterministic preflight itself so an
  * archive cannot silently discard unfinished implementation work.
  *
+ * The canonical change-root `tasks.md` is authoritative when present. Only when
+ * it is absent does the scan recurse into nested directories for other
+ * `tasks.md` files. Lines inside fenced code blocks (``` or ~~~) and HTML
+ * comments (`<!-- ... -->`) are not counted, while an inline comment after a
+ * leading checkbox does not hide the task itself.
+ *
  * @param directory - Project root directory.
  * @param change - OpenSpec change identifier.
  * @returns The number of unchecked task boxes found in `tasks.md` files.
  */
 export async function countIncompleteTasks(directory: string, change: string): Promise<number> {
     const root = path.join(directory, "openspec", "changes", change)
+    const canonicalTasks = path.join(root, "tasks.md")
     let incomplete = 0
+
+    try {
+        await stat(canonicalTasks)
+        incomplete += countIncompleteBoxes(await readFile(canonicalTasks, "utf8"))
+        return incomplete
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        // Fall through to recursive descent when no canonical tasks file exists.
+    }
 
     async function visit(current: string): Promise<void> {
         for (const entry of await readdir(current, { withFileTypes: true })) {
@@ -210,16 +226,96 @@ export async function countIncompleteTasks(directory: string, change: string): P
             }
             if (entry.name.toLowerCase() !== "tasks.md") continue
             const content = await readFile(target, "utf8")
-            for (const line of content.split("\n")) {
-                if (/^[-*]\s+\[[\sx]\]/i.test(line) && !/^[-*]\s+\[x\]/i.test(line)) {
-                    incomplete += 1
-                }
-            }
+            incomplete += countIncompleteBoxes(content)
         }
     }
 
     await visit(root)
     return incomplete
+}
+
+/** Match an opening task-list checkbox line: `- [ ]` or `* [ ]` (unchecked). */
+const UNCHECKED_TASK_PATTERN = /^[-*]\s+\[[\sx]\]/i
+const CHECKED_TASK_PATTERN = /^[-*]\s+\[x\]/i
+
+/**
+ * Count unchecked task boxes in one Markdown document, skipping fenced code
+ * blocks and HTML comments.
+ *
+ * @param content - The Markdown text of a tasks artifact.
+ * @returns The number of unchecked task boxes outside code/HTML-comment spans.
+ */
+function countIncompleteBoxes(content: string): number {
+    let count = 0
+    let inFence = false
+    let fenceChar = ""
+    let fenceLength = 0
+    let inComment = false
+    for (const line of content.split("\n")) {
+        if (inFence) {
+            if (isClosingFence(line, fenceChar, fenceLength)) {
+                inFence = false
+                fenceChar = ""
+                fenceLength = 0
+            }
+            continue
+        }
+        if (inComment) {
+            if (line.includes("-->")) inComment = false
+            continue
+        }
+        const open = openingFence(line)
+        if (open) {
+            inFence = true
+            fenceChar = open.char
+            fenceLength = open.length
+            continue
+        }
+        const commentStart = line.indexOf("<!--")
+        if (commentStart >= 0) {
+            const visible = line.slice(0, commentStart)
+            if (UNCHECKED_TASK_PATTERN.test(visible) && !CHECKED_TASK_PATTERN.test(visible)) {
+                count += 1
+            }
+            if (!line.slice(commentStart + 4).includes("-->")) inComment = true
+            continue
+        }
+        if (UNCHECKED_TASK_PATTERN.test(line) && !CHECKED_TASK_PATTERN.test(line)) {
+            count += 1
+        }
+    }
+    return count
+}
+
+/**
+ * Match an opening Markdown fence at the start of a line.
+ *
+ * A run of three or more backticks or tildes opens a fenced block; the info
+ * string after the opening fence is ignored.
+ *
+ * @param line - A single line of Markdown.
+ * @returns The fence character and run length, or `undefined` when not opening.
+ */
+function openingFence(line: string): { char: string; length: number } | undefined {
+    const match = /^\s*([`~])(\1{2,})/.exec(line)
+    if (!match) return undefined
+    return { char: match[1]!, length: 1 + match[2]!.length }
+}
+
+/**
+ * Match a closing fence for an open fenced block.
+ *
+ * The closing fence must use the same character as the opening and a run length
+ * at least as long; the info string is not permitted on a closing fence.
+ *
+ * @param line - A single line of Markdown.
+ * @param char - The opening fence character.
+ * @param minLength - The opening fence run length.
+ * @returns `true` when the line is a matching closing fence.
+ */
+function isClosingFence(line: string, char: string, minLength: number): boolean {
+    const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return new RegExp(`^\\s*${escaped}{${minLength},}\\s*$`).test(line)
 }
 
 /**

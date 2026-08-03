@@ -43,6 +43,11 @@
 - Add automated tests for every new feature and behavior change. Cover the
   success path and all material failure, retry, budget, fallback, persistence,
   and compatibility paths in proportion to risk.
+- When a test fails, treat the source implementation as the failure point by
+  default. Diagnose the root cause by tracing the execution path before writing
+  any fixes. Never modify test assertions, mocks, or expected values to make a
+  failing test pass unless you have explicitly verified that the test's
+  underlying assumption is flawed or outdated.
 - Add a regression test for every corrected workflow bug.
 - Prefer assertions on observable state transitions, dispatch provenance,
   invalidation, and terminal outcomes over private implementation details.

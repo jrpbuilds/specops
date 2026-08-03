@@ -1,7 +1,7 @@
 {
     "$schema": "https://specops.dev/schemas/specops.schema.json",
     "version": 2,
-    "openspec": { "command": null },
+    "openspec": { "command": null, "autoArchive": true },
     "workflow": {
         "defaultTier": "auto",
         "scopeThresholds": {

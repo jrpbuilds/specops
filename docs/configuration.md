@@ -52,6 +52,14 @@ and argument array, for example:
 
 No shell interpolation is performed.
 
+`openspec.autoArchive` (default `true`) controls whether `specops_finalize` archives the change on
+completion. When enabled, a passed run transitions through `archiving` to `completed` (with
+`archivedAt`); when disabled, it transitions straight to `completed` and the change stays in
+`openspec/changes/<change>/`. The maintenance `/specops-archive` command ignores this setting and
+can archive a completed run whose `archivedAt` is absent. Archive failures are reported as
+`archive_failed` with a structured `archiveError` and can be retried via `specops_finalize` or the
+maintenance command without rerunning implementation or verification.
+
 ## Workflow routing
 
 | Field                            | Meaning                                                         |

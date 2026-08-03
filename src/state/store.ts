@@ -64,6 +64,7 @@ type RunLock = { token: string; pid: number; operation: string; acquiredAt: stri
 const LOCK_STALE_MS = 30_000
 const TRANSACTION_DIR = "specops-transaction"
 const RUN_STATE_FILE = "specops-run.json"
+const RUN_LOCK_DIR = ".specops-run-locks"
 
 type TransactionEntry = {
     destination: string
@@ -87,16 +88,16 @@ type RunTransaction = {
 
 const transactionStorage = new AsyncLocalStorage<RunTransaction>()
 
-/** Execute one run mutation under an exclusive, recoverable filesystem lock. */
-export async function withRunLock<T>(
+/** Execute a callback under the stable lock shared by run and archive mutations. */
+async function withExternalRunLock<T>(
     directory: string,
     change: string,
     operation: string,
     callback: () => Promise<T>,
 ): Promise<T> {
-    const root = changeRoot(directory, change)
-    await mkdir(root, { recursive: true })
-    const lockPath = path.join(root, "specops-run.lock")
+    const lockRoot = path.join(directory, "openspec", RUN_LOCK_DIR)
+    const lockPath = path.join(lockRoot, `${change}.lock`)
+    await mkdir(lockRoot, { recursive: true })
     const lock: RunLock = {
         token: randomUUID(),
         pid: process.pid,
@@ -125,18 +126,7 @@ export async function withRunLock<T>(
     }
     if (!acquired) throw new Error(`SpecOps could not acquire the run lock for ${change}`)
     try {
-        await recoverTransactions(root)
-        const transaction = await beginTransaction(root)
-        return await transactionStorage.run(transaction, async () => {
-            try {
-                const result = await callback()
-                await finishTransaction(transaction)
-                return result
-            } catch (error) {
-                await finishTransaction(transaction)
-                throw error
-            }
-        })
+        return await callback()
     } finally {
         try {
             const current = JSON.parse(
@@ -147,6 +137,53 @@ export async function withRunLock<T>(
             // A recovered lock has already been removed; the mutation is still complete.
         }
     }
+}
+
+/** Execute an existing-run mutation with transactional writes and no root creation. */
+export async function withRunLock<T>(
+    directory: string,
+    change: string,
+    operation: string,
+    callback: () => Promise<T>,
+): Promise<T> {
+    const root = changeRoot(directory, change)
+    return withExternalRunLock(directory, change, operation, async () => {
+        try {
+            const rootStat = await stat(root)
+            if (!rootStat.isDirectory())
+                throw new Error(`SpecOps active run is not a directory: ${change}`)
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+                throw new Error(`SpecOps active run is missing: ${change}`)
+            }
+            throw error
+        }
+
+        await recoverTransactions(root)
+        const transaction = await beginTransaction(root)
+        return transactionStorage.run(transaction, async () => {
+            try {
+                const result = await callback()
+                await finishTransaction(transaction)
+                return result
+            } catch (error) {
+                await finishTransaction(transaction)
+                throw error
+            }
+        })
+    })
+}
+
+/** Execute an archive mutation while excluding all normal run transactions. */
+export async function withRunMutationLock<T>(
+    directory: string,
+    change: string,
+    callback: () => Promise<T>,
+): Promise<T> {
+    return withExternalRunLock(directory, change, "archive mutation", async () => {
+        await recoverTransactions(changeRoot(directory, change))
+        return callback()
+    })
 }
 
 /**
@@ -210,6 +247,102 @@ export async function withArchiveLock<T>(
         } catch {
             // A recovered lock has already been removed; the archive remains complete.
         }
+    }
+}
+
+/**
+ * Stable recovery record written before invoking `openspec archive`.
+ *
+ * The state file moves with the change directory during archive, so it cannot
+ * serve as its own recovery source. This sidecar lives at a fixed path under
+ * `openspec/` (independent of the change directory) and records the exact run
+ * identity expected in the moved state so crash recovery can verify a
+ * candidate archive unambiguously rather than selecting by filename alone.
+ */
+export type ArchiveAttemptRecord = {
+    /** The expected archive entry name (a hint; the CLI does not accept a target). */
+    expectedArchivedAs: string
+    /** Run revision expected in the moved state file. */
+    runRevision: number
+    /** Run creation timestamp expected in the moved state file. */
+    runCreatedAt: string
+    /** Run baseline expected in the moved state file. */
+    runBaseline: string
+    /** When the archive attempt was recorded. */
+    attemptAt: string
+}
+
+const ARCHIVE_ATTEMPT_DIR = ".specops-archive-attempt"
+
+function archiveAttemptPath(directory: string, change: string): string {
+    return path.join(directory, "openspec", ARCHIVE_ATTEMPT_DIR, `${change}.json`)
+}
+
+/**
+ * Atomically persist the archive-attempt recovery record before archiving.
+ *
+ * @param directory - Repository root containing the `openspec/` tree.
+ * @param change - OpenSpec change identifier about to be archived.
+ * @param record - Recovery identity for this attempt.
+ */
+export async function writeArchiveAttemptSidecar(
+    directory: string,
+    change: string,
+    record: ArchiveAttemptRecord,
+): Promise<void> {
+    const destination = archiveAttemptPath(directory, change)
+    await mkdir(path.dirname(destination), { recursive: true })
+    await atomicWritePhysical(destination, `${JSON.stringify(record, null, 2)}\n`)
+}
+
+/**
+ * Read the archive-attempt recovery record, or `undefined` if absent.
+ *
+ * @param directory - Repository root containing the `openspec/` tree.
+ * @param change - OpenSpec change identifier.
+ * @returns The persisted record, or `undefined` when no attempt is in flight.
+ */
+export async function readArchiveAttemptSidecar(
+    directory: string,
+    change: string,
+): Promise<ArchiveAttemptRecord | undefined> {
+    try {
+        const content = await readFile(archiveAttemptPath(directory, change), "utf8")
+        const value = JSON.parse(content) as Partial<ArchiveAttemptRecord>
+        if (
+            typeof value.expectedArchivedAs !== "string" ||
+            typeof value.runRevision !== "number" ||
+            typeof value.runCreatedAt !== "string" ||
+            typeof value.runBaseline !== "string" ||
+            typeof value.attemptAt !== "string"
+        ) {
+            throw new Error("invalid SpecOps archive attempt sidecar")
+        }
+        return value as ArchiveAttemptRecord
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        return undefined
+    }
+}
+
+/**
+ * Best-effort removal of the archive-attempt recovery record.
+ *
+ * Called after a terminal archive outcome. Deletion failure is tolerated: a
+ * stale record is harmless to a completed archive and is cleaned up by a later
+ * recovery or maintenance pass.
+ *
+ * @param directory - Repository root containing the `openspec/` tree.
+ * @param change - OpenSpec change identifier.
+ */
+export async function deleteArchiveAttemptSidecar(
+    directory: string,
+    change: string,
+): Promise<void> {
+    try {
+        await unlink(archiveAttemptPath(directory, change))
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     }
 }
 
@@ -396,8 +529,23 @@ async function reclaimDeadLock(lockPath: string): Promise<boolean> {
  * @returns Resolves when the atomic write has completed.
  */
 export async function writeRun(directory: string, change: string, state: RunState): Promise<void> {
+    await writeRunIn(changeRoot(directory, change), state)
+}
+
+/**
+ * Persist final-format state to an explicit change directory.
+ *
+ * Used after `openspec archive` moves the change directory: the active path is
+ * gone and the state file now lives under the archived directory, so the
+ * caller passes the directory returned by the archive command.
+ *
+ * @param changeDir - Absolute change directory containing `specops-run.json`.
+ * @param state - The run state to persist; mutated to set `updatedAt`.
+ * @returns Resolves when the atomic write has completed.
+ */
+export async function writeRunIn(changeDir: string, state: RunState): Promise<void> {
     state.schedulerHistory ??= []
-    const destination = path.join(changeRoot(directory, change), "specops-run.json")
+    const destination = path.join(changeDir, "specops-run.json")
     let currentRevision = -1
     try {
         const current = JSON.parse(await readFile(destination, "utf8")) as { revision?: unknown }
@@ -412,6 +560,7 @@ export async function writeRun(directory: string, change: string, state: RunStat
     }
     state.revision = currentRevision < 0 ? (state.revision ?? 0) : currentRevision + 1
     state.updatedAt = new Date().toISOString()
+    validateRunState(state)
     await atomicWrite(destination, `${JSON.stringify(state, null, 2)}\n`)
 }
 
@@ -430,17 +579,46 @@ export async function writeRun(directory: string, change: string, state: RunStat
  * @throws If the file is missing or contains JSON that fails any invariant.
  */
 export async function readRun(directory: string, change: string): Promise<RunState> {
+    return readRunIn(changeRoot(directory, change))
+}
+
+/**
+ * Read and validate run state from an explicit change directory.
+ *
+ * Used by archive recovery after `openspec archive` moves the change directory;
+ * the caller passes the active or archived directory it has resolved.
+ *
+ * @param changeDir - Absolute change directory containing `specops-run.json`.
+ * @returns The parsed and validated {@link RunState}.
+ * @throws If the file is missing or contains JSON that fails any invariant.
+ */
+export async function readRunIn(changeDir: string): Promise<RunState> {
     const raw: unknown = JSON.parse(
-        await readFile(path.join(changeRoot(directory, change), "specops-run.json"), "utf8"),
+        await readFile(path.join(changeDir, "specops-run.json"), "utf8"),
     )
 
+    return validateRunState(raw)
+}
+
+/** Validate the current persisted run-state shape and all status invariants. */
+function validateRunState(raw: unknown): RunState {
     if (
         !isCurrentRunStateShape(raw) ||
         raw.version !== 7 ||
         !isNonNegativeInteger(raw.revision) ||
         (raw.mode !== "interactive" && raw.mode !== "automatic") ||
         typeof raw.status !== "string" ||
-        !["running", "paused", "passed", "blocked", "failed", "cancelled"].includes(raw.status)
+        ![
+            "running",
+            "paused",
+            "passed",
+            "archiving",
+            "completed",
+            "archive_failed",
+            "blocked",
+            "failed",
+            "cancelled",
+        ].includes(raw.status)
     ) {
         const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable"
         throw new Error(
@@ -449,19 +627,12 @@ export async function readRun(directory: string, change: string): Promise<RunSta
     }
     const value = raw as RunState
 
-    if (value.archivePending !== undefined) {
-        const pending = value.archivePending
-        if (
-            !isRecord(pending) ||
-            typeof pending.id !== "string" ||
-            !UUID_PATTERN.test(pending.id) ||
-            !isScopeTier(pending.scopeTier) ||
-            !isIsoTimestamp(pending.raisedAt)
-        ) {
-            throw new Error("invalid SpecOps archive confirmation state")
+    if (value.archivedAt !== undefined) {
+        if (!isIsoTimestamp(value.archivedAt)) {
+            throw new Error("invalid SpecOps archive timestamp")
         }
-        if (value.status !== "passed") {
-            throw new Error("archive confirmation may only be pending for a passed run")
+        if (value.status !== "completed") {
+            throw new Error("archivedAt may only be set on a completed run")
         }
     }
     if (value.archiveError !== undefined) {
@@ -472,12 +643,14 @@ export async function readRun(directory: string, change: string): Promise<RunSta
             typeof failure.message !== "string" ||
             !failure.message.trim() ||
             failure.message.length > 2_000 ||
-            !isIsoTimestamp(failure.at)
+            !isIsoTimestamp(failure.at) ||
+            typeof failure.kind !== "string" ||
+            !ARCHIVE_ERROR_KINDS.has(failure.kind)
         ) {
             throw new Error("invalid SpecOps archive error state")
         }
-        if (value.status !== "passed") {
-            throw new Error("archive errors may only be recorded for a passed run")
+        if (value.status !== "archive_failed") {
+            throw new Error("archive errors may only be recorded for an archive_failed run")
         }
     }
 
@@ -543,6 +716,9 @@ export async function readRun(directory: string, change: string): Promise<RunSta
             break
 
         case "passed":
+        case "archiving":
+        case "completed":
+        case "archive_failed":
         case "cancelled":
             if (value.pendingQuestions) {
                 throw new Error(`terminal state (${value.status}) must not have pending questions`)
@@ -558,13 +734,41 @@ export async function readRun(directory: string, change: string): Promise<RunSta
             if (!value.outcome) {
                 throw new Error(`terminal state (${value.status}) requires an outcome`)
             }
-            if (value.status === "passed" && value.outcome.category !== "completed") {
-                throw new Error("passed state requires outcome category 'completed'")
+            if (value.outcome.category !== "completed" && value.status !== "cancelled") {
+                throw new Error(`${value.status} state requires outcome category 'completed'`)
             }
             if (value.status === "cancelled" && value.outcome.category !== "cancelled") {
                 throw new Error("cancelled state requires outcome category 'cancelled'")
             }
-            if (value.status === "passed" || value.status === "cancelled") break
+            if (value.status === "archiving" && value.archiveError !== undefined) {
+                throw new Error("archiving state must not carry an archive error")
+            }
+            if (value.status === "archiving" && value.archivedAt !== undefined) {
+                throw new Error("archiving state must not be marked archived")
+            }
+            if (value.status === "completed" && value.archiveError !== undefined) {
+                throw new Error("completed state must not carry an archive error")
+            }
+            if (value.status === "archive_failed" && value.archiveError === undefined) {
+                throw new Error("archive_failed state requires an archive error")
+            }
+            if (value.status === "archive_failed" && value.archivedAt !== undefined) {
+                throw new Error("archive_failed state must not be marked archived")
+            }
+            if (value.status === "passed" && value.archiveError !== undefined) {
+                throw new Error("passed state must not carry an archive error")
+            }
+            if (value.status === "passed" && value.archivedAt !== undefined) {
+                throw new Error("passed state must not be marked archived")
+            }
+            if (
+                value.status === "passed" ||
+                value.status === "archiving" ||
+                value.status === "completed" ||
+                value.status === "archive_failed" ||
+                value.status === "cancelled"
+            )
+                break
         // fall through for blocked/failed:
         // eslint-disable-next-line no-fallthrough
         case "blocked":
@@ -661,13 +865,17 @@ function isNonNegativeInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
-/** UUID format used for persisted confirmation ids. */
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-/** Return whether a persisted scope tier is one of the supported values. */
-function isScopeTier(value: unknown): value is RunState["scopeTier"] {
-    return value === "lean" || value === "standard" || value === "full"
-}
+/** Allowed structured archive failure categories. */
+const ARCHIVE_ERROR_KINDS = new Set([
+    "incomplete_tasks",
+    "invalid_tasks_artifact",
+    "invalid_artifact",
+    "invalid_archive_result",
+    "command_failed",
+    "path_conflict",
+    "missing_change",
+    "already_archived",
+])
 
 /** Return whether a value is an ISO-8601 timestamp. */
 function isIsoTimestamp(value: unknown): value is string {

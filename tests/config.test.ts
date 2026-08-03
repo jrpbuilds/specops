@@ -78,11 +78,11 @@ describe("validatePartialConfig", () => {
         expect(
             validatePartialConfig({
                 version: 2,
-                openspec: { command: ["node", "./tools/openspec.js"] },
+                openspec: { command: ["node", "./tools/openspec.js"], autoArchive: true },
             }),
         ).toEqual({
             version: 2,
-            openspec: { command: ["node", "./tools/openspec.js"] },
+            openspec: { command: ["node", "./tools/openspec.js"], autoArchive: true },
         })
     })
 
@@ -103,9 +103,23 @@ describe("validatePartialConfig", () => {
     it("rejects bad types in present fields", () => {
         expect(() =>
             validatePartialConfig({
-                openspec: { command: "node" },
+                openspec: { command: "node", autoArchive: true },
             }),
         ).toThrow("invalid SpecOps configuration field: openspec.command")
+    })
+
+    it("rejects a non-boolean openspec.autoArchive", () => {
+        expect(() =>
+            validatePartialConfig({
+                openspec: { command: null, autoArchive: "yes" },
+            }),
+        ).toThrow("invalid SpecOps configuration field: openspec.autoArchive")
+    })
+
+    it("rejects a non-object openspec section", () => {
+        expect(() => validatePartialConfig({ openspec: true })).toThrow(
+            "invalid SpecOps configuration: openspec",
+        )
     })
 
     it("allows omitted required nested fields", () => {
@@ -120,7 +134,10 @@ describe("validatePartialConfig", () => {
 
     it("includes the source path in error messages", () => {
         expect(() =>
-            validatePartialConfig({ openspec: { command: "bad" } }, "/home/user/specops.json"),
+            validatePartialConfig(
+                { openspec: { command: "bad", autoArchive: true } },
+                "/home/user/specops.json",
+            ),
         ).toThrow(
             "in /home/user/specops.json: invalid SpecOps configuration field: openspec.command",
         )

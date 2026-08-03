@@ -821,7 +821,16 @@ export type RunState = {
     }>
     createdAt: string
     updatedAt: string
-    status: "running" | "paused" | "passed" | "blocked" | "failed" | "cancelled"
+    status:
+        | "running"
+        | "paused"
+        | "passed"
+        | "archiving"
+        | "completed"
+        | "archive_failed"
+        | "blocked"
+        | "failed"
+        | "cancelled"
     /** Reason a paused run is waiting; required only when `status === "paused"`. */
     pauseReason?: PauseReason
     /** True only when the run is paused and can be resumed interactively. */
@@ -830,26 +839,29 @@ export type RunState = {
     outcome?: WorkflowOutcome
     blockReason?: BlockReason
     /**
-     * Pending archive-confirmation gate. Present only on a `passed` run whose
-     * change has not yet been archived; the interactive controller must present
-     * the native question and consume the resulting decision exactly once. The
-     * run stays `passed` while this is set.
+     * Timestamp recorded when a successful OpenSpec archive moved the change
+     * directory to `openspec/changes/archive/`. Present only on a `completed`
+     * run that was archived. A `completed` run with no `archivedAt` had
+     * auto-archive disabled; the change remains under `openspec/changes/`.
      */
-    archivePending?: {
-        /** Stable id binding the native user question to this request. */
-        id: string
-        /** Snapshot of the scope tier, deciding whether `--skip-specs` applies. */
-        scopeTier: ScopeTier
-        /** When the confirmation was raised. */
-        raisedAt: string
-    }
+    archivedAt?: string
     /**
-     * Retryable error from a failed `openspec archive` attempt. The run stays
-     * `passed`; clearing this record requires a subsequent successful archive.
+     * Retryable error from a failed `openspec archive` attempt. Present only on
+     * an `archive_failed` run; a subsequent successful archive clears it.
      */
     archiveError?: {
         /** One-based archive attempt counter for diagnostics. */
         attempt: number
+        /** Structured failure category used to drive retry and messaging. */
+        kind:
+            | "incomplete_tasks"
+            | "invalid_tasks_artifact"
+            | "invalid_artifact"
+            | "invalid_archive_result"
+            | "command_failed"
+            | "path_conflict"
+            | "missing_change"
+            | "already_archived"
         /** Redacted error text captured from the OpenSpec archive invocation. */
         message: string
         /** When the failure was recorded. */

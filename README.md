@@ -60,7 +60,7 @@ Add `--format json` for raw NDJSON events you can pipe into CI. Process exit `0`
 /specops         interactive controller with checkpoints and native worker-question handling
 /specops-auto    automatic controller using visible native workers; pauses for material choices
 /specops-status  read an existing run
-/specops-archive request native confirmation, then archive a passed OpenSpec change
+/specops-archive maintenance: archive or retry-archive a verified OpenSpec change
 /specops-doctor  validate installation, manifest, commands, agents, prompts, and schemas
 /specops-onboard install final OpenSpec schemas into the current repository
 ```

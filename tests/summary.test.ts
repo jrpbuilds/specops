@@ -95,22 +95,61 @@ describe("summarize", () => {
         expect(summary).toContain('specops_get_status(change="my-change")')
     })
 
-    it("shows a passed run outcome", () => {
+    it("shows a completed run that was archived", () => {
         const summary = summarize(
             state({
-                status: "passed",
+                status: "completed",
+                archivedAt: "now",
                 outcome: {
                     category: "completed",
                     message: "All gates passed.",
                     at: "now",
                 },
             }),
-            "passed-change",
-            "Run passed",
+            "completed-change",
+            "Run finalized",
         )
-        expect(summary).toContain("✓ Run passed")
+        expect(summary).toContain("✓ Run finalized")
         expect(summary).toContain("outcome=completed")
-        expect(summary).toContain("All gates passed.")
+        expect(summary).toContain("OpenSpec change archived to openspec/changes/archive/.")
+    })
+
+    it("shows a completed run that was not archived when auto-archive is disabled", () => {
+        const summary = summarize(
+            state({
+                status: "completed",
+                outcome: {
+                    category: "completed",
+                    message: "All gates passed.",
+                    at: "now",
+                },
+            }),
+            "completed-change",
+            "Run finalized",
+        )
+        expect(summary).toContain("✓ Run finalized")
+        expect(summary).toContain(
+            "OpenSpec auto-archive disabled; change remains in openspec/changes/.",
+        )
+    })
+
+    it("shows an archive_failed run with a retryable error", () => {
+        const summary = summarize(
+            state({
+                status: "archive_failed",
+                archiveError: {
+                    attempt: 2,
+                    kind: "command_failed",
+                    message: "openspec archive exited with code 1",
+                    at: "now",
+                },
+            }),
+            "archive-failed-change",
+            "Archive failed",
+        )
+        expect(summary).toContain("⚠ Archive failed")
+        expect(summary).toContain("Archival failed (command_failed, attempt 2)")
+        expect(summary).toContain("Retry via specops_finalize or specops_archive_run")
     })
 
     it("shows a failed run message", () => {

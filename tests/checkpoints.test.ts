@@ -1074,7 +1074,11 @@ describe("store validator checkpoint invariants", () => {
                 dismissalCount: 0,
             },
         ]
-        await writeRun(directory, change, state)
+        state.schedulerHistory = []
+        await writeFile(
+            path.join(changeRoot(directory, change), "specops-run.json"),
+            `${JSON.stringify(state, null, 2)}\n`,
+        )
         await expect(readRun(directory, change)).rejects.toThrow(
             /must not also have pending questions/,
         )

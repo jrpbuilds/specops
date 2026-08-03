@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { redactSensitiveText } from "../src/security/redact.js"
 import { changeRoot, withRunLock, writeMachine } from "../src/state/store.js"
 import { createHash } from "node:crypto"
-import { mkdir, readFile, utimes } from "node:fs/promises"
+import { mkdir, readFile, stat, utimes } from "node:fs/promises"
 import { writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -46,14 +46,15 @@ describe("workflow reliability safeguards", () => {
         await first
         expect(order).toEqual(["first-start", "first-end"])
         await expect(
-            readFile(path.join(changeRoot(directory, change), "specops-run.lock")),
+            readFile(path.join(directory, "openspec", ".specops-run-locks", `${change}.lock`)),
         ).rejects.toThrow()
     })
 
     it("reclaims an old lock directory with missing owner metadata", async () => {
         const directory = await fsTemp("specops-stale-lock-")
         const change = "stale-lock-test"
-        const lockPath = path.join(changeRoot(directory, change), "specops-run.lock")
+        await mkdir(changeRoot(directory, change), { recursive: true })
+        const lockPath = path.join(directory, "openspec", ".specops-run-locks", `${change}.lock`)
         await mkdir(lockPath, { recursive: true })
         const stale = new Date(Date.now() - 60_000)
         await utimes(lockPath, stale, stale)
@@ -61,6 +62,16 @@ describe("workflow reliability safeguards", () => {
         await expect(
             withRunLock(directory, change, "reclaim", async () => undefined),
         ).resolves.toBeUndefined()
+    })
+
+    it("does not recreate a missing active change while acquiring a run lock", async () => {
+        const directory = await fsTemp("specops-missing-run-")
+        const change = "missing-run-test"
+
+        await expect(
+            withRunLock(directory, change, "missing", async () => undefined),
+        ).rejects.toThrow("SpecOps active run is missing")
+        await expect(statSafe(changeRoot(directory, change))).resolves.toBe(false)
     })
 
     it("publishes staged machine writes when the controller reports an error", async () => {
@@ -113,4 +124,13 @@ describe("workflow reliability safeguards", () => {
 
 async function fsTemp(prefix: string): Promise<string> {
     return (await import("node:fs/promises")).mkdtemp(path.join(os.tmpdir(), prefix))
+}
+
+async function statSafe(target: string): Promise<boolean> {
+    try {
+        await stat(target)
+        return true
+    } catch {
+        return false
+    }
 }

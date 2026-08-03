@@ -78,34 +78,49 @@ required artifact and refuses stale provenance.
 
 ## Archiving
 
-After a run passes, the change directory remains in `openspec/changes/<change>/` until a user
-confirms archival through `/specops-archive`. The interactive controller presents a native
-question, and the persisted confirmation id binds the user's decision to exactly one archive
-operation:
+Archival is part of finalization, governed by `openspec.autoArchive` (default `true`). After a run
+passes verification, `specops_finalize` transitions it to `completed` and, when auto-archive is
+enabled, runs `openspec archive` first:
 
 - The change directory moves to `openspec/changes/archive/<date>-<change>/`.
 - For **standard** and **full** tiers, OpenSpec merges any specification deltas under `specs/`
   into the main `openspec/specs/<capability>/spec.md` files.
 - For the **lean** tier, `--skip-specs` is used so archive only moves the directory without touching
   main specs (lean runs have no spec deltas).
-- The terminal `passed` state moves with the archived directory.
+- The `completed` state (carrying `archivedAt`) moves with the archived directory.
 
-If `openspec archive` fails (e.g., re-validation detects drift, incomplete tasks, or a filesystem
-error), the run stays `passed` and a retryable `archiveError` is recorded. The user may re-run
-`/specops-archive` to retry the operation after addressing the failure. A declined confirmation
-clears the gate and leaves the run passed without archiving.
+When `openspec.autoArchive` is `false`, `specops_finalize` transitions `passed` → `completed`
+without archiving; the change stays in `openspec/changes/<change>/` and `archivedAt` is unset.
+
+If `openspec archive` fails (re-validation drift, incomplete tasks, artifact drift, or a filesystem
+error), the run transitions to `archive_failed` with a retryable, structured `archiveError` (`kind`,
+`attempt`, `message`). Retry via `specops_finalize` or `/specops-archive`.
+
+### Crash recovery
+
+Before archiving, SpecOps writes a recovery sidecar at
+`openspec/.specops-archive-attempt/<change>.json` recording the run identity (revision, createdAt,
+baseline), persists the `archiving` state, runs the archive command, and finally writes `completed`
+at the archived path. The sidecar lives outside the change directory, so it survives the move and
+lets recovery select the archived candidate by verifying run identity from the moved
+`specops-run.json` — never by filename alone. Missing or mismatched sidecars never authorize
+recovery; a controlled diagnostic is raised instead. Run locks live under
+`openspec/.specops-run-locks/`, and in-flight transactions under `specops-transaction/` are
+recovered before the directory move.
 
 ## Machine-readable outcomes
 
 `specops-run.json` exposes one stable outcome category for humans and CI:
 
-- `completed` with terminal status `passed`;
+- `completed` with terminal status `completed` (archived when `archivedAt` is set, otherwise
+  unarchived because auto-archive was disabled);
 - `policy-blocked` with terminal status `blocked`;
 - `validation-failed`, `review-failed`, or `internal-error` with terminal status `failed`;
 - `cancelled` with terminal status `cancelled`.
 
-OpenCode owns the CLI process exit code, so a CI job using `--format json` must require outcome
-`completed` rather than treating exit `0` alone as workflow success.
+`passed`, `archiving`, and `archive_failed` are intermediate/retryable states. OpenCode owns the
+CLI process exit code, so a CI job using `--format json` must require outcome `completed` rather
+than treating exit `0` alone as workflow success.
 
 ## Completion receipt
 

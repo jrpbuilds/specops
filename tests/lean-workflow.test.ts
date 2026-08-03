@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process"
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { AGENT_IDS } from "../src/capabilities/ids.js"
 import { hash } from "../src/artifacts/lifecycle.js"
-import { DEFAULT_CONFIG } from "../src/config.js"
+import { DEFAULT_CONFIG, type SpecOpsConfig } from "../src/config.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
 import { readEvidenceRegistry } from "../src/evidence/registry.js"
 import { onboard } from "../src/openspec.js"
@@ -50,6 +50,13 @@ const assessment: Assessment = {
     likelyValidations: [],
     facts: ["README.md is the requested documentation surface."],
     inferences: ["No product behavior changes are required."],
+}
+
+/** Config with auto-archive disabled, used by lifecycle tests that inspect the
+ *  change directory after finalization without exercising archival. */
+const noArchiveConfig: SpecOpsConfig = {
+    ...DEFAULT_CONFIG,
+    openspec: { ...DEFAULT_CONFIG.openspec, autoArchive: false },
 }
 
 describe("compact Lean workflow", () => {
@@ -208,9 +215,10 @@ describe("compact Lean workflow", () => {
             await expectNextAfterCheckpoint(directory, started.change, mode)
             const last = await issueDirective(directory, started.change, DEFAULT_CONFIG)
             expect(last.type).toBe("finalize")
-            const finalized = await finalizeRun(directory, started.change, DEFAULT_CONFIG)
+            const finalized = await finalizeRun(directory, started.change, noArchiveConfig)
 
-            expect(finalized.status, finalized.outcome?.message).toBe("passed")
+            expect(finalized.status, finalized.outcome?.message).toBe("completed")
+            expect(finalized.archivedAt).toBeUndefined()
             expect(finalized.artifacts.receipt?.validity).toBe("valid")
             expect(finalized.dispatches).toHaveLength(3)
             expect(finalized.dispatches.map(dispatch => dispatch.agent)).toEqual([
@@ -224,6 +232,60 @@ describe("compact Lean workflow", () => {
                     "utf8",
                 ),
             ).resolves.toContain('"category": "completed"')
+        },
+    )
+
+    it.each(["interactive", "automatic"] as const)(
+        "archives the completed Lean lifecycle in %s mode",
+        async mode => {
+            const directory = await initializedRepository()
+            await onboard(directory)
+            const started = await startRun(directory, DEFAULT_CONFIG, {
+                goal: "Archive README wording",
+                assessmentOutput: JSON.stringify(assessment),
+                requestedTier: "auto",
+                mode,
+            })
+
+            const planning = await issueDirective(directory, started.change, DEFAULT_CONFIG)
+            if (planning.type !== "dispatch") throw new Error("expected planning dispatch")
+            await completeAction(
+                directory,
+                started.change,
+                planning.action.id,
+                "# Tasks\n\n- Update README wording.",
+                DEFAULT_CONFIG,
+            )
+            await expectNextAfterCheckpoint(directory, started.change, mode)
+
+            const implementation = await issueDirective(directory, started.change, DEFAULT_CONFIG)
+            if (implementation.type !== "dispatch")
+                throw new Error("expected implementation dispatch")
+            await writeFile(path.join(directory, "README.md"), "# Archived test\n")
+            await completeAction(
+                directory,
+                started.change,
+                implementation.action.id,
+                "Updated README wording.",
+                DEFAULT_CONFIG,
+            )
+            await expectNextAfterCheckpoint(directory, started.change, mode)
+
+            const verification = await issueDirective(directory, started.change, DEFAULT_CONFIG)
+            if (verification.type !== "dispatch") throw new Error("expected verification dispatch")
+            await completeAction(
+                directory,
+                started.change,
+                verification.action.id,
+                assuranceBundle(),
+                DEFAULT_CONFIG,
+            )
+            await expectNextAfterCheckpoint(directory, started.change, mode)
+
+            const finalized = await finalizeRun(directory, started.change, DEFAULT_CONFIG)
+            expect(finalized.status).toBe("completed")
+            expect(finalized.archivedAt).toBeDefined()
+            await expect(stat(changeRoot(directory, started.change))).rejects.toThrow()
         },
     )
 
@@ -297,8 +359,9 @@ describe("compact Lean workflow", () => {
         })
         await writeRun(directory, started.change, started.state)
 
-        const finalized = await finalizeRun(directory, started.change, DEFAULT_CONFIG)
-        expect(finalized.status, finalized.outcome?.message).toBe("passed")
+        const finalized = await finalizeRun(directory, started.change, noArchiveConfig)
+        expect(finalized.status, finalized.outcome?.message).toBe("completed")
+        expect(finalized.archivedAt).toBeUndefined()
         expect(finalized.artifacts.receipt?.validity).toBe("valid")
     })
 

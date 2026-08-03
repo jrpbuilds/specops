@@ -215,13 +215,20 @@ revision, provider manifest, and registered evidence commands.
 
 ## Archive failures
 
-A passed run may fail to archive (e.g., `openspec archive` re-validation detects drift, or the
-filesystem move fails). The run stays `passed`; a retryable `archiveError` is recorded with the
-OpenSpec error message and attempt counter. Inspect the error via `/specops-status`, address the
-underlying cause (fix the spec, free disk space, resolve Git worktree conflicts), and call
-`/specops-archive` again to re-raise the native confirmation gate and retry. To leave the passed
-change unarchived, choose **Keep unarchived** in that native question. A decline is only valid while
-the confirmation request is pending.
+An archive attempt may fail (re-validation drift, incomplete tasks, a required artifact changed, or
+the filesystem move failed). The run transitions to `archive_failed` with a retryable, structured
+`archiveError` (`kind`, `attempt`, `message`). Inspect it via `/specops-status`, address the cause,
+and call `specops_finalize` (or `/specops-archive` for maintenance) again to retry.
+
+To leave a verified change unarchived, set `openspec.autoArchive` to `false` and call
+`specops_finalize`; the run transitions to `completed` without archiving and the change remains in
+`openspec/changes/<change>/`.
+
+If the archive moved the change directory but the process crashed before writing `completed`, the
+run is left `archiving`. The next `specops_finalize` or `/specops-archive` recovers it only when
+the `openspec/.specops-archive-attempt/<change>.json` recovery sidecar matches the moved
+`specops-run.json`. A missing, malformed, or mismatched sidecar raises a controlled diagnostic
+instead of guessing from the archive directory name.
 
 ## Collecting a useful diagnostic report
 

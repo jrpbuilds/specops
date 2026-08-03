@@ -106,15 +106,25 @@ state.
 
 ## Archiving
 
-After a run passes its final validation gates, the change directory persists in
-`openspec/changes/<change>/` until an explicit archive is confirmed. `/specops-archive` raises a
-native user confirmation on the interactive controller; the resulting decision is consumed once
-against the persisted confirmation id. On confirmation, OpenSpec moves the change directory to
-`openspec/changes/archive/<date>-<change>/` and, for standard and full tiers, merges the specification
-deltas into `openspec/specs/<capability>/spec.md`. The lean tier archives with `--skip-specs` so only
-the directory is moved. Archive failures leave the run `passed` with a retryable `archiveError`; a
-decline clears the gate without archiving. The automatic workflow never initiates or confirms this
-mutating user-controlled operation.
+Archival is part of finalization, governed by `openspec.autoArchive` (default `true`). After a run
+passes its final validation gates, `specops_finalize` transitions it to `completed` and, when
+auto-archive is enabled, archives the change as part of that transition. OpenSpec moves the change
+directory to `openspec/changes/archive/<date>-<change>/` and, for standard and full tiers, merges
+spec deltas into `openspec/specs/<capability>/spec.md`. The lean tier archives with `--skip-specs`
+(directory move only). The run ends `completed` (carrying `archivedAt`) on success, or
+`archive_failed` with a retryable, structured `archiveError` on failure.
+
+When `openspec.autoArchive` is `false`, `specops_finalize` transitions the run straight from
+`passed` to `completed` without archiving; the change stays in `openspec/changes/<change>/` for a
+later manual archive. `/specops-archive` is a maintenance entry point that archives such a
+completed-unarchived run without rerunning verification, and also retries `archive_failed` runs.
+
+Archive is crash-safe: before invoking `openspec archive`, SpecOps records run identity in a
+recovery sidecar, persists `archiving`, then runs the command. A crash between the directory move
+and the final `completed` write is recovered on the next call only when the sidecar and the moved
+`specops-run.json` prove the same identity; missing or mismatched sidecars never trigger
+filename-only recovery. Returned archive paths are canonicalized and must stay inside the archive
+root.
 
 ## Reviews and repair
 

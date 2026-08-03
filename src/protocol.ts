@@ -34,10 +34,8 @@ export const TOOL_IDS = {
     cancelRun: "specops_cancel_run",
     /** Finalize a run only when deterministic completion gates are satisfied. */
     finalize: "specops_finalize",
-    /** Archive a passed run's OpenSpec change after explicit confirmation. */
+    /** Maintenance: archive or retry-archive a verified or completed-unarchived change regardless of auto-archive. Not used by normal workflow. */
     archive: "specops_archive_run",
-    /** Consume a native user decision and perform or decline archive. */
-    confirmArchive: "specops_confirm_archive",
     /** Install final SpecOps OpenSpec assets. */
     onboard: "specops_onboard",
     /** Diagnose final SpecOps configuration and assets. */
