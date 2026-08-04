@@ -5,6 +5,7 @@
 ### Changed
 
 - Reorganized the workflow engine internals into focused modules (startup, directive issuance, completion, finalization, archive, interactive, questions, run state, artifacts, writer guards) behind the same public API. No change to run behavior or tooling.
+- Extracted checkpoint eligibility, snapshots, duplicate detection, and binding validation while preserving scheduler compatibility exports, and added focused hashing and stale-binding regression coverage.
 
 ### Fixed
 

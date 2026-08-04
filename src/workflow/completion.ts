@@ -24,7 +24,7 @@ import {
     hasCheckpointFor,
     isCheckpointBindingCurrent,
     snapshotCheckpointArtifacts,
-} from "./scheduler.js"
+} from "./checkpoints.js"
 import type { WorkflowAction } from "./actions.js"
 import { formatCheckpointPreview } from "./previews.js"
 import {

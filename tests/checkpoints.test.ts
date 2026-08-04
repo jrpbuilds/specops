@@ -10,6 +10,7 @@ import type {
     Assessment,
     CheckpointArtifactSnapshot,
     DispatchRecord,
+    PendingCheckpoint,
     RunState,
 } from "../src/types.js"
 import {
@@ -208,6 +209,40 @@ function snapshot(artifact: ArtifactId, hash: string = artifact): CheckpointArti
     return { artifact, outputHash: hash }
 }
 
+/**
+ * Build a valid pending checkpoint and the run state it was bound against.
+ *
+ * The returned state contains a completed planning dispatch with valid task
+ * artifacts and a pending checkpoint whose binding hash is current for that
+ * state. Mutating the state and re-checking isCheckpointBindingCurrent with the
+ * same pending checkpoint exercises the individual stale-binding branches.
+ */
+function freshPendingCheckpoint(): {
+    state: RunState
+    dispatch: DispatchRecord
+    pending: PendingCheckpoint
+} {
+    const state = leanState("interactive")
+    const dispatch = planningDispatch()
+    dispatch.status = "completed"
+    state.dispatches.push(dispatch)
+    state.artifacts.tasks = validArtifact(state, "tasks", "hash-1")
+    const snap = snapshotCheckpointArtifacts(state, ["tasks"])
+    const pending: PendingCheckpoint = {
+        dispatchId: dispatch.id,
+        capability: "planning" as never,
+        purpose: "workflow",
+        action: "lean-plan",
+        artifacts: snap,
+        output: "Preview content",
+        policyHash: state.requirements.policyHash,
+        implementationDiffHash: state.implementationDiffHash,
+        bindingHash: computeCheckpointBindingHash(state, dispatch, snap),
+        raisedAt: "now",
+    }
+    return { state, dispatch, pending }
+}
+
 describe("checkpoint artifact groups", () => {
     it("identifies lean planning as a tasks-only checkpoint", () => {
         const state = leanState("interactive")
@@ -342,6 +377,19 @@ describe("checkpoint binding and duplicate detection", () => {
         dispatch.outputHash = "output-2"
         const second = computeCheckpointBindingHash(state, dispatch, snap)
         expect(first).not.toBe(second)
+    })
+
+    it("produces the same binding hash regardless of artifact snapshot order", () => {
+        const state = leanState("interactive")
+        const dispatch = planningDispatch()
+        state.dispatches.push(dispatch)
+        state.artifacts.tasks = validArtifact(state, "tasks", "hash-tasks")
+        state.artifacts.proposal = validArtifact(state, "proposal", "hash-proposal")
+        const forward = snapshotCheckpointArtifacts(state, ["tasks", "proposal"])
+        const reverse = snapshotCheckpointArtifacts(state, ["proposal", "tasks"])
+        const forwardHash = computeCheckpointBindingHash(state, dispatch, forward)
+        const reverseHash = computeCheckpointBindingHash(state, dispatch, reverse)
+        expect(forwardHash).toBe(reverseHash)
     })
 
     it("records a checkpoint only once for a given dispatch and output snapshot", () => {
@@ -1149,6 +1197,41 @@ describe("binding validation", () => {
             raisedAt: "now",
         }
         state.requirements.policyHash = "changed"
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
+    })
+
+    it("isCheckpointBindingCurrent returns false when the implementation diff hash changed", () => {
+        const { state, pending } = freshPendingCheckpoint()
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(true)
+        state.implementationDiffHash = "new-diff"
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
+    })
+
+    it("isCheckpointBindingCurrent returns false when a snapshot artifact is missing", () => {
+        const { state, pending } = freshPendingCheckpoint()
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(true)
+        delete state.artifacts.tasks
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
+    })
+
+    it("isCheckpointBindingCurrent returns false when a snapshot artifact is no longer valid", () => {
+        const { state, pending } = freshPendingCheckpoint()
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(true)
+        state.artifacts.tasks!.validity = "stale"
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
+    })
+
+    it("isCheckpointBindingCurrent returns false when the originating dispatch is missing", () => {
+        const { state, dispatch, pending } = freshPendingCheckpoint()
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(true)
+        state.dispatches = state.dispatches.filter(item => item.id !== dispatch.id)
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
+    })
+
+    it("isCheckpointBindingCurrent returns false when the binding hash does not match", () => {
+        const { state, pending } = freshPendingCheckpoint()
+        expect(isCheckpointBindingCurrent(state, pending)).toBe(true)
+        pending.bindingHash = "0".repeat(64)
         expect(isCheckpointBindingCurrent(state, pending)).toBe(false)
     })
 })
