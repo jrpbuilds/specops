@@ -4,7 +4,9 @@
 
 # SpecOps
 
-**Spec-driven software changes for OpenCode — the TypeScript owns the workflow, the model owns the reasoning.**
+**Spec-driven development for OpenCode**
+
+**TypeScript owns the workflow, the model owns the reasoning.**
 
 [![npm version](https://img.shields.io/npm/v/@jrpbuilds/specops?color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@jrpbuilds/specops)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -15,9 +17,15 @@
 
 </div>
 
-SpecOps is an [OpenCode](https://opencode.ai) plugin that turns a one-line goal into a fully audited code change. You write `/specops add a /healthz endpoint with tests` and the plugin handles the rest: it reads your repo, decides how big the change is, plans it through validated [OpenSpec](https://github.com/fission-ai/openspec) artifacts, writes the code, runs the tests, sends it through independent reviewers, repairs what fails, and only then marks the work complete. The model writes code. The plugin — written in strict TypeScript — decides when the code is actually done, with a completion receipt backed by fresh evidence and verified artifacts.
+SpecOps is an [OpenCode](https://opencode.ai) plugin that turns a one-line goal into a fully audited code change.
+
+You write `/specops add a /healthz endpoint with tests` and the plugin handles the rest: it reads your repo, decides how big the change is, plans it through validated [OpenSpec](https://github.com/fission-ai/openspec) artifacts, writes the code, runs the tests, sends it through independent reviewers, repairs what fails, and only then marks the work complete. The model writes code. The plugin — written in strict TypeScript — decides when the code is actually done, with a completion receipt backed by fresh evidence and verified artifacts.
 
 If you've used an AI coding agent before, you've probably noticed it does the easy part well (one file, one function) and the hard part badly (multi-file changes, contracts, breaking changes, anything where "the LLM just did it" isn't enough). SpecOps exists for the hard part. Every decision — scope, risk, what to build, whether the change is complete — is enforced by code, not by the model agreeing with itself.
+
+SpecOps is not a vibe-coding tool. SpecOps works best when you describe changes as clearly as you would to a competent colleague. It can investigate the repository and resolve implementation details, but it cannot infer requirements you never provided.
+
+It adds planning, validation, testing, review, and repair loops — not magic. **You still need to [read the code](https://x.com/mitchellh/status/2072738025344565262).**
 
 ## Install
 

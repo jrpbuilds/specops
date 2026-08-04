@@ -104,5 +104,6 @@
   documentation.
 - CI and release workflows now use the repository-pinned Node.js version from `.nvmrc`.
 
+[0.16.2]: https://github.com/jrpbuilds/specops/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/jrpbuilds/specops/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/jrpbuilds/specops/compare/v0.15.1...v0.16.0
