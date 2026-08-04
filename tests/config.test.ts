@@ -42,6 +42,49 @@ describe("validateConfig", () => {
         expect(validateConfig(DEFAULT_CONFIG)).toEqual(DEFAULT_CONFIG)
     })
 
+    it("fills omitted frontier fields from defaults", () => {
+        expect(
+            validateConfig({ ...DEFAULT_CONFIG, frontier: { mode: "disabled" } }).frontier,
+        ).toEqual(DEFAULT_CONFIG.frontier)
+        expect(
+            validateConfig({ ...DEFAULT_CONFIG, frontier: { mode: "adaptive" } }).frontier,
+        ).toEqual({ ...DEFAULT_CONFIG.frontier, mode: "adaptive" })
+        expect(validateConfig({ ...DEFAULT_CONFIG, frontier: {} }).frontier).toEqual(
+            DEFAULT_CONFIG.frontier,
+        )
+    })
+
+    it("rejects workflow thresholds where full equals lean", () => {
+        expect(() =>
+            validateConfig({
+                ...DEFAULT_CONFIG,
+                workflow: {
+                    defaultTier: "auto",
+                    scopeThresholds: {
+                        leanMaxFiles: 2,
+                        leanMaxModules: 1,
+                        fullMinFiles: 2,
+                        fullMinModules: 4,
+                    },
+                },
+            }),
+        ).toThrow("invalid SpecOps configuration field: workflow.scopeThresholds")
+        expect(() =>
+            validateConfig({
+                ...DEFAULT_CONFIG,
+                workflow: {
+                    defaultTier: "auto",
+                    scopeThresholds: {
+                        leanMaxFiles: 2,
+                        leanMaxModules: 1,
+                        fullMinFiles: 9,
+                        fullMinModules: 1,
+                    },
+                },
+            }),
+        ).toThrow("invalid SpecOps configuration field: workflow.scopeThresholds")
+    })
+
     it("accepts the disabled MCP policy", () => {
         expect(
             validateConfig({ ...DEFAULT_CONFIG, integrations: { mcp: "disabled" } }),
@@ -424,12 +467,95 @@ describe("resolveConfig", () => {
         expect(repairs[0].recoveredSections).toEqual([])
         expect(consumeConfigRepairs()).toEqual([])
     })
+
+    it("writes a repaired file with exact shape, indent, and key order", async () => {
+        const projectDirectory = path.join(temporaryDirectory, "project")
+        await mkdir(path.join(projectDirectory, ".opencode"), { recursive: true })
+        const projectPath = path.join(projectDirectory, ".opencode", "specops.json")
+        await writeFile(
+            projectPath,
+            JSON.stringify({
+                version: 2,
+                integrations: { mcp: "disabled" },
+                workflow: { defaultTier: "not-a-tier" },
+            }),
+        )
+
+        await resolveConfig(projectDirectory)
+        const actual = await readFile(projectPath, "utf8")
+        const expected =
+            "{\n" +
+            '  "$schema": "./specops.schema.json",\n' +
+            '  "version": 2,\n' +
+            '  "openspec": {\n' +
+            '    "command": null,\n' +
+            '    "autoArchive": true\n' +
+            "  },\n" +
+            '  "workflow": {\n' +
+            '    "defaultTier": "auto",\n' +
+            '    "scopeThresholds": {\n' +
+            '      "leanMaxFiles": 2,\n' +
+            '      "leanMaxModules": 1,\n' +
+            '      "fullMinFiles": 9,\n' +
+            '      "fullMinModules": 4\n' +
+            "    }\n" +
+            "  },\n" +
+            '  "routing": {\n' +
+            '    "forceFullForFacets": []\n' +
+            "  },\n" +
+            '  "automation": {\n' +
+            '    "requireCleanWorktree": true\n' +
+            "  },\n" +
+            '  "escalation": {\n' +
+            '    "budgets": {\n' +
+            '      "maxScopeEscalations": 2,\n' +
+            '      "maxSpecialistDispatches": 8,\n' +
+            '      "maxRepairCycles": 3,\n' +
+            '      "maxRepeatedFailureFingerprints": 2\n' +
+            "    }\n" +
+            "  },\n" +
+            '  "frontier": {\n' +
+            '    "mode": "disabled",\n' +
+            '    "maxEscalationsPerRun": 2,\n' +
+            '    "maxDispatchesPerRun": 3,\n' +
+            '    "maxHighDispatchesPerRun": 1\n' +
+            "  },\n" +
+            '  "review": {\n' +
+            '    "blockingSeverities": [\n' +
+            '      "BLOCKER",\n' +
+            '      "HIGH"\n' +
+            "    ],\n" +
+            '    "maxDiffBytes": 1000000,\n' +
+            '    "maxContextBytes": 50000,\n' +
+            '    "transientRetries": 1,\n' +
+            '    "commandTimeoutSeconds": 300,\n' +
+            '    "commandOutputBytes": 32000\n' +
+            "  },\n" +
+            '  "integrations": {\n' +
+            '    "mcp": "disabled"\n' +
+            "  }\n" +
+            "}\n"
+        expect(actual).toBe(expected)
+    })
 })
 
 describe("validateConfigLenient", () => {
     it("returns empty partial for non-object input", () => {
         expect(validateConfigLenient(null)).toEqual({ partial: {}, recoveredSections: [] })
         expect(validateConfigLenient("string")).toEqual({ partial: {}, recoveredSections: [] })
+    })
+
+    it("drops a section entirely when one field is invalid", () => {
+        const { partial, recoveredSections } = validateConfigLenient({
+            version: 2,
+            review: {
+                ...DEFAULT_CONFIG.review,
+                transientRetries: "bad" as unknown as number,
+                maxDiffBytes: 1_000_000,
+            },
+        })
+        expect(recoveredSections).toEqual([])
+        expect(partial.review).toBeUndefined()
     })
 
     it("drops a section whose strict parser rejects", () => {
