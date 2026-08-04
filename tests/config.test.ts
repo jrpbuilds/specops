@@ -8,7 +8,6 @@ import {
     materializeGlobalConfig,
     resolveConfig,
     resetConfigRepairs,
-    SPECOPS_CONFIG_SCHEMA_URL,
     validateConfig,
     validateConfigLenient,
     validatePartialConfig,
@@ -209,13 +208,20 @@ describe("resolveConfig", () => {
         await expect(resolveConfig(projectDirectory)).resolves.toEqual(DEFAULT_CONFIG)
     })
 
-    it("creates a complete valid global configuration when absent", async () => {
+    it("creates a complete valid global configuration and sibling schema when absent", async () => {
         const globalPath = resolveGlobalConfigPath()
+        const schemaPath = path.join(path.dirname(globalPath), "specops.schema.json")
         const result = await materializeGlobalConfig()
         const document = JSON.parse(await readFile(globalPath, "utf8"))
+        const writtenSchema = await readFile(schemaPath, "utf8")
+        const packagedSchema = await readFile(
+            path.resolve(import.meta.dirname, "..", "examples", "specops.schema.json"),
+            "utf8",
+        )
 
         expect(result).toEqual({ path: globalPath, created: true })
-        expect(document.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(document.$schema).toBe("./specops.schema.json")
+        expect(writtenSchema).toBe(packagedSchema)
         expect(validateConfig(document)).toEqual(DEFAULT_CONFIG)
         await expect(resolveConfig(path.join(temporaryDirectory, "project"))).resolves.toEqual(
             DEFAULT_CONFIG,
@@ -305,7 +311,7 @@ describe("resolveConfig", () => {
         expect(config.routing.forceFullForFacets).toEqual([])
 
         const rewritten = JSON.parse(await readFile(globalPath, "utf8"))
-        expect(rewritten.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(rewritten.$schema).toBe("./specops.schema.json")
         expect(rewritten.review.transientRetries).toBe(3)
         expect(rewritten.routing.forceFullForFacets).toEqual([])
         expect(validateConfig(rewritten)).toEqual({

@@ -10,7 +10,7 @@ import {
     agentForCapability,
 } from "../src/capabilities/registry.js"
 import { COMMANDS } from "../src/commands.js"
-import { DEFAULT_CONFIG, SPECOPS_CONFIG_SCHEMA_URL, validateConfig } from "../src/config.js"
+import { DEFAULT_CONFIG, validateConfig } from "../src/config.js"
 import { resolveGlobalConfigPath, resolveManifestPath } from "../src/installation.js"
 import { validateManifest } from "../src/manifest.js"
 import { SpecOpsPluginWithManifest } from "../src/index.js"
@@ -75,7 +75,7 @@ describe.sequential("installed runtime contract", () => {
         expect(changeSchema.safeParse("invalid--name").success).toBe(false)
 
         const globalConfig = JSON.parse(await readFile(resolveGlobalConfigPath(), "utf8"))
-        expect(globalConfig.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+        expect(globalConfig.$schema).toBe("./specops.schema.json")
         expect(validateConfig(globalConfig)).toEqual(DEFAULT_CONFIG)
 
         const manifest = validateManifest(JSON.parse(await readFile(manifestPath, "utf8")))
@@ -265,7 +265,7 @@ describe.sequential("installed runtime contract", () => {
             // complete configuration with the default allow MCP policy.
             const repaired = JSON.parse(await readFile(configPath, "utf8"))
             expect(repaired.integrations.mcp).toBe("allow")
-            expect(repaired.$schema).toBe(SPECOPS_CONFIG_SCHEMA_URL)
+            expect(repaired.$schema).toBe("./specops.schema.json")
         },
     )
 

@@ -15,17 +15,21 @@ missing required sections — this is expected and such files are still valid at
 partial validator.
 
 SpecOps creates a complete editable `~/.config/opencode/specops.json` on first plugin load (or
-`$XDG_CONFIG_HOME/opencode/specops.json` when XDG is configured). Existing files are preserved.
-To create it manually, use the complete project example as a starting point:
+`$XDG_CONFIG_HOME/opencode/specops.json` when XDG is configured). Existing files are preserved. A
+matching `specops.schema.json` is written next to it automatically so editor validation works
+offline.
+
+To create it manually, copy both files into the global config directory:
 
 ```bash
 mkdir -p ~/.config/opencode
 cp examples/specops.global.json ~/.config/opencode/specops.json
+cp examples/specops.schema.json ~/.config/opencode/specops.schema.json
 ```
 
-The automatically created global file and `specops.global.json` use the published schema URL so
-editor validation works outside a project. You may still delete sections you do not want to
-override; only the sections you set are merged.
+The automatically created global file and `specops.global.json` use a relative `$schema:
+./specops.schema.json` reference. You may still delete sections you do not want to override; only the
+sections you set are merged.
 Values are resolved in this order:
 
 1. Built-in defaults (`DEFAULT_CONFIG`).

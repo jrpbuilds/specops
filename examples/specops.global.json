@@ -1,5 +1,5 @@
 {
-    "$schema": "https://specops.dev/schemas/specops.schema.json",
+    "$schema": "./specops.schema.json",
     "version": 2,
     "openspec": { "command": null, "autoArchive": true },
     "workflow": {

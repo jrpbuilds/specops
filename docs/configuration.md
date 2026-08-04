@@ -33,9 +33,10 @@ edited directly as a user-wide policy template. The project-over-global override
 emitted only when both the global and project files exist. A project-only file that changes
 defaults is not flagged.
 
-`$schema` is preserved as a local, relative reference in the project file and is ignored by
-the runtime merge. A global file may also contain a `$schema` value; it does not affect
-precedence.
+`$schema` is preserved as a local, relative reference in both the project file
+(`.opencode/specops.json`) and the global file. The plugin writes a matching
+`specops.schema.json` next to the generated global config on first load and refreshes it on each
+plugin start, so editor validation works offline. It does not affect runtime merge precedence.
 
 ## OpenSpec
 

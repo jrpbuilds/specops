@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { resolveGlobalConfigPath } from "./installation.js"
 import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js"
 
@@ -116,8 +117,24 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     integrations: { mcp: "allow" },
 }
 
-/** Published JSON Schema used by the global configuration editor. */
-export const SPECOPS_CONFIG_SCHEMA_URL = "https://specops.dev/schemas/specops.schema.json"
+/**
+ * Relative schema reference shared by the generated global and project
+ * configuration files.
+ *
+ * SpecOps materialises a sibling `specops.schema.json` next to each generated
+ * config file so editor validation works without network access.
+ */
+const SPECOPS_CONFIG_SCHEMA_REFERENCE = "./specops.schema.json"
+
+// `config.ts` is emitted directly into `dist`, so one parent reaches the
+// package root in both source and packed layouts. Keeping this package-relative
+// avoids source-checkout path leakage.
+const PACKAGED_CONFIG_SCHEMA_PATH = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "examples",
+    "specops.schema.json",
+)
 
 /** Result of creating or finding the global user configuration. */
 export type GlobalConfigMaterialisation = {
@@ -170,19 +187,37 @@ export function resetConfigRepairs(): void {
 }
 
 /**
+ * Materialise the package-bundled JSON Schema next to a configuration file.
+ *
+ * The schema is plugin-owned, so it is overwritten unconditionally to keep it
+ * current after plugin updates. The adjacent config file remains user-owned and
+ * is never modified by this helper.
+ *
+ * @param destination - Path of the adjacent user configuration file.
+ */
+async function materializeConfigSchema(destination: string): Promise<void> {
+    await mkdir(path.dirname(destination), { recursive: true })
+    const schema = await readFile(PACKAGED_CONFIG_SCHEMA_PATH, "utf8")
+    const schemaDestination = path.join(path.dirname(destination), "specops.schema.json")
+    await writeFile(schemaDestination, schema, { encoding: "utf8" })
+}
+
+/**
  * Create the complete global configuration when it does not exist.
  *
  * The exclusive file creation preserves user-owned partial or invalid files,
- * while the generated document exposes every current configuration field.
+ * while the generated document exposes every current configuration field. A
+ * sibling `specops.schema.json` is always materialised or refreshed so editor
+ * validation works locally and offline.
  * @param destination - Optional global configuration path, primarily for tests.
  * @returns The resolved path and whether this call created the file.
  */
 export async function materializeGlobalConfig(
     destination: string = resolveGlobalConfigPath(),
 ): Promise<GlobalConfigMaterialisation> {
-    await mkdir(path.dirname(destination), { recursive: true })
+    await materializeConfigSchema(destination)
     const document = {
-        $schema: SPECOPS_CONFIG_SCHEMA_URL,
+        $schema: SPECOPS_CONFIG_SCHEMA_REFERENCE,
         ...structuredClone(DEFAULT_CONFIG),
     }
     try {
@@ -917,7 +952,7 @@ async function writeRepairedConfig(
     recoveredSections: readonly string[],
     salvagedPartial: Partial<SpecOpsConfig>,
 ): Promise<void> {
-    await mkdir(path.dirname(destination), { recursive: true })
+    await materializeConfigSchema(destination)
     const salvaged: Record<string, unknown> = { version: 2 }
     const salvagedRecord = salvagedPartial as Record<string, unknown>
     for (const name of recoveredSections) {
@@ -925,7 +960,7 @@ async function writeRepairedConfig(
         if (value !== undefined) salvaged[name] = structuredClone(value)
     }
     const document = {
-        $schema: SPECOPS_CONFIG_SCHEMA_URL,
+        $schema: SPECOPS_CONFIG_SCHEMA_REFERENCE,
         ...structuredClone(DEFAULT_CONFIG),
         ...salvaged,
     }

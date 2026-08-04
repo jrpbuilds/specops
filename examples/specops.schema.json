@@ -1,6 +1,5 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://specops.dev/schemas/specops.schema.json",
     "title": "Final SpecOps configuration",
     "description": "SpecOps configuration. Valid at ~/.config/opencode/specops.json (global, XDG-aware) or .opencode/specops.json (project). Either file may be partial; missing sections are filled from defaults and deep-merged with project values winning. This schema describes the complete merged shape.",
     "type": "object",

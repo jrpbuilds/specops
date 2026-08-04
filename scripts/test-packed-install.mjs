@@ -65,9 +65,18 @@ await hooks.config(config)
 
 const globalConfigPath = path.join(isolatedConfigHome, "opencode", "specops.json")
 const globalConfig = JSON.parse(await readFile(globalConfigPath, "utf8"))
+const globalSchemaPath = path.join(isolatedConfigHome, "opencode", "specops.schema.json")
+const packagedSchema = await readFile(
+    path.join(packageDirectory, "examples", "specops.schema.json"),
+    "utf8",
+)
 assert(
-    globalConfig.$schema === "https://specops.dev/schemas/specops.schema.json",
+    globalConfig.$schema === "./specops.schema.json",
     "packed install global config schema reference drifted",
+)
+assert(
+    (await readFile(globalSchemaPath, "utf8")) === packagedSchema,
+    "packed install did not materialise sibling specops.schema.json",
 )
 assert(
     [
