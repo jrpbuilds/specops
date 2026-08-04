@@ -24,6 +24,7 @@ import type {
 import { downstream } from "../artifacts/graph.js"
 import { invalidate } from "../artifacts/lifecycle.js"
 import { questionBindingHash } from "../worker_output.js"
+import { writeTextAtomic } from "../state/store.js"
 
 /** Stable public DTO for a paused pending-question block. */
 export type PendingQuestionResult = {
@@ -778,4 +779,77 @@ function validateBindingHash(state: RunState, pending: PendingQuestion): void {
     if (current !== pending.bindingHash) {
         throw new Error("SpecOps pending question is stale; authoritative inputs have changed")
     }
+}
+
+/**
+ * Persist the human-readable record of worker questions and their resolutions.
+ *
+ * The ledger is a projection of authoritative question history, so it is
+ * rewritten atomically after every question state transition and replay. User
+ * text is HTML-escaped before entering the markdown document.
+ */
+export async function writeQuestionLedger(
+    directory: string,
+    change: string,
+    state: RunState,
+): Promise<void> {
+    if (state.questionHistory.length === 0) return
+
+    const sections = state.questionHistory.map(record => {
+        const replay = state.dispatches.find(
+            dispatch =>
+                dispatch.resume?.origin === "question" && dispatch.resume.sourceId === record.id,
+        )
+        const artifact = state.artifacts[record.phase]
+        const answer = record.otherText
+            ? `<pre>${escapeLedgerText(record.otherText)}</pre>`
+            : record.selectedOptionId
+              ? `${escapeLedgerText(record.selectedOptionId)}${
+                    record.selectedOptionLabel
+                        ? ` — ${escapeLedgerText(record.selectedOptionLabel)}`
+                        : ""
+                }`
+              : "Not answered"
+
+        return [
+            `## ${escapeLedgerText(record.phase)} — ${escapeLedgerText(record.id)}`,
+            "",
+            `- **Status:** ${record.outcome}`,
+            `- **Dispatch:** ${escapeLedgerText(record.dispatchId)}`,
+            `- **Raised:** ${record.raisedAt}`,
+            `- **Resolved:** ${record.resolvedAt}`,
+            `- **Impact:** ${record.impact}`,
+            `- **Invalidated artifacts:** ${record.invalidatedArtifacts.join(", ") || "none"}`,
+            `- **Replay dispatch:** ${replay ? escapeLedgerText(replay.id) : "pending"}`,
+            `- **Regenerated artifact:** ${
+                artifact ? `${record.phase} (${artifact.validity})` : `${record.phase} (missing)`
+            }`,
+            "",
+            "### Question",
+            "",
+            `<pre>${escapeLedgerText(record.prompt)}</pre>`,
+            "",
+            "### Answer",
+            "",
+            answer,
+        ].join("\n")
+    })
+
+    await writeTextAtomic(
+        directory,
+        change,
+        "questions.md",
+        [
+            "# SpecOps Questions",
+            "",
+            "Controller-recorded worker questions and the user decisions used to regenerate phases.",
+            "",
+            ...sections,
+        ].join("\n\n"),
+    )
+}
+
+/** Escape untrusted text before placing it inside an HTML block in markdown. */
+function escapeLedgerText(value: string): string {
+    return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 }

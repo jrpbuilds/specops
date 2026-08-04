@@ -615,10 +615,12 @@ async function runOpenCodeSmoke(
             {
                 plugin: [pluginEntry],
                 mcp: {
+                    // The server must be enabled so registerManifestAgents produces
+                    // the example_* allow rule that the worker permission smoke below asserts.
                     example: {
                         type: "local",
                         command: ["node", "-e", ""],
-                        enabled: false,
+                        enabled: true,
                     },
                 },
             },

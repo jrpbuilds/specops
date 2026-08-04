@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reorganized the workflow engine internals into focused modules (startup, directive issuance, completion, finalization, archive, interactive, questions, run state, artifacts, writer guards) behind the same public API. No change to run behavior or tooling.
+
+### Fixed
+
+- Release validation now reliably reflects configured MCP permissions: the OpenCode integration smoke test uses an enabled example server so the expected `example_*` allow rule is present, matching the documented behavior.
+
 ## [0.16.2] - 2026-08-03
 
 ### Changed
