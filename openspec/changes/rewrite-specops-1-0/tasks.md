@@ -61,17 +61,17 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 5. Phase 4 — Planning workflow vertical slice
 
-- [ ] 5.1 Create `src/workflow/coordinator.ts` for run creation (OpenSpec compat + schema check, change creation/identification, baseline capture, exploration start)
-- [ ] 5.2 Create `src/workflow/stages.ts` for stage transitions
-- [ ] 5.3 Create `src/workflow/planning.ts` for proposal → specs → design → tasks orchestration with OpenSpec readiness queries and instructions passed to owning agents
-- [ ] 5.4 Implement exploration: coordinator dispatches explorer read-only; verify `.specops/runs/<change>/exploration.md` exists and is non-empty
-- [ ] 5.5 Implement the artifact correction loop (initial write + up to two corrections; exact OpenSpec errors returned to the owning agent; exhaustion pause with retry/switch model/edit manually/cancel; TypeScript never rewrites artifact content)
-- [ ] 5.6 Create `src/workflow/questions.ts` for material-question policy (permitted vs prohibited); route worker blockers to the coordinator; use OpenCode native `question`
-- [ ] 5.7 Create `src/workflow/checkpoints.ts` for the single planning checkpoint (Continue / Request planning changes / Cancel) with feedback routing and revalidation
-- [ ] 5.8 Implement the presentation-only planning overview
-- [ ] 5.9 Update `src/commands.ts` so `/specops` starts/resumes a run via the coordinator
-- [ ] 5.10 Write `tests/planning-workflow.test.ts` with fake agent runners and fake adapter responses (run creation, exploration, readiness, each artifact, valid first attempt, correction success/exhaustion, manual-edit revalidation, model-switch retry, material and prohibited questions, overview, continue, feedback on each artifact, cancellation, resume from each planning boundary)
-- [ ] 5.11 Verify Phase 4: a user can run `/specops`; valid standard OpenSpec planning artifacts are produced; invalid artifacts are corrected not immediately failed; exactly one planning checkpoint is presented
+- [x] 5.1 Create `src/workflow/coordinator.ts` for run creation (OpenSpec compat + schema check, change creation/identification, baseline capture, exploration start)
+- [x] 5.2 Create `src/workflow/stages.ts` for stage transitions
+- [x] 5.3 Create `src/workflow/planning.ts` for proposal → specs → design → tasks orchestration with OpenSpec readiness queries and instructions passed to owning agents
+- [x] 5.4 Implement exploration: coordinator dispatches explorer read-only; verify `.specops/runs/<change>/exploration.md` exists and is non-empty
+- [x] 5.5 Implement the artifact correction loop (initial write + up to two corrections; exact OpenSpec errors returned to the owning agent; exhaustion pause with retry/switch model/edit manually/cancel; TypeScript never rewrites artifact content)
+- [x] 5.6 Create `src/workflow/questions.ts` for material-question policy (permitted vs prohibited); route worker blockers to the coordinator; use OpenCode native `question`
+- [x] 5.7 Create `src/workflow/checkpoints.ts` for the single planning checkpoint (Continue / Request planning changes / Cancel) with feedback routing and revalidation
+- [x] 5.8 Implement the presentation-only planning overview
+- [x] 5.9 Update `src/commands.ts` so `/specops` starts/resumes a run via the coordinator
+- [x] 5.10 Write `tests/planning-workflow.test.ts` with fake agent runners and fake adapter responses (run creation, exploration, readiness, each artifact, valid first attempt, correction success/exhaustion, manual-edit revalidation, model-switch retry, material and prohibited questions, overview, continue, feedback on each artifact, cancellation, resume from each planning boundary)
+- [x] 5.11 Verify Phase 4: a user can run `/specops`; valid standard OpenSpec planning artifacts are produced; invalid artifacts are corrected not immediately failed; exactly one planning checkpoint is presented
 
 ## 6. Phase 5 — Implementation and project validation
 
