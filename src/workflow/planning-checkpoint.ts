@@ -1,5 +1,10 @@
 import type { RunState } from "../state/schema.js"
 import { cancelV1Run, updateV1Run } from "../state/store.js"
+import {
+    acceptValidationCommands,
+    type AcceptedValidationCommands,
+} from "../validation/commands.js"
+import { runImplementation, type ImplementationResult } from "./implementation.js"
 import type { PlanningArtifact } from "./stages.js"
 import {
     applyPlanningFeedback,
@@ -16,7 +21,7 @@ export type PlanningOverview = {
 
 /** The only actions available at the planning checkpoint. */
 export type PlanningCheckpointAction =
-    | { kind: "continue" }
+    | { kind: "continue"; acceptedRecommendationIds?: string[] }
     | { kind: "request-changes"; feedback: Partial<Record<PlanningArtifact, string>> }
     | { kind: "cancel"; reason?: string }
 
@@ -35,18 +40,38 @@ export async function resolvePlanningCheckpoint(
     state: RunState,
     action: PlanningCheckpointAction,
 ): Promise<
-    PlanningResult | { kind: "continued"; state: RunState } | { kind: "cancelled"; state: RunState }
+    | { kind: "continued"; state: RunState; commands: AcceptedValidationCommands }
+    | { kind: "cancelled"; state: RunState }
+    | PlanningResult
+    | ImplementationResult
 > {
     if (state.status !== "awaiting-user" || state.stage !== "implementation") {
         throw new Error("planning checkpoint is not pending")
     }
     if (action.kind === "continue") {
+        const commands = acceptValidationCommands(
+            options.validationCommands ?? [],
+            options.validationRecommendations ?? [],
+            action.acceptedRecommendationIds ?? [],
+        )
         const next = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "active",
             stage: "implementation",
+            acceptedValidationRecommendationIds: commands.acceptedRecommendationIds,
         }))
-        return { kind: "continued", state: next }
+        if (options.implementation) {
+            return runImplementation(
+                {
+                    ...options.implementation,
+                    directory: options.directory,
+                    adapter: options.adapter,
+                    commands,
+                },
+                next,
+            )
+        }
+        return { kind: "continued", state: next, commands }
     }
     if (action.kind === "cancel") {
         return { kind: "cancelled", state: await cancelV1Run(options.directory, state.change) }

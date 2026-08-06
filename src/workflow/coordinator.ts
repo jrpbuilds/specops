@@ -13,6 +13,11 @@ import {
     type PlanningOpenSpecAdapter,
     type PlanningResult,
 } from "./planning.js"
+import {
+    runImplementation,
+    type ImplementationResult,
+    type ImplementationWorkflowOptions,
+} from "./implementation.js"
 
 /** Adapter contract consumed by the coordinator and intentionally fake-friendly. */
 export type CoordinatorOpenSpecAdapter = PlanningOpenSpecAdapter & {
@@ -37,6 +42,7 @@ export type CoordinatorOptions = {
     adapter: CoordinatorOpenSpecAdapter
     explorer: ExplorerRunner
     planners: PlanningAgentRunner
+    implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">
     captureBaseline?: (directory: string) => Promise<RepositoryBaseline>
     recover?: (
         directory: string,
@@ -46,7 +52,7 @@ export type CoordinatorOptions = {
 }
 
 /** Result returned at the next coordinator-owned planning boundary. */
-export type CoordinatorResult = PlanningResult & { resumed: boolean }
+export type CoordinatorResult = (PlanningResult | ImplementationResult) & { resumed: boolean }
 
 /** Start a standard OpenSpec change or resume its persisted coarse V1 planning boundary. */
 export async function startOrResumePlanning(
@@ -79,7 +85,7 @@ export async function startOrResumePlanning(
 async function runWithOperationalFailure(
     options: CoordinatorOptions,
     state: RunState,
-): Promise<PlanningResult> {
+): Promise<PlanningResult | ImplementationResult> {
     try {
         return await resumePlanning(options, state)
     } catch (error) {
@@ -102,7 +108,7 @@ async function runWithOperationalFailure(
 async function resumePlanning(
     options: CoordinatorOptions,
     state: Awaited<ReturnType<typeof readV1Run>>,
-): Promise<PlanningResult> {
+): Promise<PlanningResult | ImplementationResult> {
     if (state.stage === "exploration") {
         await options.explorer.run({
             agent: AGENT_IDS.explorer,
@@ -117,8 +123,27 @@ async function resumePlanning(
             stage: "proposal",
         }))
     }
+    if (
+        options.implementation &&
+        state.status === "active" &&
+        (state.stage === "implementation" || state.stage === "validation")
+    ) {
+        return runImplementation(
+            {
+                ...options.implementation,
+                directory: options.directory,
+                adapter: options.adapter,
+            },
+            state,
+        )
+    }
     return runPlanning(
-        { directory: options.directory, adapter: options.adapter, agents: options.planners },
+        {
+            directory: options.directory,
+            adapter: options.adapter,
+            agents: options.planners,
+            implementation: options.implementation,
+        },
         state,
     )
 }

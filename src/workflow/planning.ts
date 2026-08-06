@@ -4,6 +4,8 @@ import type { OpenSpecChangeStatus } from "../openspec/status.js"
 import type { OpenSpecValidationResult } from "../openspec/validation.js"
 import type { RunState } from "../state/schema.js"
 import { updateV1Run } from "../state/store.js"
+import type { ValidationCommand, ValidationRecommendation } from "../validation/registry.js"
+import type { ImplementationWorkflowOptions } from "./implementation.js"
 import {
     isPlanningArtifact,
     nextPlanningStage,
@@ -46,6 +48,9 @@ export type PlanningWorkflowOptions = {
     directory: string
     adapter: PlanningOpenSpecAdapter
     agents: PlanningAgentRunner
+    validationCommands?: ValidationCommand[]
+    validationRecommendations?: ValidationRecommendation[]
+    implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter" | "commands">
 }
 
 /** Result at a planning boundary, suitable for a coordinator/native UI. */

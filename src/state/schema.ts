@@ -43,6 +43,7 @@ export type RunState = {
     currentRepositoryState: string
     validatedRepositoryState: string | null
     reviewedRepositoryState: string | null
+    acceptedValidationRecommendationIds: string[]
     artifactCorrectionAttempts: Partial<Record<"proposal" | "specs" | "design" | "tasks", number>>
     repairAttempts: number
     failure: RunFailure | null
@@ -93,6 +94,7 @@ const RUN_STATE_FIELDS = new Set([
     "currentRepositoryState",
     "validatedRepositoryState",
     "reviewedRepositoryState",
+    "acceptedValidationRecommendationIds",
     "artifactCorrectionAttempts",
     "repairAttempts",
     "failure",
@@ -120,6 +122,7 @@ export function createRunState(input: CreateRunStateInput): RunState {
         currentRepositoryState: input.baselineRepositoryState,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        acceptedValidationRecommendationIds: [],
         artifactCorrectionAttempts: {},
         repairAttempts: 0,
         failure: null,
@@ -159,6 +162,9 @@ export function assertRunState(state: RunState): RunState {
     }
     if (!isCorrectionAttempts(state.artifactCorrectionAttempts)) {
         throw new Error("invalid SpecOps V1 artifact correction attempts")
+    }
+    if (!isRecommendationIds(state.acceptedValidationRecommendationIds)) {
+        throw new Error("invalid SpecOps V1 accepted validation recommendations")
     }
     if (!isNonNegativeInteger(state.repairAttempts)) {
         throw new Error("invalid SpecOps V1 repair attempts")
@@ -215,6 +221,15 @@ function isCorrectionAttempts(value: unknown): boolean {
         Object.entries(value).every(
             ([stage, attempts]) => ARTIFACT_STAGES.has(stage) && isNonNegativeInteger(attempts),
         )
+    )
+}
+
+/** Return whether accepted recommendation ids are unique safe command ids. */
+function isRecommendationIds(value: unknown): value is string[] {
+    return (
+        Array.isArray(value) &&
+        value.every(id => typeof id === "string" && /^[a-z0-9][a-z0-9-]{0,127}$/.test(id)) &&
+        new Set(value).size === value.length
     )
 }
 

@@ -23,6 +23,7 @@ import { createV1Run, readV1Run, updateV1Run } from "../src/state/store.js"
 import type { OpenSpecChangeStatus } from "../src/openspec/status.js"
 import type { OpenSpecValidationResult } from "../src/openspec/validation.js"
 import { OpenSpecOperationalError } from "../src/openspec/errors.js"
+import type { ValidationCommand, ValidationRecommendation } from "../src/validation/registry.js"
 
 const identity = "a".repeat(64)
 const change = "planning-test"
@@ -307,6 +308,45 @@ describe("V1 planning workflow", () => {
             { kind: "continue" },
         )
         expect(continued).toMatchObject({ kind: "continued", state: { stage: "implementation" } })
+    })
+
+    it("persists only explicitly accepted explorer validation recommendations at the planning checkpoint", async () => {
+        const configured: ValidationCommand = {
+            id: "typecheck",
+            executable: "node",
+            args: ["--version"],
+            timeoutMs: 1_000,
+            maxOutputBytes: 1_024,
+        }
+        const recommended: ValidationRecommendation = {
+            ...configured,
+            id: "test",
+            source: "explorer",
+        }
+        const context = await options(await directory())
+        const checkpoint = await startOrResumePlanning(context, {
+            change,
+            goal: "Plan the feature",
+        })
+        if (checkpoint.kind !== "checkpoint") throw new Error("expected checkpoint")
+
+        const continued = await resolvePlanningCheckpoint(
+            {
+                directory: context.directory,
+                adapter: context.adapter,
+                agents: context.planners,
+                validationCommands: [configured],
+                validationRecommendations: [recommended],
+            },
+            checkpoint.state,
+            { kind: "continue", acceptedRecommendationIds: [recommended.id] },
+        )
+
+        expect(continued).toMatchObject({
+            kind: "continued",
+            commands: { required: [configured, recommended] },
+            state: { acceptedValidationRecommendationIds: [recommended.id] },
+        })
     })
 
     it("routes feedback to each selected owner, revalidates, and re-presents the checkpoint", async () => {
