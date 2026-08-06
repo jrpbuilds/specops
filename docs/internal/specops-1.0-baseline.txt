@@ -1,0 +1,35 @@
+
+added 173 packages, and audited 174 packages in 2s
+
+53 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm warn allow-scripts 3 packages have install scripts not yet covered by allowScripts:
+npm warn allow-scripts   @fission-ai/openspec@1.7.0 (postinstall: node scripts/postinstall.js)
+npm warn allow-scripts   esbuild@0.28.1 (postinstall: node install.js)
+npm warn allow-scripts   msgpackr-extract@3.0.4 (install: node-gyp-build-optional-packages)
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+
+> @jrpbuilds/specops@0.16.2 check
+> npm run format:check && npm run generated:check && npm run typecheck && npm run deadcode:check && npm run test && npm run test:packed && npm run validate:openspec && npm run docs:check
+
+
+> @jrpbuilds/specops@0.16.2 format:check
+> prettier --check .
+
+Checking formatting...
+[warn] .opencode/commands/opsx-apply.md
+[warn] .opencode/commands/opsx-archive.md
+[warn] .opencode/commands/opsx-explore.md
+[warn] .opencode/commands/opsx-propose.md
+[warn] .opencode/commands/opsx-sync.md
+[warn] .opencode/commands/opsx-update.md
+[warn] .opencode/skills/openspec-apply-change/SKILL.md
+[warn] .opencode/skills/openspec-archive-change/SKILL.md
+[warn] .opencode/skills/openspec-explore/SKILL.md
+[warn] .opencode/skills/openspec-propose/SKILL.md
+[warn] .opencode/skills/openspec-sync-specs/SKILL.md
+[warn] .opencode/skills/openspec-update-change/SKILL.md
+[warn] Code style issues found in 12 files. Run Prettier with --write to fix.
