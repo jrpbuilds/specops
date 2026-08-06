@@ -98,7 +98,7 @@ This installs the final Lean, Standard, and Full schemas in the current project.
 a source checkout with:
 
 ```bash
-npm run validate:openspec
+npm run test:openspec:compat
 ```
 
 SpecOps does not install obsolete schemas or migrate old run formats.

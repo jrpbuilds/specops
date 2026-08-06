@@ -20,15 +20,13 @@
     "files": [
         "dist",
         "examples",
-        "schemas",
         "README.md",
         "LICENSE"
     ],
     "scripts": {
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "generate": "npm run build && node scripts/generate-contracts.mjs && npm run build && node scripts/generate-docs.mjs && npm run format",
-        "generated:check": "npm run build && node scripts/check-generated.mjs",
+        "generate": "npm run build && node scripts/generate-docs.mjs && npm run format",
         "build": "node scripts/clean.mjs && tsc",
         "clean:specops": "node scripts/clean-specops-cache.mjs",
         "prepublishOnly": "npm run build",
@@ -38,10 +36,10 @@
         "smoke:opencode": "npm run build && SPECOPS_OPENCODE_SMOKE=1 node scripts/test-packed-install.mjs",
         "eval:review-fixer": "node scripts/evaluate-review-fixer.mjs",
         "onboard": "node scripts/onboard.mjs",
-        "validate:openspec": "npm run onboard && openspec schema validate specops-lean && openspec schema validate specops-standard && openspec schema validate specops",
+        "test:openspec:compat": "npx --yes @fission-ai/openspec@1.7.0 schemas --json && npx --yes @fission-ai/openspec@1.7.0 validate rewrite-specops-1-0 --strict",
         "docs:check": "node scripts/check-doc-links.mjs && node scripts/check-compatibility.mjs",
         "deadcode:check": "knip",
-        "check": "npm run format:check && npm run generated:check && npm run typecheck && npm run deadcode:check && npm run test && npm run test:packed && npm run validate:openspec && npm run docs:check"
+        "check": "npm run format:check && npm run typecheck && npm run deadcode:check && npm run test && npm run test:packed && npm run test:openspec:compat && npm run docs:check"
     },
     "keywords": [
         "opencode",

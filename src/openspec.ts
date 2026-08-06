@@ -2,23 +2,15 @@
  * OpenSpec integration helpers: configuration, change lifecycle, schema
  * onboarding, and artifact persistence.
  *
- * Every OpenSpec invocation is shell-free and runs through {@link runProcess}
- * with a deliberately narrow environment.
+ * Every OpenSpec invocation is shell-free and runs through {@link OpenSpecAdapter}.
  */
 
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
-import { createRequire } from "node:module"
+import { readFile, readdir, stat } from "node:fs/promises"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { type SpecOpsConfig, resolveConfig } from "./config.js"
-import { runProcess } from "./git.js"
+import { OpenSpecAdapter } from "./openspec/adapter.js"
 import { writeTextAtomic } from "./state/store.js"
 import { redactSensitiveText } from "./security/redact.js"
-
-// `openspec.ts` is emitted directly into `dist`, so one parent reaches the package root in both
-// source and packed layouts. Keeping this package-relative avoids source-checkout path leakage.
-const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const require = createRequire(import.meta.url)
 
 /** OpenSpec subcommands that do not create, modify, or archive project state. */
 export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
@@ -64,20 +56,8 @@ async function runOpenSpec(
     args: string[],
     signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-    const command = config.openspec.command?.[0] ?? "node"
-    const prefix = config.openspec.command?.slice(1) ?? [openSpecBinary()]
-    const result = await runProcess(
-        command,
-        [...prefix, ...args, "--no-color"],
-        directory,
-        signal,
-        {
-            PATH: process.env.PATH ?? "",
-            NO_COLOR: "1",
-            OPENSPEC_TELEMETRY: "0",
-        },
-    )
-    return result
+    void signal
+    return new OpenSpecAdapter({ directory, command: config.openspec.command }).execute(args)
 }
 
 /**
@@ -107,22 +87,10 @@ export async function openSpecOrThrow(
  * @param directory - Project root directory.
  */
 export async function onboard(directory: string): Promise<void> {
-    const openSpecDirectory = path.join(directory, "openspec")
-    await mkdir(path.join(openSpecDirectory, "changes"), { recursive: true })
-    await mkdir(path.join(openSpecDirectory, "specs"), { recursive: true })
-    for (const schema of ["specops-lean", "specops-standard", "specops"]) {
-        const target = path.join(openSpecDirectory, "schemas", schema)
-        await mkdir(target, { recursive: true })
-        await copyMissing(path.join(PACKAGE_ROOT, "schemas", schema), target)
-    }
-
-    try {
-        await stat(path.join(openSpecDirectory, "config.yaml"))
-    } catch {
-        await writeFile(
-            path.join(openSpecDirectory, "config.yaml"),
-            "schema: specops\nrules:\n  verification:\n    - Record only registry-backed commands.\n",
-        )
+    await new OpenSpecAdapter({ directory }).initialize()
+    const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8")
+    if (!/^schema:\s*spec-driven\s*$/m.test(config)) {
+        throw new Error("OpenSpec onboarding did not create a spec-driven project")
     }
 }
 
@@ -133,8 +101,7 @@ export async function onboard(directory: string): Promise<void> {
  * @param config - Resolved config used to locate the binary.
  * @param change - Unique change identifier (filesystem-safe slug).
  * @param goal - Human-readable change goal passed to `--goal`.
- * @param tier - Scope tier that selects the schema (`lean` → `specops-lean`,
- * `standard` → `specops-standard`, `full` → `specops`).
+ * @param _tier - Legacy caller input; every new change uses standard `spec-driven`.
  * @throws If the `openspec new change` invocation fails.
  */
 export async function createChange(
@@ -142,20 +109,12 @@ export async function createChange(
     config: SpecOpsConfig,
     change: string,
     goal: string,
-    tier: "lean" | "standard" | "full",
+    _tier: "lean" | "standard" | "full",
 ): Promise<void> {
-    const schema =
-        tier === "lean" ? "specops-lean" : tier === "standard" ? "specops-standard" : "specops"
-    await openSpecOrThrow(directory, config, [
-        "new",
-        "change",
+    await new OpenSpecAdapter({ directory, command: config.openspec.command }).createChange(
         change,
-        "--schema",
-        schema,
-        "--goal",
         goal,
-        "--json",
-    ])
+    )
 }
 
 /**
@@ -179,11 +138,9 @@ export async function archiveChange(
     directory: string,
     config: SpecOpsConfig,
     change: string,
-    skipSpecs: boolean,
+    _skipSpecs: boolean,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-    const args = ["archive", change, "--json", "--yes"]
-    if (skipSpecs) args.push("--skip-specs")
-    return runOpenSpec(directory, config, args)
+    return new OpenSpecAdapter({ directory, command: config.openspec.command }).archive(change)
 }
 
 /**
@@ -358,38 +315,5 @@ export async function uniqueChangeName(directory: string, goal: string): Promise
         return `${uniqueBase}${suffix}`
     } catch {
         return base
-    }
-}
-
-/**
- * Resolve the path to the bundled OpenSpec binary by following the
- * `@fission-ai/openspec` package entry point to its sibling `bin` directory.
- * @returns Absolute path to the bundled `openspec.js` launcher.
- */
-function openSpecBinary(): string {
-    const entry = require.resolve("@fission-ai/openspec")
-    return path.resolve(path.dirname(entry), "..", "bin", "openspec.js")
-}
-
-/**
- * Recursively copy a directory tree into a target, skipping files that already
- * exist at the destination so prior user edits are preserved.
- * @param source - Absolute path to the source directory.
- * @param target - Absolute path to the target directory.
- */
-async function copyMissing(source: string, target: string): Promise<void> {
-    for (const entry of await readdir(source, { withFileTypes: true })) {
-        const from = path.join(source, entry.name)
-        const to = path.join(target, entry.name)
-        if (entry.isDirectory()) {
-            await mkdir(to, { recursive: true })
-            await copyMissing(from, to)
-            continue
-        }
-        try {
-            await stat(to)
-        } catch {
-            await copyFile(from, to)
-        }
     }
 }

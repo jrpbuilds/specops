@@ -66,7 +66,7 @@ Run a focused loop while editing:
 
 ```bash
 npm test
-npm run validate:openspec
+npm run test:openspec:compat
 ```
 
 Vitest covers scheduler behavior, command/controller consistency, manifest replacement, plugin
