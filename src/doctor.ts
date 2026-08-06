@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
@@ -439,25 +439,21 @@ function checkPrompts(diagnostics: Diagnostic[]): void {
 }
 
 /**
- * Verify the OpenSpec schemas for the `specops-lean`, `specops-standard`, and
- * `specops` tiers are installed in `<directory>/openspec/schemas/<tier>`.
- *
- * Pushes one `PASS` or `FAIL` diagnostic per schema.
+ * Verify the project uses the standard upstream `spec-driven` schema.
  *
  * @param directory - Project directory where the schemas are expected.
  * @param diagnostics - Shared diagnostic accumulator.
  */
 async function checkOpenSpecAssets(directory: string, diagnostics: Diagnostic[]): Promise<void> {
-    for (const schema of ["specops-lean", "specops-standard", "specops"]) {
-        try {
-            await stat(path.join(directory, "openspec", "schemas", schema, "schema.yaml"))
-            diagnostics.push({ status: "PASS", message: `OpenSpec schema installed: ${schema}` })
-        } catch {
-            diagnostics.push({
-                status: "FAIL",
-                message: `OpenSpec schema is missing: ${schema}`,
-                repair: "Run /specops-onboard in this repository.",
-            })
-        }
+    try {
+        const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8")
+        if (!/^schema:\s*spec-driven\s*$/m.test(config)) throw new Error("unsupported schema")
+        diagnostics.push({ status: "PASS", message: "OpenSpec project uses spec-driven" })
+    } catch {
+        diagnostics.push({
+            status: "FAIL",
+            message: "OpenSpec project is not configured for spec-driven",
+            repair: "Run /specops-onboard in this repository.",
+        })
     }
 }

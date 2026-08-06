@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, readdir } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { OpenSpecAdapter } from "../src/openspec/adapter.js"
 import {
@@ -6,6 +9,7 @@ import {
     UnsupportedOpenSpecSchemaError,
 } from "../src/openspec/errors.js"
 import type { ProcessResult } from "../src/process.js"
+import { onboard } from "../src/openspec.js"
 
 const result = (stdout: string, code = 0, stderr = ""): ProcessResult => ({
     stdout,
@@ -45,6 +49,17 @@ function adapter(responses: Record<string, ProcessResult>): OpenSpecAdapter {
 }
 
 describe("OpenSpecAdapter", () => {
+    it("initializes a standard project without copying custom schemas", async () => {
+        const directory = await mkdtemp(path.join(os.tmpdir(), "specops-onboard-"))
+        await onboard(directory)
+        await onboard(directory)
+        await expect(
+            readFile(path.join(directory, "openspec", "config.yaml"), "utf8"),
+        ).resolves.toMatch(/^schema:\s*spec-driven\s*$/m)
+        await expect(readdir(path.join(directory, "openspec", "schemas"))).rejects.toMatchObject({
+            code: "ENOENT",
+        })
+    })
     it("accepts 1.7 and rejects unsupported or malformed versions", async () => {
         await expect(adapter({ "--version": result("1.7.4\n") }).version()).resolves.toBe("1.7.4")
         await expect(adapter({ "--version": result("1.6.9\n") }).version()).rejects.toBeInstanceOf(

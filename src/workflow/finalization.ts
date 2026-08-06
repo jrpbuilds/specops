@@ -170,22 +170,14 @@ async function finalizeRunLocked(
 
     try {
         await openSpecOrThrow(directory, config, ["status", "--change", change, "--json"])
-        if (state.scopeTier === "lean") {
-            // Lean intentionally has no specification deltas, so the classic
-            // change validator rejects a valid compact run. Validate its
-            // custom artifact schema instead; controller gates above already
-            // enforce the concrete change artifacts and command evidence.
-            await openSpecOrThrow(directory, config, ["schema", "validate", "specops-lean"])
-        } else {
-            await openSpecOrThrow(directory, config, [
-                "validate",
-                change,
-                "--type",
-                "change",
-                "--strict",
-                "--no-interactive",
-            ])
-        }
+        await openSpecOrThrow(directory, config, [
+            "validate",
+            change,
+            "--type",
+            "change",
+            "--strict",
+            "--no-interactive",
+        ])
     } catch (error) {
         setOutcome(state, "failed", "validation-failed", String(error))
         await writeRun(directory, change, state)
