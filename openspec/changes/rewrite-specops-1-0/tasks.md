@@ -4,8 +4,8 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 1. Phase 0 — Baseline and rewrite guardrails
 
-- [ ] 1.1 Branch `rewrite/specops-1.0` off `main`; do not merge `feature/v1-rework`
-- [ ] 1.2 In a separate temporary clone of `main`, capture `npm install && npm run check && npm run smoke:opencode` output to `docs/internal/specops-1.0-baseline.txt` (do not run the legacy check pipeline in the rewrite workspace)
+- [ ] 1.1 Verify the current branch is `master` and the working tree is clean; create the immutable `pre-specops-1.0-rewrite` tag at the commit immediately before rewrite implementation unless it already exists at that commit; do not push the tag or any commits
+- [ ] 1.2 In a separate temporary clone or temporary Git worktree created from `pre-specops-1.0-rewrite`, capture `npm install && npm run check && npm run smoke:opencode` output to `docs/internal/specops-1.0-baseline.txt` (do not run the legacy check pipeline in the active `master` workspace)
 - [ ] 1.3 Commit the approved `SpecOps 1.0 Technical Specification` verbatim at `docs/specops-1.0-technical-spec.md`
 - [ ] 1.4 Write the legacy architecture inventory at `docs/internal/specops-1.0-legacy-inventory.md` (commands, tools, agents, schemas, workflow modules, generated files, scripts, state files, config fields, tests, reusable utils, deletion candidates)
 - [x] 1.5 Initialise the fresh standard `openspec/` project via `openspec init --tools opencode`; confirm `openspec/config.yaml` uses `spec-driven`; commit the tracked project

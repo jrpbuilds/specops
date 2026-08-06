@@ -2,7 +2,7 @@
 
 SpecOps 0.x (`@jrpbuilds/specops@0.16.2`) ships a 24-agent capability registry, three custom OpenSpec schemas (`specops`, `specops-lean`, `specops-standard`), a generated wire-contract protocol (`src/prompts.generated.ts`, `scripts/generate-contracts.mjs`), a dispatch scheduler (`src/workflow/scheduler.ts`, `engine.ts`, `directive.ts`, `actions.ts`), and a review tribunal (`src/escalation/`, `src/frontier/`, `src/routing/`, correctness/compliance judges, refuter). See `proposal.md - Why` for motivation.
 
-The rewrite is performed on a dedicated `rewrite/specops-1.0` branch off `main`. The existing 0.x architecture is what is being rewritten; the design is not anchored to any incidental maintenance branch. Reusable, dependency-free utilities to carry forward: `src/git.ts runProcess` (shell-free), `src/security/redact.ts`, the atomic-write primitives inside `src/state/store.ts`, and the model-selection TUI in `src/tui.ts` (after the role list is trimmed to seven). OpenSpec 1.7.0 is already pinned (`@fission-ai/openspec@1.7.0`); its JSON surface has been verified for `--version`, `schemas --json`, `status --change <id> --json`, `instructions <artifact> --change <id> --json`, `validate [item] --json`, `archive <change> --json -y`, and `init --tools opencode`.
+The rewrite is performed directly on `master`, with the immutable `pre-specops-1.0-rewrite` tag preserving the pre-implementation baseline. The existing 0.x architecture is what is being rewritten; the design is not anchored to any incidental maintenance branch. Reusable, dependency-free utilities to carry forward: `src/git.ts runProcess` (shell-free), `src/security/redact.ts`, the atomic-write primitives inside `src/state/store.ts`, and the model-selection TUI in `src/tui.ts` (after the role list is trimmed to seven). OpenSpec 1.7.0 is already pinned (`@fission-ai/openspec@1.7.0`); its JSON surface has been verified for `--version`, `schemas --json`, `status --change <id> --json`, `instructions <artifact> --change <id> --json`, `validate [item] --json`, `archive <change> --json -y`, and `init --tools opencode`.
 
 The repository's `openspec/` tree was deleted by the user (it contained obsolete testing changes and custom SpecOps schemas) and is no longer gitignored; a fresh standard `spec-driven` project has been initialised and tracked, and the `rewrite-specops-1-0` change exists in it.
 
@@ -29,7 +29,7 @@ The repository's `openspec/` tree was deleted by the user (it contained obsolete
 
 The legacy `npm run check` pipeline invokes `validate:openspec` → `npm run onboard`, which regenerates obsolete custom OpenSpec schemas (`specops`, `specops-lean`, `specops-standard`) into `openspec/`. Running it inside the rewrite workspace would re-introduce the very schemas the rewrite deletes and would conflict with the fresh tracked standard `openspec/` project.
 
-**Chosen:** Capture the Phase 0 baseline (`npm install && npm run check && npm run smoke:opencode`) in a **separate temporary worktree or clone** of `main` (`docs/internal/specops-1.0-baseline.txt`). The rewrite workspace never runs the legacy `check` pipeline; it adopts the new pipeline as it lands.
+**Chosen:** Capture the Phase 0 baseline (`npm install && npm run check && npm run smoke:opencode`) in a **separate temporary worktree or clone** created from `pre-specops-1.0-rewrite` (`docs/internal/specops-1.0-baseline.txt`). The active `master` workspace never runs the legacy `check` pipeline; it adopts the new pipeline as it lands.
 
 **Alternatives considered:** Disable `validate:openspec` before baseline (rejected — would not capture the true legacy state); run baseline then delete regenerated `openspec/` (rejected — risks leaving stale artifacts in the rewrite workspace).
 
@@ -113,8 +113,8 @@ Repository inspection of the installed `@opencode-ai/plugin` API confirms the `p
 
 ## Migration Plan
 
-1. Branch `rewrite/specops-1.0` off `main`.
-2. Capture legacy baseline in a separate clone; commit `docs/specops-1.0-technical-spec.md` verbatim and the legacy inventory.
+1. Verify `master` is clean and create the immutable local `pre-specops-1.0-rewrite` tag before implementation.
+2. Capture legacy baseline in a separate clone or worktree from `pre-specops-1.0-rewrite`; commit `docs/specops-1.0-technical-spec.md` verbatim and the legacy inventory.
 3. Initialise the fresh standard `openspec/` and author the `rewrite-specops-1-0` change (this document and its siblings).
 4. Land phases incrementally; each phase ends with formatting, typecheck, relevant tests, and a reviewable commit.
 5. Temporary adapters inside the branch are allowed to keep tests compiling, but the final product exposes only the V1 workflow.
