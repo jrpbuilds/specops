@@ -1,8 +1,8 @@
-import { asObject, assertKeys, isOneOf, positiveInteger } from "./fields.js"
-import type { RiskFacet } from "../types.js"
-import type { SpecOpsConfig } from "../config.js"
+import { asObject, assertKeys, isOneOf, positiveInteger } from "./fields.js";
+import type { RiskFacet } from "../types.js";
+import type { SpecOpsConfig } from "../config.js";
 // The legacy parser uses the canonical severity set from contracts.
-import { SEVERITIES } from "../workflow/contracts.js"
+import { SEVERITIES } from "../workflow/contracts.js";
 
 /** Set of valid {@link RiskFacet} values, used to validate routing overrides. */
 const RISK_FACETS = new Set<RiskFacet>([
@@ -16,7 +16,7 @@ const RISK_FACETS = new Set<RiskFacet>([
     "migration",
     "usability",
     "maintainability",
-])
+]);
 
 /**
  * Run the common section spine: narrow `value` to a plain object, reject
@@ -37,9 +37,9 @@ function parseSection<T>(
     allowedKeys: readonly string[],
     build: (source: Record<string, unknown>, name: string) => T,
 ): T {
-    const source = asObject(value, name)
-    assertKeys(source, allowedKeys, name)
-    return build(source, name)
+    const source = asObject(value, name);
+    assertKeys(source, allowedKeys, name);
+    return build(source, name);
 }
 
 /**
@@ -56,10 +56,10 @@ export function parseRouting(value: unknown): SpecOpsConfig["routing"] {
             !Array.isArray(source.forceFullForFacets) ||
             source.forceFullForFacets.some(facet => !RISK_FACETS.has(String(facet) as RiskFacet))
         ) {
-            throw new Error("invalid SpecOps configuration field: routing.forceFullForFacets")
+            throw new Error("invalid SpecOps configuration field: routing.forceFullForFacets");
         }
-        return { forceFullForFacets: source.forceFullForFacets as RiskFacet[] }
-    })
+        return { forceFullForFacets: source.forceFullForFacets as RiskFacet[] };
+    });
 }
 
 /**
@@ -72,10 +72,10 @@ export function parseRouting(value: unknown): SpecOpsConfig["routing"] {
 export function parseAutomation(value: unknown): SpecOpsConfig["automation"] {
     return parseSection(value, "automation", ["requireCleanWorktree"], source => {
         if (typeof source.requireCleanWorktree !== "boolean") {
-            throw new Error("invalid SpecOps configuration field: automation.requireCleanWorktree")
+            throw new Error("invalid SpecOps configuration field: automation.requireCleanWorktree");
         }
-        return { requireCleanWorktree: source.requireCleanWorktree }
-    })
+        return { requireCleanWorktree: source.requireCleanWorktree };
+    });
 }
 
 /**
@@ -89,10 +89,10 @@ export function parseAutomation(value: unknown): SpecOpsConfig["automation"] {
 export function parseIntegrations(value: unknown): SpecOpsConfig["integrations"] {
     return parseSection(value, "integrations", ["mcp"], source => {
         if (!isOneOf(source.mcp, ["allow", "disabled"])) {
-            throw new Error("invalid SpecOps configuration field: integrations.mcp")
+            throw new Error("invalid SpecOps configuration field: integrations.mcp");
         }
-        return { mcp: source.mcp }
-    })
+        return { mcp: source.mcp };
+    });
 }
 
 /**
@@ -105,7 +105,7 @@ export function parseIntegrations(value: unknown): SpecOpsConfig["integrations"]
  */
 export function parseEscalation(value: unknown): SpecOpsConfig["escalation"] {
     return parseSection(value, "escalation", ["budgets"], source => {
-        const budget = asObject(source.budgets, "escalation.budgets")
+        const budget = asObject(source.budgets, "escalation.budgets");
         assertKeys(
             budget,
             [
@@ -115,7 +115,7 @@ export function parseEscalation(value: unknown): SpecOpsConfig["escalation"] {
                 "maxRepeatedFailureFingerprints",
             ],
             "escalation.budgets",
-        )
+        );
         return {
             budgets: {
                 maxScopeEscalations: positiveInteger(
@@ -139,8 +139,8 @@ export function parseEscalation(value: unknown): SpecOpsConfig["escalation"] {
                     0,
                 ),
             },
-        }
-    })
+        };
+    });
 }
 
 /**
@@ -168,7 +168,7 @@ export function parseReview(value: unknown): SpecOpsConfig["review"] {
                 !Array.isArray(source.blockingSeverities) ||
                 source.blockingSeverities.some(severity => !SEVERITIES.has(String(severity)))
             ) {
-                throw new Error("invalid SpecOps configuration field: review.blockingSeverities")
+                throw new Error("invalid SpecOps configuration field: review.blockingSeverities");
             }
             return {
                 blockingSeverities:
@@ -194,9 +194,9 @@ export function parseReview(value: unknown): SpecOpsConfig["review"] {
                     "review.commandOutputBytes",
                     1_024,
                 ),
-            }
+            };
         },
-    )
+    );
 }
 
 /**
@@ -210,20 +210,20 @@ export function parseReview(value: unknown): SpecOpsConfig["review"] {
 export function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
     return parseSection(value, "openspec", ["command", "autoArchive"], source => {
         if (typeof source.autoArchive !== "boolean") {
-            throw new Error("invalid SpecOps configuration field: openspec.autoArchive")
+            throw new Error("invalid SpecOps configuration field: openspec.autoArchive");
         }
         if (source.command === null) {
-            return { command: null, autoArchive: source.autoArchive }
+            return { command: null, autoArchive: source.autoArchive };
         }
         if (
             !Array.isArray(source.command) ||
             !source.command.length ||
             source.command.some(argument => typeof argument !== "string" || !argument)
         ) {
-            throw new Error("invalid SpecOps configuration field: openspec.command")
+            throw new Error("invalid SpecOps configuration field: openspec.command");
         }
-        return { command: source.command as string[], autoArchive: source.autoArchive }
-    })
+        return { command: source.command as string[], autoArchive: source.autoArchive };
+    });
 }
 
 /**
@@ -237,14 +237,14 @@ export function parseOpenSpec(value: unknown): SpecOpsConfig["openspec"] {
 export function parseWorkflow(value: unknown): SpecOpsConfig["workflow"] {
     return parseSection(value, "workflow", ["defaultTier", "scopeThresholds"], source => {
         if (!isOneOf(source.defaultTier, ["auto", "lean", "standard", "full"])) {
-            throw new Error("invalid SpecOps configuration field: workflow.defaultTier")
+            throw new Error("invalid SpecOps configuration field: workflow.defaultTier");
         }
-        const thresholds = asObject(source.scopeThresholds, "workflow.scopeThresholds")
+        const thresholds = asObject(source.scopeThresholds, "workflow.scopeThresholds");
         assertKeys(
             thresholds,
             ["leanMaxFiles", "leanMaxModules", "fullMinFiles", "fullMinModules"],
             "workflow.scopeThresholds",
-        )
+        );
         const scopeThresholds = {
             leanMaxFiles: positiveInteger(
                 thresholds.leanMaxFiles,
@@ -262,19 +262,19 @@ export function parseWorkflow(value: unknown): SpecOpsConfig["workflow"] {
                 thresholds.fullMinModules,
                 "workflow.scopeThresholds.fullMinModules",
             ),
-        }
+        };
         if (
             scopeThresholds.fullMinFiles <= scopeThresholds.leanMaxFiles ||
             scopeThresholds.fullMinModules <= scopeThresholds.leanMaxModules
         ) {
-            throw new Error("invalid SpecOps configuration field: workflow.scopeThresholds")
+            throw new Error("invalid SpecOps configuration field: workflow.scopeThresholds");
         }
 
         return {
             defaultTier: source.defaultTier,
             scopeThresholds,
-        }
-    })
+        };
+    });
 }
 
 /**
@@ -301,9 +301,9 @@ export function parseFrontier(
         "frontier",
         ["mode", "maxEscalationsPerRun", "maxDispatchesPerRun", "maxHighDispatchesPerRun"],
         source => {
-            const mode = source.mode ?? defaults.mode
+            const mode = source.mode ?? defaults.mode;
             if (!isOneOf(mode, ["disabled", "adaptive"])) {
-                throw new Error("invalid SpecOps configuration field: frontier.mode")
+                throw new Error("invalid SpecOps configuration field: frontier.mode");
             }
             const result = {
                 mode,
@@ -322,15 +322,15 @@ export function parseFrontier(
                     "frontier.maxHighDispatchesPerRun",
                     0,
                 ),
-            }
+            };
             if (
                 result.maxHighDispatchesPerRun > result.maxDispatchesPerRun ||
                 (result.mode === "adaptive" &&
                     (result.maxEscalationsPerRun === 0 || result.maxDispatchesPerRun === 0))
             ) {
-                throw new Error("invalid SpecOps configuration field: frontier")
+                throw new Error("invalid SpecOps configuration field: frontier");
             }
-            return result
+            return result;
         },
-    )
+    );
 }

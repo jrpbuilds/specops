@@ -1,31 +1,31 @@
-import { createHash } from "node:crypto"
-import path from "node:path"
-import { runProcess, type ProcessResult } from "../process.js"
-import type { RepositoryIdentity } from "../repository/identity.js"
-import type { ValidationCommand } from "./registry.js"
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { runProcess, type ProcessResult } from "../process.js";
+import type { RepositoryIdentity } from "../repository/identity.js";
+import type { ValidationCommand } from "./registry.js";
 
 /** Durable, identity-bound result from a single required validation command. */
 export type ValidationEvidence = {
-    commandId: string
-    executable: string
-    args: string[]
-    cwd: string
-    startedAt: string
-    endedAt: string
-    durationMs: number
-    exitCode: number | null
-    timedOut: boolean
-    stdout: string
-    stderr: string
-    outputTruncated: boolean
-    stdoutTruncated: boolean
-    stderrTruncated: boolean
-    repositoryIdentity: RepositoryIdentity
-    outputHash: string
-    executionError?: string
-    invalidatedAt?: string
-    invalidatedBy?: RepositoryIdentity
-}
+    commandId: string;
+    executable: string;
+    args: string[];
+    cwd: string;
+    startedAt: string;
+    endedAt: string;
+    durationMs: number;
+    exitCode: number | null;
+    timedOut: boolean;
+    stdout: string;
+    stderr: string;
+    outputTruncated: boolean;
+    stdoutTruncated: boolean;
+    stderrTruncated: boolean;
+    repositoryIdentity: RepositoryIdentity;
+    outputHash: string;
+    executionError?: string;
+    invalidatedAt?: string;
+    invalidatedBy?: RepositoryIdentity;
+};
 
 /** Injectable direct process runner used by the shell-free validation executor. */
 export type ValidationProcessRunner = (
@@ -35,7 +35,7 @@ export type ValidationProcessRunner = (
     signal?: AbortSignal,
     environment?: Record<string, string>,
     maxOutputBytes?: number,
-) => Promise<ProcessResult>
+) => Promise<ProcessResult>;
 
 /** Execute one configured command with bounded output and a hard timeout. */
 export async function executeValidationCommand(
@@ -44,15 +44,15 @@ export async function executeValidationCommand(
     repositoryIdentity: RepositoryIdentity,
     run: ValidationProcessRunner = runProcess,
 ): Promise<ValidationEvidence> {
-    const cwd = resolveValidationCwd(directory, command.cwd)
-    const startedAt = new Date().toISOString()
-    const started = Date.now()
-    const controller = new AbortController()
-    let timedOut = false
+    const cwd = resolveValidationCwd(directory, command.cwd);
+    const startedAt = new Date().toISOString();
+    const started = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
     const timeout = setTimeout(() => {
-        timedOut = true
-        controller.abort()
-    }, command.timeoutMs)
+        timedOut = true;
+        controller.abort();
+    }, command.timeoutMs);
 
     try {
         const result = await run(
@@ -62,7 +62,7 @@ export async function executeValidationCommand(
             controller.signal,
             { PATH: process.env.PATH ?? "", NO_COLOR: "1" },
             command.maxOutputBytes,
-        )
+        );
         return createEvidence(
             command,
             repositoryIdentity,
@@ -71,10 +71,10 @@ export async function executeValidationCommand(
             started,
             timedOut,
             result,
-        )
+        );
     } catch (error) {
-        const endedAt = new Date().toISOString()
-        const executionError = error instanceof Error ? error.message : String(error)
+        const endedAt = new Date().toISOString();
+        const executionError = error instanceof Error ? error.message : String(error);
         return {
             commandId: command.id,
             executable: command.executable,
@@ -93,9 +93,9 @@ export async function executeValidationCommand(
             repositoryIdentity,
             outputHash: hashOutput("", ""),
             executionError,
-        }
+        };
     } finally {
-        clearTimeout(timeout)
+        clearTimeout(timeout);
     }
 }
 
@@ -126,20 +126,20 @@ function createEvidence(
         stderrTruncated: result.stderrTruncated,
         repositoryIdentity,
         outputHash: hashOutput(result.stdout, result.stderr),
-    }
+    };
 }
 
 /** Resolve a repository-relative configured cwd without allowing traversal. */
 function resolveValidationCwd(directory: string, relative = "."): string {
-    const root = path.resolve(directory)
-    const target = path.resolve(root, relative)
+    const root = path.resolve(directory);
+    const target = path.resolve(root, relative);
     if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
-        throw new Error("validation working directory escaped repository root")
+        throw new Error("validation working directory escaped repository root");
     }
-    return target
+    return target;
 }
 
 /** Hash captured streams with an explicit separator. */
 function hashOutput(stdout: string, stderr: string): string {
-    return createHash("sha256").update(stdout).update("\0").update(stderr).digest("hex")
+    return createHash("sha256").update(stdout).update("\0").update(stderr).digest("hex");
 }

@@ -2,7 +2,7 @@
  * Assessment parsing: validate and materialise the strict assessor output
  * that seeds a final run.
  */
-import type { Assessment, ConfidenceLevel, RiskFacet, TouchedSurface } from "../types.js"
+import type { Assessment, ConfidenceLevel, RiskFacet, TouchedSurface } from "../types.js";
 
 /** The complete set of valid {@link RiskFacet} values for validation. */
 const FACETS = new Set<RiskFacet>([
@@ -16,7 +16,7 @@ const FACETS = new Set<RiskFacet>([
     "migration",
     "usability",
     "maintainability",
-])
+]);
 /** The complete set of valid {@link TouchedSurface} values for validation. */
 const SURFACES = new Set<TouchedSurface>([
     "api",
@@ -31,9 +31,9 @@ const SURFACES = new Set<TouchedSurface>([
     "build",
     "deployment",
     "documentation",
-])
+]);
 /** The complete set of valid {@link ConfidenceLevel} values for validation. */
-const CONFIDENCE = new Set<ConfidenceLevel>(["low", "medium", "high"])
+const CONFIDENCE = new Set<ConfidenceLevel>(["low", "medium", "high"]);
 /** The complete set of valid `changeKind` values for validation. */
 const CHANGE_KINDS = new Set<Assessment["changeKind"]>([
     "documentation",
@@ -44,7 +44,7 @@ const CHANGE_KINDS = new Set<Assessment["changeKind"]>([
     "feature",
     "migration",
     "infrastructure",
-])
+]);
 
 /**
  * Parse the strict assessor output that seeds a final run.
@@ -58,41 +58,41 @@ const CHANGE_KINDS = new Set<Assessment["changeKind"]>([
  * @throws {Error} If the output is not valid JSON or any field fails validation.
  */
 export function parseAssessment(output: string): Assessment {
-    let parsed: unknown
+    let parsed: unknown;
     try {
-        parsed = JSON.parse(output.trim().replace(/^```json\s*|```$/g, ""))
+        parsed = JSON.parse(output.trim().replace(/^```json\s*|```$/g, ""));
     } catch {
-        throw new Error("assessment did not return valid JSON")
+        throw new Error("assessment did not return valid JSON");
     }
 
-    const assessment = asObject(parsed, "assessment")
-    const confidence = parseConfidence(assessment.confidence)
+    const assessment = asObject(parsed, "assessment");
+    const confidence = parseConfidence(assessment.confidence);
     if (!CHANGE_KINDS.has(assessment.changeKind as Assessment["changeKind"])) {
-        throw enumError("changeKind", assessment.changeKind, [...CHANGE_KINDS])
+        throw enumError("changeKind", assessment.changeKind, [...CHANGE_KINDS]);
     }
     if (!isOneOf(assessment.publicContract, ["none", "compatible", "breaking"])) {
         throw enumError("publicContract", assessment.publicContract, [
             "none",
             "compatible",
             "breaking",
-        ])
+        ]);
     }
     if (!isOneOf(assessment.suggestedTier, ["lean", "standard", "full"])) {
-        throw enumError("suggestedTier", assessment.suggestedTier, ["lean", "standard", "full"])
+        throw enumError("suggestedTier", assessment.suggestedTier, ["lean", "standard", "full"]);
     }
 
-    const riskFacets = stringArray(assessment.riskFacets, "riskFacets") as RiskFacet[]
-    const unknownFacet = riskFacets.find(facet => !FACETS.has(facet))
+    const riskFacets = stringArray(assessment.riskFacets, "riskFacets") as RiskFacet[];
+    const unknownFacet = riskFacets.find(facet => !FACETS.has(facet));
     if (unknownFacet) {
-        throw enumError("riskFacets", unknownFacet, [...FACETS])
+        throw enumError("riskFacets", unknownFacet, [...FACETS]);
     }
     const touchedSurfaces = stringArray(
         assessment.touchedSurfaces,
         "touchedSurfaces",
-    ) as TouchedSurface[]
-    const unknownSurface = touchedSurfaces.find(surface => !SURFACES.has(surface))
+    ) as TouchedSurface[];
+    const unknownSurface = touchedSurfaces.find(surface => !SURFACES.has(surface));
     if (unknownSurface) {
-        throw enumError("touchedSurfaces", unknownSurface, [...SURFACES])
+        throw enumError("touchedSurfaces", unknownSurface, [...SURFACES]);
     }
 
     return {
@@ -114,7 +114,7 @@ export function parseAssessment(output: string): Assessment {
         likelyValidations: parseLikelyValidations(assessment.likelyValidations),
         facts: stringArray(assessment.facts, "facts"),
         inferences: stringArray(assessment.inferences, "inferences"),
-    }
+    };
 }
 
 /**
@@ -134,16 +134,22 @@ function parseConfidence(value: unknown): Assessment["confidence"] {
         throw new Error(
             "invalid assessment.confidence — expected an object with requirements, repository, " +
                 "design, implementation, and verification confidence fields; each value must be low, medium, or high",
-        )
+        );
     }
-    const source = value as Record<string, unknown>
-    const keys = ["requirements", "repository", "design", "implementation", "verification"] as const
+    const source = value as Record<string, unknown>;
+    const keys = [
+        "requirements",
+        "repository",
+        "design",
+        "implementation",
+        "verification",
+    ] as const;
     for (const key of keys) {
         if (!CONFIDENCE.has(source[key] as ConfidenceLevel)) {
-            throw enumError(`confidence.${key}`, source[key], [...CONFIDENCE])
+            throw enumError(`confidence.${key}`, source[key], [...CONFIDENCE]);
         }
     }
-    return source as Assessment["confidence"]
+    return source as Assessment["confidence"];
 }
 
 /**
@@ -156,10 +162,10 @@ function parseConfidence(value: unknown): Assessment["confidence"] {
  * @returns An `Error` ready to throw.
  */
 function enumError(field: string, value: unknown, choices: readonly string[]): Error {
-    const display = value === undefined ? "undefined" : JSON.stringify(value)
+    const display = value === undefined ? "undefined" : JSON.stringify(value);
     return new Error(
         `invalid assessment.${field} ${display} — must be one of: ${choices.join(", ")}`,
-    )
+    );
 }
 
 /**
@@ -175,10 +181,10 @@ function enumError(field: string, value: unknown, choices: readonly string[]): E
  */
 function parseLikelyValidations(value: unknown): Assessment["likelyValidations"] {
     if (!Array.isArray(value)) {
-        throw new Error("invalid assessment.likelyValidations")
+        throw new Error("invalid assessment.likelyValidations");
     }
     return value.map((entry, index) => {
-        const validation = asObject(entry, `assessment.likelyValidations.${index}`)
+        const validation = asObject(entry, `assessment.likelyValidations.${index}`);
         if (
             typeof validation.executable !== "string" ||
             !validation.executable ||
@@ -187,7 +193,7 @@ function parseLikelyValidations(value: unknown): Assessment["likelyValidations"]
             typeof validation.purpose !== "string" ||
             !validation.purpose
         ) {
-            throw new Error(`invalid assessment.likelyValidations.${index}`)
+            throw new Error(`invalid assessment.likelyValidations.${index}`);
         }
         if (
             validation.cwd !== undefined &&
@@ -195,15 +201,15 @@ function parseLikelyValidations(value: unknown): Assessment["likelyValidations"]
                 validation.cwd.startsWith("/") ||
                 validation.cwd.split(/[\\/]/).includes(".."))
         ) {
-            throw new Error(`invalid assessment.likelyValidations.${index}.cwd`)
+            throw new Error(`invalid assessment.likelyValidations.${index}.cwd`);
         }
         return {
             executable: validation.executable,
             args: validation.args as string[],
             cwd: validation.cwd as string | undefined,
             purpose: validation.purpose,
-        }
-    })
+        };
+    });
 }
 
 /**
@@ -216,9 +222,9 @@ function parseLikelyValidations(value: unknown): Assessment["likelyValidations"]
  */
 function asObject(value: unknown, name: string): Record<string, unknown> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error(`${name} must be an object`)
+        throw new Error(`${name} must be an object`);
     }
-    return value as Record<string, unknown>
+    return value as Record<string, unknown>;
 }
 
 /**
@@ -231,9 +237,9 @@ function asObject(value: unknown, name: string): Record<string, unknown> {
  */
 function stringArray(value: unknown, field: string): string[] {
     if (!Array.isArray(value) || value.some(item => typeof item !== "string" || !item.trim())) {
-        throw new Error(`invalid assessment.${field}`)
+        throw new Error(`invalid assessment.${field}`);
     }
-    return value as string[]
+    return value as string[];
 }
 
 /**
@@ -246,9 +252,9 @@ function stringArray(value: unknown, field: string): string[] {
  */
 function boolean(value: unknown, field: string): boolean {
     if (typeof value !== "boolean") {
-        throw new Error(`invalid assessment.${field}`)
+        throw new Error(`invalid assessment.${field}`);
     }
-    return value
+    return value;
 }
 
 /**
@@ -261,9 +267,9 @@ function boolean(value: unknown, field: string): boolean {
  */
 function positiveInteger(value: unknown, field: string): number {
     if (!Number.isInteger(value) || Number(value) < 0) {
-        throw new Error(`invalid assessment.${field}`)
+        throw new Error(`invalid assessment.${field}`);
     }
-    return Number(value)
+    return Number(value);
 }
 
 /**
@@ -275,5 +281,5 @@ function positiveInteger(value: unknown, field: string): number {
  * @returns `true` when `value` is a string present in `choices`.
  */
 function isOneOf<T extends string>(value: unknown, choices: readonly T[]): value is T {
-    return typeof value === "string" && choices.includes(value as T)
+    return typeof value === "string" && choices.includes(value as T);
 }

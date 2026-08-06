@@ -6,14 +6,14 @@
  * plugin under evaluation. Set SPECOPS_REPAIR_EVAL=1 to run three temporary,
  * committed fixture repositories through the public automatic command.
  */
-import { spawnSync } from "node:child_process"
-import { createHash } from "node:crypto"
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
-import os from "node:os"
-import path from "node:path"
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 if (process.env.SPECOPS_REPAIR_EVAL !== "1") {
-    throw new Error("Set SPECOPS_REPAIR_EVAL=1 to run the live review-fixer benchmark")
+    throw new Error("Set SPECOPS_REPAIR_EVAL=1 to run the live review-fixer benchmark");
 }
 
 const fixtures = [
@@ -49,21 +49,21 @@ const fixtures = [
                 'import test from "node:test"\nimport assert from "node:assert/strict"\nimport { readCache } from "./cache.mjs"\ntest("reads fresh entries", () => assert.equal(readCache({storedAt: 90, value: "ok"}, 100, 20), "ok"))\n',
         },
     },
-]
+];
 
-const results = []
+const results = [];
 for (const fixture of selectedFixtures()) {
-    const directory = await mkdtemp(path.join(os.tmpdir(), `specops-eval-${fixture.id}-`))
+    const directory = await mkdtemp(path.join(os.tmpdir(), `specops-eval-${fixture.id}-`));
     for (const [relative, content] of Object.entries(fixture.files)) {
-        await mkdir(path.dirname(path.join(directory, relative)), { recursive: true })
-        await writeFile(path.join(directory, relative), content)
+        await mkdir(path.dirname(path.join(directory, relative)), { recursive: true });
+        await writeFile(path.join(directory, relative), content);
     }
-    run("git", ["init", "--quiet"], directory)
-    run("git", ["config", "user.email", "specops-eval@example.test"], directory)
-    run("git", ["config", "user.name", "SpecOps Evaluation"], directory)
-    run("git", ["add", "."], directory)
-    run("git", ["commit", "--quiet", "-m", "seed defect"], directory)
-    const baseline = run("git", ["rev-parse", "HEAD"], directory).stdout.trim()
+    run("git", ["init", "--quiet"], directory);
+    run("git", ["config", "user.email", "specops-eval@example.test"], directory);
+    run("git", ["config", "user.name", "SpecOps Evaluation"], directory);
+    run("git", ["add", "."], directory);
+    run("git", ["commit", "--quiet", "-m", "seed defect"], directory);
+    const baseline = run("git", ["rev-parse", "HEAD"], directory).stdout.trim();
 
     const workflow = run(
         "opencode",
@@ -82,14 +82,14 @@ for (const fixture of selectedFixtures()) {
         directory,
         false,
         evaluationTimeout(),
-    )
-    const tests = run("node", ["--test"], directory, false)
+    );
+    const tests = run("node", ["--test"], directory, false);
     const hidden = fixture.hiddenCheck
         ? run("node", ["--input-type=module", "--eval", fixture.hiddenCheck], directory, false)
-        : { status: 0 }
-    const head = run("git", ["rev-parse", "HEAD"], directory).stdout.trim()
-    const receipt = await latestReceipt(directory)
-    const artifactIntegrity = receipt ? await verifyArtifactIntegrity(receipt) : false
+        : { status: 0 };
+    const head = run("git", ["rev-parse", "HEAD"], directory).stdout.trim();
+    const receipt = await latestReceipt(directory);
+    const artifactIntegrity = receipt ? await verifyArtifactIntegrity(receipt) : false;
     results.push({
         fixture: fixture.id,
         directory,
@@ -113,11 +113,11 @@ for (const fixture of selectedFixtures()) {
             head === baseline &&
             artifactIntegrity &&
             receipt?.outcome?.category === "completed",
-    })
+    });
 }
 
-process.stdout.write(`${JSON.stringify({ version: 1, results }, null, 2)}\n`)
-if (results.some(result => !result.passed)) process.exitCode = 1
+process.stdout.write(`${JSON.stringify({ version: 1, results }, null, 2)}\n`);
+if (results.some(result => !result.passed)) process.exitCode = 1;
 
 /**
  * Runs one benchmark command with deterministic non-interactive input.
@@ -136,16 +136,16 @@ function run(command, args, cwd, required = true, timeout) {
         env: { ...process.env, CI: "1", NO_COLOR: "1" },
         input: "",
         timeout,
-    })
+    });
     if (required && result.status !== 0) {
         const detail =
             result.error?.message ||
             result.stderr ||
             result.stdout ||
-            (result.signal ? `terminated by ${result.signal}` : "unknown process failure")
-        throw new Error(`${command} ${args.join(" ")} failed: ${detail}`)
+            (result.signal ? `terminated by ${result.signal}` : "unknown process failure");
+        throw new Error(`${command} ${args.join(" ")} failed: ${detail}`);
     }
-    return result
+    return result;
 }
 
 /**
@@ -154,11 +154,11 @@ function run(command, args, cwd, required = true, timeout) {
  * @returns {number} timeout in milliseconds
  */
 function evaluationTimeout() {
-    const configured = Number(process.env.SPECOPS_REPAIR_EVAL_TIMEOUT_MS ?? 1_800_000)
+    const configured = Number(process.env.SPECOPS_REPAIR_EVAL_TIMEOUT_MS ?? 1_800_000);
     if (!Number.isFinite(configured) || configured <= 0) {
-        throw new Error("SPECOPS_REPAIR_EVAL_TIMEOUT_MS must be a positive number")
+        throw new Error("SPECOPS_REPAIR_EVAL_TIMEOUT_MS must be a positive number");
     }
-    return configured
+    return configured;
 }
 
 /**
@@ -169,38 +169,38 @@ function evaluationTimeout() {
 function selectedFixtures() {
     const requested = process.env.SPECOPS_REPAIR_EVAL_FIXTURES?.split(",")
         .map(value => value.trim())
-        .filter(Boolean)
-    if (!requested?.length) return fixtures
+        .filter(Boolean);
+    if (!requested?.length) return fixtures;
 
-    const unknown = requested.filter(id => !fixtures.some(fixture => fixture.id === id))
+    const unknown = requested.filter(id => !fixtures.some(fixture => fixture.id === id));
     if (unknown.length > 0) {
-        throw new Error(`Unknown SPECOPS_REPAIR_EVAL_FIXTURES: ${unknown.join(", ")}`)
+        throw new Error(`Unknown SPECOPS_REPAIR_EVAL_FIXTURES: ${unknown.join(", ")}`);
     }
-    return fixtures.filter(fixture => requested.includes(fixture.id))
+    return fixtures.filter(fixture => requested.includes(fixture.id));
 }
 
 async function latestReceipt(directory) {
-    const changes = path.join(directory, "openspec", "changes")
+    const changes = path.join(directory, "openspec", "changes");
     try {
         const entries = (await readdir(changes, { withFileTypes: true })).filter(entry =>
             entry.isDirectory(),
-        )
+        );
         for (const entry of entries.sort((a, b) => b.name.localeCompare(a.name))) {
             try {
-                const file = path.join(changes, entry.name, "specops-receipt.json")
-                return { ...JSON.parse(await readFile(file, "utf8")), __file: file }
+                const file = path.join(changes, entry.name, "specops-receipt.json");
+                return { ...JSON.parse(await readFile(file, "utf8")), __file: file };
             } catch {
                 // Continue to the next change directory.
             }
         }
     } catch {
-        return undefined
+        return undefined;
     }
-    return undefined
+    return undefined;
 }
 
 async function verifyArtifactIntegrity(receipt) {
-    const changeRoot = path.dirname(receipt.__file)
+    const changeRoot = path.dirname(receipt.__file);
     const files = {
         routing: "routing.md",
         exploration: "exploration.md",
@@ -209,25 +209,25 @@ async function verifyArtifactIntegrity(receipt) {
         tasks: "tasks.md",
         verification: "verification.md",
         "review-ledger": "review-ledger.json",
-    }
+    };
     for (const [artifact, relative] of Object.entries(files)) {
-        const provenance = receipt.artifacts?.[artifact]
-        if (!provenance || provenance.validity !== "valid") continue
+        const provenance = receipt.artifacts?.[artifact];
+        if (!provenance || provenance.validity !== "valid") continue;
         try {
-            const content = await readFile(path.join(changeRoot, relative), "utf8")
-            if (sha256(content.trim()) !== provenance.outputHash) return false
+            const content = await readFile(path.join(changeRoot, relative), "utf8");
+            if (sha256(content.trim()) !== provenance.outputHash) return false;
         } catch {
-            return false
+            return false;
         }
     }
-    return true
+    return true;
 }
 
 function sha256(value) {
-    return createHash("sha256").update(value).digest("hex")
+    return createHash("sha256").update(value).digest("hex");
 }
 
 function excerpt(value) {
-    const text = String(value ?? "").trim()
-    return text.length > 2_000 ? `${text.slice(0, 2_000)}\n[truncated]` : text
+    const text = String(value ?? "").trim();
+    return text.length > 2_000 ? `${text.slice(0, 2_000)}\n[truncated]` : text;
 }

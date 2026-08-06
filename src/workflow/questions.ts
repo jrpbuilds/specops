@@ -5,7 +5,7 @@
  * impact, and performs the atomic
  * state transition when a question is answered, dismissed, or cancelled.
  */
-import { createHash, randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto";
 import type {
     ArtifactId,
     CapabilityId,
@@ -20,28 +20,28 @@ import type {
     RunState,
     WorkerQuestion,
     WorkerQuestionOption,
-} from "../types.js"
-import { downstream } from "../artifacts/graph.js"
-import { invalidate } from "../artifacts/lifecycle.js"
-import { questionBindingHash } from "../worker_output.js"
-import { writeTextAtomic } from "../state/store.js"
+} from "../types.js";
+import { downstream } from "../artifacts/graph.js";
+import { invalidate } from "../artifacts/lifecycle.js";
+import { questionBindingHash } from "../worker_output.js";
+import { writeTextAtomic } from "../state/store.js";
 
 /** Stable public DTO for a paused pending-question block. */
 export type PendingQuestionResult = {
-    version: 1
-    change: string
-    status: "paused"
-    reason: "pending-question"
-    resumable: true
+    version: 1;
+    change: string;
+    status: "paused";
+    reason: "pending-question";
+    resumable: true;
     questions: Array<{
-        id: string
-        prompt: string
-        options: WorkerQuestionOption[]
-        allowOther: boolean
-        impact: QuestionImpact
-        bindingHash: string
-    }>
-}
+        id: string;
+        prompt: string;
+        options: WorkerQuestionOption[];
+        allowOther: boolean;
+        impact: QuestionImpact;
+        bindingHash: string;
+    }>;
+};
 
 /** Impact roots used by {@link invalidationForImpact}. */
 const IMPACT_ROOTS: Record<QuestionImpact, ArtifactId[]> = {
@@ -49,7 +49,7 @@ const IMPACT_ROOTS: Record<QuestionImpact, ArtifactId[]> = {
     design: ["design"],
     implementation: ["implementation"],
     validation: ["verification"],
-}
+};
 
 /**
  * Return the set of valid impacts for a given phase/capability pair.
@@ -65,26 +65,26 @@ export function validImpactsForPhase(
     switch (phase) {
         case "exploration":
         case "routing":
-            return ["requirements"]
+            return ["requirements"];
         case "proposal":
         case "specs":
-            return ["requirements", "design"]
+            return ["requirements", "design"];
         case "design":
-            return ["design", "requirements"]
+            return ["design", "requirements"];
         case "tasks":
-            return ["design", "implementation", "requirements"]
+            return ["design", "implementation", "requirements"];
         case "implementation":
-            return ["implementation", "validation"]
+            return ["implementation", "validation"];
         case "verification":
-            return ["validation", "implementation"]
+            return ["validation", "implementation"];
         case "correctness-judgment":
         case "compliance-judgment":
-            return ["validation", "implementation"]
+            return ["validation", "implementation"];
         case "review-ledger":
             // Independent reviews may surface implementation or validation concerns.
-            return ["validation", "implementation"]
+            return ["validation", "implementation"];
         default:
-            return ["requirements"]
+            return ["requirements"];
     }
 }
 
@@ -102,17 +102,17 @@ export function resolveImpact(
     phase: ArtifactId,
     capability: CapabilityId,
 ): QuestionImpact {
-    const allowed = validImpactsForPhase(phase, capability)
-    const fallback = allowed[0]
+    const allowed = validImpactsForPhase(phase, capability);
+    const fallback = allowed[0];
     if (suggested === undefined) {
-        return fallback
+        return fallback;
     }
     if (!allowed.includes(suggested)) {
         throw new Error(
             `SpecOps question impact '${suggested}' is not valid for phase '${phase}' / capability '${capability}'`,
-        )
+        );
     }
-    return suggested
+    return suggested;
 }
 
 /**
@@ -129,7 +129,7 @@ export function computeQuestionBindingHash(state: RunState, dispatch: DispatchRe
         answerHashes: answerHashes(state),
         dispatchInputHash: dispatch.inputHash,
         implementationDiffHash: state.implementationDiffHash,
-    })
+    });
 }
 
 /**
@@ -148,11 +148,11 @@ export function registerPendingQuestions(
     dispatch: DispatchRecord,
     questions: WorkerQuestion[],
 ): PendingQuestion[] | undefined {
-    if (questions.length === 0) return undefined
-    const phase = phaseForDispatch(dispatch)
+    if (questions.length === 0) return undefined;
+    const phase = phaseForDispatch(dispatch);
     const batch: PendingQuestion[] = questions.map(question => {
-        const impact = resolveImpact(question.impact, phase, dispatch.capability)
-        const bindingHash = computeQuestionBindingHash(state, dispatch)
+        const impact = resolveImpact(question.impact, phase, dispatch.capability);
+        const bindingHash = computeQuestionBindingHash(state, dispatch);
         return {
             id: randomUUID(),
             dispatchId: dispatch.id,
@@ -166,14 +166,14 @@ export function registerPendingQuestions(
             bindingHash,
             raisedAt: new Date().toISOString(),
             dismissalCount: 0,
-        }
-    })
+        };
+    });
 
-    state.pendingQuestions = batch
-    state.status = "paused"
-    state.pauseReason = "pending-question"
-    state.resumable = true
-    return batch
+    state.pendingQuestions = batch;
+    state.status = "paused";
+    state.pauseReason = "pending-question";
+    state.resumable = true;
+    return batch;
 }
 
 /**
@@ -184,15 +184,15 @@ export function registerPendingQuestions(
  * @returns Full closure of affected artifact ids.
  */
 export function invalidationForImpact(state: RunState, impact: QuestionImpact): ArtifactId[] {
-    const roots: ArtifactId[] = [...IMPACT_ROOTS[impact]]
+    const roots: ArtifactId[] = [...IMPACT_ROOTS[impact]];
     if (impact === "requirements" && state.scopeTier === "full") {
         // Full-tier planning is staged; explicitly invalidate all planning
         // artifacts so each stage is regenerated against the answer. The
         // downstream graph already propagates from proposal, but listing the
         // staged artifacts makes the intent explicit.
-        roots.push("specs", "design", "tasks")
+        roots.push("specs", "design", "tasks");
     }
-    return downstream(roots)
+    return downstream(roots);
 }
 
 /**
@@ -219,37 +219,37 @@ export function answerQuestion(
     selectedOptionId: string | undefined,
     otherText: string | undefined,
 ): QuestionRecord {
-    const pending = requirePendingQuestion(state, questionId)
-    validateBindingHash(state, pending)
+    const pending = requirePendingQuestion(state, questionId);
+    validateBindingHash(state, pending);
 
-    const hasOption = selectedOptionId !== undefined
-    const hasOther = otherText !== undefined
+    const hasOption = selectedOptionId !== undefined;
+    const hasOther = otherText !== undefined;
     if (hasOption && hasOther) {
-        throw new Error("SpecOps question answer must be either an option or Other text, not both")
+        throw new Error("SpecOps question answer must be either an option or Other text, not both");
     }
     if (!hasOption && !hasOther) {
-        throw new Error("SpecOps question answer must provide an option or Other text")
+        throw new Error("SpecOps question answer must provide an option or Other text");
     }
 
-    let selectedLabel: string | undefined
+    let selectedLabel: string | undefined;
     if (hasOption) {
-        const option = pending.options.find(candidate => candidate.id === selectedOptionId)
+        const option = pending.options.find(candidate => candidate.id === selectedOptionId);
         if (!option) {
-            throw new Error("SpecOps question answer selected an unknown option")
+            throw new Error("SpecOps question answer selected an unknown option");
         }
-        selectedLabel = option.label
+        selectedLabel = option.label;
     }
 
     if (hasOther) {
         if (!pending.allowOther) {
-            throw new Error("SpecOps question does not allow Other text")
+            throw new Error("SpecOps question does not allow Other text");
         }
-        const original = otherText as string
-        const trimmed = original.trim()
+        const original = otherText as string;
+        const trimmed = original.trim();
         if (!trimmed) {
-            throw new Error("SpecOps question Other text must be non-empty")
+            throw new Error("SpecOps question Other text must be non-empty");
         }
-        otherText = original
+        otherText = original;
     }
 
     const answerHash = createHash("sha256")
@@ -262,9 +262,9 @@ export function answerQuestion(
                 policyHash: pending.policyHash,
             }),
         )
-        .digest("hex")
+        .digest("hex");
 
-    const invalidatedArtifacts = invalidationForImpact(state, pending.impact)
+    const invalidatedArtifacts = invalidationForImpact(state, pending.impact);
 
     const record: QuestionRecord = {
         ...pending,
@@ -275,18 +275,18 @@ export function answerQuestion(
         otherText,
         answerHash,
         invalidatedArtifacts,
-    }
+    };
 
     // Record the answer and apply invalidation.
-    state.questionHistory.push(record)
-    invalidate(state, invalidatedArtifacts, `answer impact: ${pending.impact}`)
+    state.questionHistory.push(record);
+    invalidate(state, invalidatedArtifacts, `answer impact: ${pending.impact}`);
 
     // Remove the answered question from the pending batch.
-    state.pendingQuestions = state.pendingQuestions!.filter(q => q.id !== questionId)
+    state.pendingQuestions = state.pendingQuestions!.filter(q => q.id !== questionId);
 
     // Only resume when every question in the batch has been answered.
     if (state.pendingQuestions.length === 0) {
-        const dispatch = state.dispatches.find(d => d.id === pending.dispatchId)
+        const dispatch = state.dispatches.find(d => d.id === pending.dispatchId);
         state.resumeTarget = {
             sourceId: pending.id,
             originalDispatchId: pending.dispatchId,
@@ -296,14 +296,14 @@ export function answerQuestion(
             action: dispatch?.action ?? pending.capability,
             answerHash,
             origin: "question",
-        }
-        state.pendingQuestions = undefined
-        state.status = "running"
-        state.pauseReason = undefined
-        state.resumable = undefined
+        };
+        state.pendingQuestions = undefined;
+        state.status = "running";
+        state.pauseReason = undefined;
+        state.resumable = undefined;
     }
 
-    return record
+    return record;
 }
 
 /**
@@ -320,22 +320,22 @@ export function answerQuestion(
  * @throws {Error} If no matching pending question exists.
  */
 export function dismissQuestion(state: RunState, questionId: string): QuestionRecord {
-    const pending = requirePendingQuestion(state, questionId)
+    const pending = requirePendingQuestion(state, questionId);
 
     if (pending.dismissalCount > 0) {
         // Idempotent: update timestamp but do not create a duplicate history entry.
-        pending.lastDismissedAt = new Date().toISOString()
-        pending.dismissalCount += 1
-        state.status = "paused"
-        state.pauseReason = "question-dismissed"
-        state.resumable = true
+        pending.lastDismissedAt = new Date().toISOString();
+        pending.dismissalCount += 1;
+        state.status = "paused";
+        state.pauseReason = "question-dismissed";
+        state.resumable = true;
 
         const existing = state.questionHistory.find(
             record => record.id === questionId && record.outcome === "dismissed",
-        )
+        );
         if (existing) {
-            existing.resolvedAt = new Date().toISOString()
-            return existing
+            existing.resolvedAt = new Date().toISOString();
+            return existing;
         }
     }
 
@@ -345,18 +345,18 @@ export function dismissQuestion(state: RunState, questionId: string): QuestionRe
         outcome: "dismissed",
         answerHash: "",
         invalidatedArtifacts: [],
-    }
+    };
 
-    pending.dismissalCount += 1
-    pending.lastDismissedAt = record.resolvedAt
+    pending.dismissalCount += 1;
+    pending.lastDismissedAt = record.resolvedAt;
 
-    state.questionHistory.push(record)
-    state.status = "paused"
-    state.pauseReason = "question-dismissed"
-    state.resumable = true
+    state.questionHistory.push(record);
+    state.status = "paused";
+    state.pauseReason = "question-dismissed";
+    state.resumable = true;
     // pendingQuestions are intentionally retained for re-presentation on resume.
 
-    return record
+    return record;
 }
 
 /**
@@ -371,7 +371,7 @@ export function dismissQuestion(state: RunState, questionId: string): QuestionRe
  * @throws {Error} If no matching pending question exists.
  */
 function cancelQuestion(state: RunState, questionId: string): QuestionRecord {
-    const pending = requirePendingQuestion(state, questionId)
+    const pending = requirePendingQuestion(state, questionId);
 
     const record: QuestionRecord = {
         ...pending,
@@ -379,17 +379,17 @@ function cancelQuestion(state: RunState, questionId: string): QuestionRecord {
         outcome: "cancelled",
         answerHash: "",
         invalidatedArtifacts: [],
-    }
+    };
 
-    state.questionHistory.push(record)
+    state.questionHistory.push(record);
     // Remove the cancelled question from the pending batch.
-    const batch = state.pendingQuestions!
-    state.pendingQuestions = batch.filter(q => q.id !== questionId)
+    const batch = state.pendingQuestions!;
+    state.pendingQuestions = batch.filter(q => q.id !== questionId);
     if (state.pendingQuestions.length === 0) {
-        state.pendingQuestions = undefined
+        state.pendingQuestions = undefined;
     }
 
-    return record
+    return record;
 }
 
 /**
@@ -399,9 +399,9 @@ function cancelQuestion(state: RunState, questionId: string): QuestionRecord {
  */
 export function flushPendingQuestionOnCancel(state: RunState): void {
     if (state.pendingQuestions) {
-        const ids = state.pendingQuestions.map(q => q.id)
+        const ids = state.pendingQuestions.map(q => q.id);
         for (const id of ids) {
-            cancelQuestion(state, id)
+            cancelQuestion(state, id);
         }
     }
 }
@@ -415,12 +415,12 @@ export function flushPendingQuestionOnCancel(state: RunState): void {
  * @returns The resume target, or `undefined` if none is active.
  */
 export function consumeResumeTarget(state: RunState): ResumeTarget | undefined {
-    const target = state.resumeTarget
+    const target = state.resumeTarget;
     if (!target || target.consumed) {
-        return undefined
+        return undefined;
     }
-    target.consumed = true
-    return target
+    target.consumed = true;
+    return target;
 }
 
 /**
@@ -435,11 +435,11 @@ export function consumeResumeTarget(state: RunState): ResumeTarget | undefined {
  * @returns The resume target, or `undefined` if none is active or already consumed.
  */
 export function getResumeTarget(state: RunState): ResumeTarget | undefined {
-    const target = state.resumeTarget
+    const target = state.resumeTarget;
     if (!target || target.consumed) {
-        return undefined
+        return undefined;
     }
-    return target
+    return target;
 }
 
 /**
@@ -453,9 +453,9 @@ export function pendingQuestionBlockView(
     state: RunState,
     change: string,
 ): PendingQuestionResult | undefined {
-    const batch = state.pendingQuestions
+    const batch = state.pendingQuestions;
     if (!batch || batch.length === 0) {
-        return undefined
+        return undefined;
     }
     return {
         version: 1,
@@ -471,7 +471,7 @@ export function pendingQuestionBlockView(
             impact: pending.impact,
             bindingHash: pending.bindingHash,
         })),
-    }
+    };
 }
 
 /**
@@ -483,9 +483,9 @@ export function pendingQuestionBlockView(
  * @returns A prompt string that carries the answers into the fresh dispatch.
  */
 export function resumePromptForAnswers(basePrompt: string, records: QuestionRecord[]): string {
-    const parts: string[] = [basePrompt, "", "## Recorded user answers"]
+    const parts: string[] = [basePrompt, "", "## Recorded user answers"];
     for (const record of records) {
-        parts.push("", `### ${record.prompt}`)
+        parts.push("", `### ${record.prompt}`);
         if (record.otherText) {
             parts.push(
                 "",
@@ -495,20 +495,20 @@ export function resumePromptForAnswers(basePrompt: string, records: QuestionReco
                 "<untrusted-answer>",
                 record.otherText,
                 "</untrusted-answer>",
-            )
+            );
         } else {
             parts.push(
                 "",
                 `> Selected option: ${record.selectedOptionId} — ${record.selectedOptionLabel ?? ""}`,
-            )
+            );
         }
     }
     parts.push(
         "",
         "Use these answers to complete the phase. Do not re-ask the same questions.",
         "If the answers reveal a requirement change, use the typed escalation marker.",
-    )
-    return parts.join("\n")
+    );
+    return parts.join("\n");
 }
 
 /**
@@ -520,7 +520,7 @@ export function resumePromptForAnswers(basePrompt: string, records: QuestionReco
  * @returns A prompt string that carries the answer into the fresh dispatch.
  */
 export function resumePromptForAnswer(basePrompt: string, record: QuestionRecord): string {
-    const parts: string[] = [basePrompt, "", "## Recorded user answer"]
+    const parts: string[] = [basePrompt, "", "## Recorded user answer"];
 
     if (record.otherText) {
         parts.push(
@@ -531,39 +531,39 @@ export function resumePromptForAnswer(basePrompt: string, record: QuestionRecord
             "<untrusted-answer>",
             record.otherText,
             "</untrusted-answer>",
-        )
+        );
     } else {
         parts.push(
             "",
             `> Selected option: ${record.selectedOptionId} — ${record.selectedOptionLabel ?? ""}`,
-        )
+        );
     }
 
     parts.push(
         "",
         "Use this answer to complete the phase. Do not re-ask the same question.",
         "If the answer reveals a requirement change, use the typed escalation marker.",
-    )
+    );
 
-    return parts.join("\n")
+    return parts.join("\n");
 }
 
 /** Stable public DTO for a paused checkpoint block. */
 export type PendingCheckpointResult = {
-    version: 1
-    change: string
-    status: "paused"
-    reason: "checkpoint"
-    resumable: true
+    version: 1;
+    change: string;
+    status: "paused";
+    reason: "checkpoint";
+    resumable: true;
     checkpoint: {
-        dispatchId: string
-        capability: CapabilityId
-        purpose: DispatchPurpose
-        action: string
-        artifacts: ArtifactId[]
-        bindingHash: string
-    }
-}
+        dispatchId: string;
+        capability: CapabilityId;
+        purpose: DispatchPurpose;
+        action: string;
+        artifacts: ArtifactId[];
+        bindingHash: string;
+    };
+};
 
 /**
  * Build the stable public DTO for a paused checkpoint block.
@@ -576,9 +576,9 @@ export function pendingCheckpointBlockView(
     state: RunState,
     change: string,
 ): PendingCheckpointResult | undefined {
-    const pending = state.pendingCheckpoint
+    const pending = state.pendingCheckpoint;
     if (!pending) {
-        return undefined
+        return undefined;
     }
     return {
         version: 1,
@@ -594,7 +594,7 @@ export function pendingCheckpointBlockView(
             artifacts: pending.artifacts.map(snapshot => snapshot.artifact),
             bindingHash: pending.bindingHash,
         },
-    }
+    };
 }
 
 /**
@@ -607,8 +607,8 @@ export function pendingCheckpointBlockView(
  * @returns Full closure of affected artifact ids.
  */
 export function invalidationForCheckpoint(artifacts: CheckpointArtifactSnapshot[]): ArtifactId[] {
-    const roots = [...new Set(artifacts.map(snapshot => snapshot.artifact))]
-    return downstream(roots)
+    const roots = [...new Set(artifacts.map(snapshot => snapshot.artifact))];
+    return downstream(roots);
 }
 
 /**
@@ -620,7 +620,7 @@ export function invalidationForCheckpoint(artifacts: CheckpointArtifactSnapshot[
  * @returns A prompt string that carries the feedback into the fresh dispatch.
  */
 export function resumePromptForCheckpoint(basePrompt: string, record: CheckpointRecord): string {
-    const parts: string[] = [basePrompt, "", "## Recorded checkpoint feedback"]
+    const parts: string[] = [basePrompt, "", "## Recorded checkpoint feedback"];
 
     if (record.feedback) {
         parts.push(
@@ -631,7 +631,7 @@ export function resumePromptForCheckpoint(basePrompt: string, record: Checkpoint
             "<untrusted-feedback>",
             record.feedback,
             "</untrusted-feedback>",
-        )
+        );
     }
 
     parts.push(
@@ -640,9 +640,9 @@ export function resumePromptForCheckpoint(basePrompt: string, record: Checkpoint
         "the prior output rather than starting from scratch. Do not undo",
         "unrelated work. If the feedback reveals a requirement change, use the",
         "typed escalation marker.",
-    )
+    );
 
-    return parts.join("\n")
+    return parts.join("\n");
 }
 
 /**
@@ -656,7 +656,7 @@ function artifactHashes(state: RunState): Record<string, string> {
         Object.entries(state.artifacts).flatMap(([id, provenance]) =>
             provenance ? [[id, provenance.outputHash]] : [],
         ),
-    )
+    );
 }
 
 /**
@@ -668,15 +668,15 @@ function artifactHashes(state: RunState): Record<string, string> {
 function answerHashes(state: RunState): Record<string, string> {
     const questionHashes = state.questionHistory
         .filter(record => record.outcome === "answered" && record.answerHash)
-        .map(record => [record.id, record.answerHash] as [string, string])
+        .map(record => [record.id, record.answerHash] as [string, string]);
     const checkpointHashes = state.checkpointHistory
         .filter(record => record.outcome === "feedback" && record.feedbackHash)
-        .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
-    const result: Record<string, string> = {}
+        .map(record => [record.dispatchId, record.feedbackHash] as [string, string]);
+    const result: Record<string, string> = {};
     for (const [k, v] of [...questionHashes, ...checkpointHashes]) {
-        result[k] = v
+        result[k] = v;
     }
-    return result
+    return result;
 }
 
 /**
@@ -694,34 +694,34 @@ function phaseForDispatch(dispatch: DispatchRecord): ArtifactId {
     if (dispatch.purpose === "judgment") {
         return dispatch.capability === "compliance-judgment"
             ? "compliance-judgment"
-            : "correctness-judgment"
+            : "correctness-judgment";
     }
     if (dispatch.purpose === "consultation") {
-        return "proposal"
+        return "proposal";
     }
     if (dispatch.purpose === "independent-review") {
-        return "review-ledger"
+        return "review-ledger";
     }
     if (dispatch.purpose === "repair") {
-        return "implementation"
+        return "implementation";
     }
 
     switch (dispatch.capability) {
         case "exploration":
-            return "exploration"
+            return "exploration";
         case "planning":
-            return "proposal"
+            return "proposal";
         case "design":
-            return "design"
+            return "design";
         case "implementation":
         case "repair":
-            return "implementation"
+            return "implementation";
         case "verification":
-            return "verification"
+            return "verification";
         case "refutation":
-            return "review-ledger"
+            return "review-ledger";
         default:
-            return "proposal"
+            return "proposal";
     }
 }
 
@@ -734,15 +734,15 @@ function phaseForDispatch(dispatch: DispatchRecord): ArtifactId {
  * @throws {Error} If no pending question exists or the id does not match.
  */
 function requirePendingQuestion(state: RunState, questionId: string): PendingQuestion {
-    const batch = state.pendingQuestions
+    const batch = state.pendingQuestions;
     if (!batch) {
-        throw new Error("SpecOps question is not pending or id does not match")
+        throw new Error("SpecOps question is not pending or id does not match");
     }
-    const pending = batch.find(q => q.id === questionId)
+    const pending = batch.find(q => q.id === questionId);
     if (!pending) {
-        throw new Error("SpecOps question is not pending or id does not match")
+        throw new Error("SpecOps question is not pending or id does not match");
     }
-    return pending
+    return pending;
 }
 
 /**
@@ -753,20 +753,20 @@ function requirePendingQuestion(state: RunState, questionId: string): PendingQue
  * @throws {Error} If the binding hash has changed (stale question).
  */
 function validateBindingHash(state: RunState, pending: PendingQuestion): void {
-    const dispatch = state.dispatches.find(candidate => candidate.id === pending.dispatchId)
+    const dispatch = state.dispatches.find(candidate => candidate.id === pending.dispatchId);
     if (!dispatch) {
-        throw new Error("SpecOps pending question references an unknown dispatch")
+        throw new Error("SpecOps pending question references an unknown dispatch");
     }
     // Recompute the binding hash excluding answer hashes from questions that
     // share the same dispatchId. This prevents answering one question in a
     // multi-question batch from invalidating the binding hash of subsequent
     // questions in the same batch (since those answers did not exist at
     // registration time).
-    const filteredAnswerHashes: Record<string, string> = {}
+    const filteredAnswerHashes: Record<string, string> = {};
     for (const [id, hash] of Object.entries(answerHashes(state))) {
-        const record = state.questionHistory.find(r => r.id === id)
+        const record = state.questionHistory.find(r => r.id === id);
         if (record && record.dispatchId !== pending.dispatchId) {
-            filteredAnswerHashes[id] = hash
+            filteredAnswerHashes[id] = hash;
         }
     }
     const current = questionBindingHash({
@@ -775,9 +775,9 @@ function validateBindingHash(state: RunState, pending: PendingQuestion): void {
         answerHashes: filteredAnswerHashes,
         dispatchInputHash: dispatch.inputHash,
         implementationDiffHash: state.implementationDiffHash,
-    })
+    });
     if (current !== pending.bindingHash) {
-        throw new Error("SpecOps pending question is stale; authoritative inputs have changed")
+        throw new Error("SpecOps pending question is stale; authoritative inputs have changed");
     }
 }
 
@@ -793,14 +793,14 @@ export async function writeQuestionLedger(
     change: string,
     state: RunState,
 ): Promise<void> {
-    if (state.questionHistory.length === 0) return
+    if (state.questionHistory.length === 0) return;
 
     const sections = state.questionHistory.map(record => {
         const replay = state.dispatches.find(
             dispatch =>
                 dispatch.resume?.origin === "question" && dispatch.resume.sourceId === record.id,
-        )
-        const artifact = state.artifacts[record.phase]
+        );
+        const artifact = state.artifacts[record.phase];
         const answer = record.otherText
             ? `<pre>${escapeLedgerText(record.otherText)}</pre>`
             : record.selectedOptionId
@@ -809,7 +809,7 @@ export async function writeQuestionLedger(
                         ? ` — ${escapeLedgerText(record.selectedOptionLabel)}`
                         : ""
                 }`
-              : "Not answered"
+              : "Not answered";
 
         return [
             `## ${escapeLedgerText(record.phase)} — ${escapeLedgerText(record.id)}`,
@@ -832,8 +832,8 @@ export async function writeQuestionLedger(
             "### Answer",
             "",
             answer,
-        ].join("\n")
-    })
+        ].join("\n");
+    });
 
     await writeTextAtomic(
         directory,
@@ -846,10 +846,10 @@ export async function writeQuestionLedger(
             "",
             ...sections,
         ].join("\n\n"),
-    )
+    );
 }
 
 /** Escape untrusted text before placing it inside an HTML block in markdown. */
 function escapeLedgerText(value: string): string {
-    return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }

@@ -6,12 +6,12 @@
  * floor, so the workflow can never be silently downgraded below the change's
  * risk profile.
  */
-import { createHash } from "node:crypto"
-import type { Assessment, CapabilityId, ScopeTier, WorkflowRequirements } from "../types.js"
-import type { SpecOpsConfig } from "../config.js"
+import { createHash } from "node:crypto";
+import type { Assessment, CapabilityId, ScopeTier, WorkflowRequirements } from "../types.js";
+import type { SpecOpsConfig } from "../config.js";
 
 /** Numeric rank of each tier used to compare and select the higher tier. */
-const TIER_RANK: Record<ScopeTier, number> = { lean: 0, standard: 1, full: 2 }
+const TIER_RANK: Record<ScopeTier, number> = { lean: 0, standard: 1, full: 2 };
 
 /**
  * Return the higher of two scope tiers without ever lowering the safety floor.
@@ -21,7 +21,7 @@ const TIER_RANK: Record<ScopeTier, number> = { lean: 0, standard: 1, full: 2 }
  * @returns The tier with the greater {@link TIER_RANK} rank.
  */
 const higherTier = (left: ScopeTier, right: ScopeTier): ScopeTier =>
-    TIER_RANK[left] >= TIER_RANK[right] ? left : right
+    TIER_RANK[left] >= TIER_RANK[right] ? left : right;
 
 /**
  * Raise a scope tier when actual changed paths exceed configured size limits.
@@ -39,23 +39,23 @@ export function scopeForActualDiff(
     paths: string[],
     thresholds: SpecOpsConfig["workflow"]["scopeThresholds"],
 ): ScopeTier {
-    if (current === "full" || paths.length === 0) return current
+    if (current === "full" || paths.length === 0) return current;
     const modules = new Set(
         paths.map(changedPath => {
-            const segments = changedPath.split("/").filter(Boolean)
-            return segments.length > 1 ? segments[0] : "."
+            const segments = changedPath.split("/").filter(Boolean);
+            return segments.length > 1 ? segments[0] : ".";
         }),
-    ).size
+    ).size;
     if (paths.length >= thresholds.fullMinFiles || modules >= thresholds.fullMinModules) {
-        return "full"
+        return "full";
     }
     if (
         current === "lean" &&
         (paths.length > thresholds.leanMaxFiles || modules > thresholds.leanMaxModules)
     ) {
-        return "standard"
+        return "standard";
     }
-    return current
+    return current;
 }
 
 /**
@@ -78,7 +78,7 @@ export function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArt
             "correctness-judgment",
             "review-ledger",
             "receipt",
-        ]
+        ];
     }
     if (tier === "standard") {
         return [
@@ -93,7 +93,7 @@ export function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArt
             "compliance-judgment",
             "review-ledger",
             "receipt",
-        ]
+        ];
     }
     return [
         "routing",
@@ -108,7 +108,7 @@ export function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArt
         "compliance-judgment",
         "review-ledger",
         "receipt",
-    ]
+    ];
 }
 
 /**
@@ -123,7 +123,7 @@ export function artifactsFor(tier: ScopeTier): WorkflowRequirements["requiredArt
  */
 export function capabilitiesFor(tier: ScopeTier, specialists: CapabilityId[] = []): CapabilityId[] {
     if (tier === "lean") {
-        return ["assessment", "planning", "implementation", "verification"]
+        return ["assessment", "planning", "implementation", "verification"];
     }
     const capabilities: CapabilityId[] = [
         "assessment",
@@ -135,9 +135,9 @@ export function capabilitiesFor(tier: ScopeTier, specialists: CapabilityId[] = [
         "correctness-judgment",
         "compliance-judgment",
         ...specialists,
-    ]
-    if (tier === "full") capabilities.push("design")
-    return [...new Set(capabilities)]
+    ];
+    if (tier === "full") capabilities.push("design");
+    return [...new Set(capabilities)];
 }
 
 /**
@@ -158,23 +158,25 @@ export function requirementsFor(
     requested: "auto" | ScopeTier,
     config: SpecOpsConfig,
 ): { requirements: WorkflowRequirements; reasons: string[] } {
-    const thresholds = config.workflow.scopeThresholds
-    const reasons = [...assessment.facts]
-    const fullReasons: string[] = []
-    if (assessment.publicContract === "breaking") fullReasons.push("breaking public contract")
-    if (assessment.changeKind === "migration") fullReasons.push("migration change")
-    if (assessment.changeKind === "infrastructure") fullReasons.push("infrastructure change")
+    const thresholds = config.workflow.scopeThresholds;
+    const reasons = [...assessment.facts];
+    const fullReasons: string[] = [];
+    if (assessment.publicContract === "breaking") fullReasons.push("breaking public contract");
+    if (assessment.changeKind === "migration") fullReasons.push("migration change");
+    if (assessment.changeKind === "infrastructure") fullReasons.push("infrastructure change");
     if (assessment.expectedFiles >= thresholds.fullMinFiles) {
-        fullReasons.push(`expected files ${assessment.expectedFiles} >= ${thresholds.fullMinFiles}`)
+        fullReasons.push(
+            `expected files ${assessment.expectedFiles} >= ${thresholds.fullMinFiles}`,
+        );
     }
     if (assessment.expectedModules >= thresholds.fullMinModules) {
         fullReasons.push(
             `expected modules ${assessment.expectedModules} >= ${thresholds.fullMinModules}`,
-        )
+        );
     }
     if (assessment.confidence.requirements === "low")
-        fullReasons.push("low requirements confidence")
-    if (assessment.confidence.design === "low") fullReasons.push("low design confidence")
+        fullReasons.push("low requirements confidence");
+    if (assessment.confidence.design === "low") fullReasons.push("low design confidence");
     const requiresFull =
         assessment.publicContract === "breaking" ||
         assessment.changeKind === "migration" ||
@@ -188,7 +190,7 @@ export function requirementsFor(
                 config.routing.forceFullForFacets.includes(facet),
         ) ||
         assessment.confidence.requirements === "low" ||
-        assessment.confidence.design === "low"
+        assessment.confidence.design === "low";
     const requiresStandard =
         assessment.changesRequirements ||
         assessment.publicContract !== "none" ||
@@ -196,23 +198,23 @@ export function requirementsFor(
         assessment.changeKind === "refactor" ||
         assessment.expectedFiles > thresholds.leanMaxFiles ||
         assessment.expectedModules > thresholds.leanMaxModules ||
-        assessment.riskFacets.length > 0
+        assessment.riskFacets.length > 0;
 
-    const floor: ScopeTier = requiresFull ? "full" : requiresStandard ? "standard" : "lean"
+    const floor: ScopeTier = requiresFull ? "full" : requiresStandard ? "standard" : "lean";
     if (requiresFull) {
-        reasons.push("A deterministic Full safety, scope, or confidence floor applies.")
+        reasons.push("A deterministic Full safety, scope, or confidence floor applies.");
     } else if (requiresStandard) {
-        reasons.push("The change exceeds Lean behavioral or risk limits.")
+        reasons.push("The change exceeds Lean behavioral or risk limits.");
     }
 
-    const requestedFloor = requested === "auto" ? "lean" : requested
+    const requestedFloor = requested === "auto" ? "lean" : requested;
     const configuredFloor =
-        config.workflow.defaultTier === "auto" ? "lean" : config.workflow.defaultTier
-    const scopeTier = higherTier(higherTier(floor, requestedFloor), configuredFloor)
+        config.workflow.defaultTier === "auto" ? "lean" : config.workflow.defaultTier;
+    const scopeTier = higherTier(higherTier(floor, requestedFloor), configuredFloor);
     if (scopeTier === "full" && fullReasons.length > 0) {
-        reasons.push(`Full tier selected because ${fullReasons.join(", ")}.`)
+        reasons.push(`Full tier selected because ${fullReasons.join(", ")}.`);
     }
-    const specialists = [...new Set<CapabilityId>(assessment.riskFacets)]
+    const specialists = [...new Set<CapabilityId>(assessment.riskFacets)];
 
     const requirements: WorkflowRequirements = {
         scopeTier,
@@ -243,10 +245,10 @@ export function requirementsFor(
         // adjust it without mutating the shared project configuration object.
         budgets: { ...config.escalation.budgets },
         policyHash: "",
-    }
+    };
     requirements.policyHash = createHash("sha256")
         .update(JSON.stringify(requirements))
-        .digest("hex")
+        .digest("hex");
 
-    return { requirements, reasons: [...new Set(reasons)] }
+    return { requirements, reasons: [...new Set(reasons)] };
 }

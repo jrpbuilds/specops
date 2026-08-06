@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest"
-import { AGENT_IDS } from "../src/capabilities/ids.js"
-import type { WorkflowAction } from "../src/workflow/actions.js"
-import { formatCheckpointPreview } from "../src/workflow/previews.js"
+import { describe, expect, it } from "vitest";
+import { AGENT_IDS } from "../src/capabilities/ids.js";
+import type { WorkflowAction } from "../src/workflow/actions.js";
+import { formatCheckpointPreview } from "../src/workflow/previews.js";
 
 describe("checkpoint previews", () => {
     it("formats planning bundles as readable Markdown", () => {
@@ -14,16 +14,16 @@ describe("checkpoint previews", () => {
                 },
                 tasks: "# Tasks\n\n- Update the shared legal page component.",
             }),
-        )
+        );
 
-        expect(preview).toContain("# Planning Bundle")
-        expect(preview).toContain("## Proposal")
-        expect(preview).toContain("## Specifications")
-        expect(preview).toContain("### legal")
-        expect(preview).toContain("## Tasks")
-        expect(preview).not.toContain('"proposal"')
-        expect(preview).not.toContain("\\n")
-    })
+        expect(preview).toContain("# Planning Bundle");
+        expect(preview).toContain("## Proposal");
+        expect(preview).toContain("## Specifications");
+        expect(preview).toContain("### legal");
+        expect(preview).toContain("## Tasks");
+        expect(preview).not.toContain('"proposal"');
+        expect(preview).not.toContain("\\n");
+    });
 
     it("formats Lean assurance bundles without exposing the JSON envelope", () => {
         const preview = formatCheckpointPreview(
@@ -45,28 +45,28 @@ describe("checkpoint previews", () => {
                 },
                 reviewLedger: { findings: [] },
             }),
-        )
+        );
 
-        expect(preview).toContain("# Verification")
-        expect(preview).toContain("## Correctness Judgment")
-        expect(preview).toContain("**Verdict:** PASS")
-        expect(preview).toContain("## Review Ledger")
-        expect(preview).toContain("**Evidence**")
-        expect(preview).toContain("repository-path: src/example.ts")
-        expect(preview).toContain("The name communicates its purpose.")
-        expect(preview).not.toContain('"correctnessJudgment"')
-    })
+        expect(preview).toContain("# Verification");
+        expect(preview).toContain("## Correctness Judgment");
+        expect(preview).toContain("**Verdict:** PASS");
+        expect(preview).toContain("## Review Ledger");
+        expect(preview).toContain("**Evidence**");
+        expect(preview).toContain("repository-path: src/example.ts");
+        expect(preview).toContain("The name communicates its purpose.");
+        expect(preview).not.toContain('"correctnessJudgment"');
+    });
 
     it("leaves existing Markdown and malformed structured output unchanged", () => {
-        const markdown = "# Tasks\n\n- Keep the existing output."
+        const markdown = "# Tasks\n\n- Keep the existing output.";
         expect(formatCheckpointPreview(workflowAction("planning", "lean-plan"), markdown)).toBe(
             markdown,
-        )
+        );
         expect(
             formatCheckpointPreview(workflowAction("planning", "standard-bundle"), "not JSON"),
-        ).toBe("not JSON")
-    })
-})
+        ).toBe("not JSON");
+    });
+});
 
 function workflowAction(capability: "planning" | "verification", mode: string): WorkflowAction {
     return {
@@ -77,5 +77,5 @@ function workflowAction(capability: "planning" | "verification", mode: string): 
         independent: false,
         mode,
         prompt: "",
-    }
+    };
 }

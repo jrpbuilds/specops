@@ -1,9 +1,9 @@
 /**
  * Native OpenCode TUI editor for SpecOps agent model and variant mappings.
  */
-import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js"
-import { inspectAgentManifest, ManifestConflictError, saveAgentManifest } from "./installation.js"
+import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
+import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js";
+import { inspectAgentManifest, ManifestConflictError, saveAgentManifest } from "./installation.js";
 import {
     agentSettingsCategory,
     clearConfiguredModel,
@@ -12,35 +12,35 @@ import {
     selectConfiguredModel,
     validateManifestSelections,
     type ConfiguredModel,
-} from "./model-settings.js"
-import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./agents/manifest.js"
+} from "./model-settings.js";
+import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./agents/manifest.js";
 
-const COMMAND_NAME = "specops.models.configure"
-const BACK = Symbol("specops-back")
+const COMMAND_NAME = "specops.models.configure";
+const BACK = Symbol("specops-back");
 
 /**
  * Register the command-palette entry for the agent model editor.
  */
 export function registerModelSettings(api: TuiPluginApi): void {
-    let editorOpen = false
+    let editorOpen = false;
 
     /** Open the model editor once, guarding against re-entrant launches. */
     const openEditor = async (): Promise<void> => {
-        if (editorOpen) return
-        editorOpen = true
+        if (editorOpen) return;
+        editorOpen = true;
         try {
             await showModelEditor(api, () => {
-                editorOpen = false
-            })
+                editorOpen = false;
+            });
         } catch (error) {
-            editorOpen = false
+            editorOpen = false;
             api.ui.toast({
                 variant: "error",
                 title: "SpecOps model settings",
                 message: error instanceof Error ? error.message : String(error),
-            })
+            });
         }
-    }
+    };
 
     const unregisterCommand = api.keymap.registerLayer({
         commands: [
@@ -53,45 +53,45 @@ export function registerModelSettings(api: TuiPluginApi): void {
                 run: openEditor,
             },
         ],
-    })
+    });
 
-    api.lifecycle.onDispose(unregisterCommand)
+    api.lifecycle.onDispose(unregisterCommand);
 }
 
 /**
  * Open a staged, callback-driven dropdown editor and save only after review.
  */
 async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<void> {
-    const inspection = await inspectAgentManifest()
-    const models = configuredModels(api.state.provider)
+    const inspection = await inspectAgentManifest();
+    const models = configuredModels(api.state.provider);
     if (!models.length) {
-        onClose()
+        onClose();
         api.ui.toast({
             variant: "error",
             title: "SpecOps model settings",
             message: "OpenCode has no configured models to select.",
-        })
-        return
+        });
+        return;
     }
 
-    const source = inspection.status === "ready" ? inspection.manifest : DEFAULT_MANIFEST
-    const expectedContentHash = inspection.contentHash
-    const draft = createManifestDraft(source, models)
-    const initial = structuredClone(draft.manifest)
-    let staged = structuredClone(draft.manifest)
+    const source = inspection.status === "ready" ? inspection.manifest : DEFAULT_MANIFEST;
+    const expectedContentHash = inspection.contentHash;
+    const draft = createManifestDraft(source, models);
+    const initial = structuredClone(draft.manifest);
+    let staged = structuredClone(draft.manifest);
 
-    let closed = false
+    let closed = false;
     /** Mark the editor closed exactly once, idempotently. */
     const finish = (): void => {
-        if (closed) return
-        closed = true
-        onClose()
-    }
+        if (closed) return;
+        closed = true;
+        onClose();
+    };
     /** Clear the dialog surface and finish the editor. */
     const close = (): void => {
-        api.ui.dialog.clear()
-        finish()
-    }
+        api.ui.dialog.clear();
+        finish();
+    };
 
     /** Surface manifest validation issues and return to the agent list on confirm. */
     const showIssues = (issues: readonly string[]): void => {
@@ -101,24 +101,24 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 message: issues.join("\n"),
                 onConfirm: showAgents,
             }),
-        )
-    }
+        );
+    };
 
     /** Validate the staged mapping and persist it once if the on-disk hash is unchanged. */
     const save = async (): Promise<void> => {
-        const issues = validateManifestSelections(staged, models)
+        const issues = validateManifestSelections(staged, models);
         if (issues.length) {
-            showIssues(issues)
-            return
+            showIssues(issues);
+            return;
         }
         try {
-            await saveAgentManifest(staged, expectedContentHash)
-            close()
+            await saveAgentManifest(staged, expectedContentHash);
+            close();
             api.ui.toast({
                 variant: "success",
                 title: "SpecOps model settings saved",
                 message: "Restart or reload OpenCode to apply the new agent mappings.",
-            })
+            });
         } catch (error) {
             if (error instanceof ManifestConflictError) {
                 api.ui.dialog.replace(() =>
@@ -128,21 +128,21 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                             "SpecOps did not overwrite the newer manifest. Reopen the editor to review it.",
                         onConfirm: close,
                     }),
-                )
-                return
+                );
+                return;
             }
-            throw error
+            throw error;
         }
-    }
+    };
 
     /** Show the save-confirmation dialog, or issues, before persisting. */
     const showReview = (): void => {
-        const issues = validateManifestSelections(staged, models)
+        const issues = validateManifestSelections(staged, models);
         if (issues.length) {
-            showIssues(issues)
-            return
+            showIssues(issues);
+            return;
         }
-        const changed = changedAgentIds(initial, staged).length
+        const changed = changedAgentIds(initial, staged).length;
         api.ui.dialog.replace(() =>
             api.ui.DialogConfirm({
                 title: "Save SpecOps model mappings?",
@@ -154,12 +154,12 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 onConfirm: save,
                 onCancel: showAgents,
             }),
-        )
-    }
+        );
+    };
 
     /** Pick a variant for the selected model, or clear it to the model default. */
     const showVariant = (id: AgentId, model: ConfiguredModel): void => {
-        const variants = ["", ...model.variants]
+        const variants = ["", ...model.variants];
         api.ui.dialog.replace(() =>
             api.ui.DialogSelect<string | typeof BACK>({
                 title: `${id}: variant`,
@@ -181,18 +181,18 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 ],
                 onSelect: option => {
                     if (option.value === BACK) {
-                        showModels(id)
-                        return
+                        showModels(id);
+                        return;
                     }
                     staged.agents[id] = {
                         model: staged.agents[id].model,
                         ...(option.value ? { variant: option.value } : {}),
-                    }
-                    showAgents()
+                    };
+                    showAgents();
                 },
             }),
-        )
-    }
+        );
+    };
 
     /** Pick a configured model (or OpenCode's global default) for one agent. */
     const showModels = (id: AgentId): void => {
@@ -221,36 +221,36 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                 ],
                 onSelect: option => {
                     if (option.value === BACK) {
-                        showAgents()
-                        return
+                        showAgents();
+                        return;
                     }
                     if (option.value === "") {
-                        staged.agents[id] = clearConfiguredModel(staged.agents[id])
-                        showAgents()
-                        return
+                        staged.agents[id] = clearConfiguredModel(staged.agents[id]);
+                        showAgents();
+                        return;
                     }
-                    const selected = models.find(model => model.id === option.value)
-                    if (!selected) return
-                    staged.agents[id] = selectConfiguredModel(staged.agents[id], selected)
-                    showVariant(id, selected)
+                    const selected = models.find(model => model.id === option.value);
+                    if (!selected) return;
+                    staged.agents[id] = selectConfiguredModel(staged.agents[id], selected);
+                    showVariant(id, selected);
                 },
             }),
-        )
-    }
+        );
+    };
 
     /** Render the staged agent mapping list with review and cancel actions. */
     const showAgents = (): void => {
-        api.ui.dialog.setSize("xlarge")
+        api.ui.dialog.setSize("xlarge");
         const unresolved = new Set(
             validateManifestSelections(staged, models).map(issue => issue.split(":")[0]),
-        )
-        const changed = new Set(changedAgentIds(initial, staged))
+        );
+        const changed = new Set(changedAgentIds(initial, staged));
         const agentOptions = ALL_AGENT_IDS.map(id => ({
             title: `${unresolved.has(id) ? "⚠ " : ""}${changed.has(id) ? "✓ " : ""}${id}`,
             value: id,
             category: agentSettingsCategory(id),
             footer: describeSelection(staged, id, models),
-        }))
+        }));
         api.ui.dialog.replace(
             () =>
                 api.ui.DialogSelect({
@@ -274,19 +274,19 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                     ],
                     onSelect: option => {
                         if (option.value === "__save__") {
-                            showReview()
+                            showReview();
                         } else if (option.value === "__cancel__") {
-                            close()
+                            close();
                         } else {
-                            showModels(option.value as AgentId)
+                            showModels(option.value as AgentId);
                         }
                     },
                 }),
             finish,
-        )
-    }
+        );
+    };
 
-    showAgents()
+    showAgents();
 }
 
 /** Describe one staged model mapping compactly in the agent list. */
@@ -295,28 +295,28 @@ function describeSelection(
     id: AgentId,
     models: readonly ConfiguredModel[],
 ): string {
-    const entry = manifest.agents[id]
+    const entry = manifest.agents[id];
     if (!entry.model?.trim()) {
-        return "OpenCode default"
+        return "OpenCode default";
     }
-    const name = models.find(model => model.id === entry.model)?.name ?? entry.model
-    const compactName = name.length > 28 ? `${name.slice(0, 27)}…` : name
-    return `${compactName} · ${entry.variant ?? "Default"}`
+    const name = models.find(model => model.id === entry.model)?.name ?? entry.model;
+    const compactName = name.length > 28 ? `${name.slice(0, 27)}…` : name;
+    return `${compactName} · ${entry.variant ?? "Default"}`;
 }
 
 /** Return agents whose staged model or variant differs from the opened draft. */
 function changedAgentIds(initial: SpecOpsManifest, staged: SpecOpsManifest): readonly AgentId[] {
     return ALL_AGENT_IDS.filter(
         id => JSON.stringify(initial.agents[id]) !== JSON.stringify(staged.agents[id]),
-    )
+    );
 }
 
 /** SpecOps TUI plugin module registered with OpenCode's plugin manager. */
 const SpecOpsTuiPlugin = {
     id: "specops",
     tui: async api => {
-        registerModelSettings(api)
+        registerModelSettings(api);
     },
-} satisfies TuiPluginModule
+} satisfies TuiPluginModule;
 
-export default SpecOpsTuiPlugin
+export default SpecOpsTuiPlugin;

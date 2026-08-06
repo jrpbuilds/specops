@@ -1,7 +1,7 @@
-import type { Config } from "@opencode-ai/plugin"
-import { AGENT_IDS } from "./capabilities/ids.js"
-import { AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js"
-import { TOOL_IDS } from "./protocol.js"
+import type { Config } from "@opencode-ai/plugin";
+import { AGENT_IDS } from "./capabilities/ids.js";
+import { AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js";
+import { TOOL_IDS } from "./protocol.js";
 
 /**
  * User-facing entry points; every execution path is routed through the
@@ -54,4 +54,4 @@ export const COMMANDS: NonNullable<Config["command"]> = {
         description: "Diagnose final SpecOps installation",
         template: `Call ${TOOL_IDS.doctor}.`,
     },
-}
+};

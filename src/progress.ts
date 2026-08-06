@@ -6,9 +6,9 @@
  * introducing a second canonical run-state format.
  */
 
-import { writeFile } from "node:fs/promises"
-import path from "node:path"
-import type { RunState } from "./types.js"
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { RunState } from "./types.js";
 
 /**
  * Minimal OpenCode metadata capability needed to surface deterministic
@@ -16,13 +16,13 @@ import type { RunState } from "./types.js"
  */
 export type MetadataContext = {
     /** Identifier of the OpenCode session this progress belongs to. */
-    sessionID: string
+    sessionID: string;
     /**
      * Push a title and metadata blob into OpenCode's session surface.
      * @param input - Title and optional metadata record.
      */
-    metadata(input: { title?: string; metadata?: Record<string, unknown> }): void
-}
+    metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+};
 
 /**
  * Publish a compact UI status record without creating a second run-state
@@ -61,7 +61,7 @@ export async function publishProgress(
                     .at(-1)?.failureReason,
             },
         },
-    })
+    });
     await writeFile(
         path.join(directory, "openspec", "changes", change, "specops-progress.json"),
         `${JSON.stringify(
@@ -79,5 +79,5 @@ export async function publishProgress(
             null,
             2,
         )}\n`,
-    )
+    );
 }

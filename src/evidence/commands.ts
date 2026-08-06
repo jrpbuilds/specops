@@ -1,9 +1,9 @@
-import { createHash, randomUUID } from "node:crypto"
-import path from "node:path"
-import { runProcess } from "../git.js"
-import type { SpecOpsConfig } from "../config.js"
-import type { CommandEvidence } from "../types.js"
-import { redactSensitiveText } from "../security/redact.js"
+import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
+import { runProcess } from "../git.js";
+import type { SpecOpsConfig } from "../config.js";
+import type { CommandEvidence } from "../types.js";
+import { redactSensitiveText } from "../security/redact.js";
 
 /**
  * Resolve a command working directory without allowing path traversal.
@@ -17,11 +17,11 @@ import { redactSensitiveText } from "../security/redact.js"
  * @throws If the resolved path escapes `root`.
  */
 function confined(root: string, cwd: string | undefined): string {
-    const target = path.resolve(root, cwd ?? ".")
+    const target = path.resolve(root, cwd ?? ".");
     if (!target.startsWith(root + path.sep) && target !== root) {
-        throw new Error("validation cwd escapes project root")
+        throw new Error("validation cwd escapes project root");
     }
-    return target
+    return target;
 }
 
 /**
@@ -47,13 +47,13 @@ export async function executeValidation(
     root: string,
     config: Pick<SpecOpsConfig, "review">,
     input: {
-        executable: string
-        args: string[]
-        cwd?: string
-        validationId: string
-        dispatchId: string
-        implementationDiffHash?: string
-        policyHash?: string
+        executable: string;
+        args: string[];
+        cwd?: string;
+        validationId: string;
+        dispatchId: string;
+        implementationDiffHash?: string;
+        policyHash?: string;
     },
     signal?: AbortSignal,
 ): Promise<CommandEvidence> {
@@ -62,16 +62,16 @@ export async function executeValidation(
         input.executable.includes("\0") ||
         input.args.some(arg => typeof arg !== "string" || arg.includes("\0"))
     ) {
-        throw new Error("invalid validation command")
+        throw new Error("invalid validation command");
     }
 
-    const cwd = confined(root, input.cwd)
-    const startedAt = new Date().toISOString()
-    const controller = new AbortController()
-    const forwardCancellation = (): void => controller.abort(signal?.reason)
-    signal?.addEventListener("abort", forwardCancellation, { once: true })
-    const timer = setTimeout(() => controller.abort(), config.review.commandTimeoutSeconds * 1_000)
-    let result: Awaited<ReturnType<typeof runProcess>>
+    const cwd = confined(root, input.cwd);
+    const startedAt = new Date().toISOString();
+    const controller = new AbortController();
+    const forwardCancellation = (): void => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", forwardCancellation, { once: true });
+    const timer = setTimeout(() => controller.abort(), config.review.commandTimeoutSeconds * 1_000);
+    let result: Awaited<ReturnType<typeof runProcess>>;
     try {
         result = await runProcess(
             input.executable,
@@ -85,14 +85,14 @@ export async function executeValidation(
                 OPENSPEC_TELEMETRY: "0",
             },
             config.review.commandOutputBytes,
-        )
+        );
     } finally {
-        clearTimeout(timer)
-        signal?.removeEventListener("abort", forwardCancellation)
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", forwardCancellation);
     }
 
-    const stdoutMarker = result.stdoutTruncated ? "\n[SpecOps output limit reached]" : ""
-    const stderrMarker = result.stderrTruncated ? "\n[SpecOps output limit reached]" : ""
+    const stdoutMarker = result.stdoutTruncated ? "\n[SpecOps output limit reached]" : "";
+    const stderrMarker = result.stderrTruncated ? "\n[SpecOps output limit reached]" : "";
     return {
         id: randomUUID(),
         executable: input.executable,
@@ -109,5 +109,5 @@ export async function executeValidation(
         dispatchId: input.dispatchId,
         implementationDiffHash: input.implementationDiffHash,
         policyHash: input.policyHash,
-    }
+    };
 }

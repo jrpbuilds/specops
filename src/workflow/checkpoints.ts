@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash } from "node:crypto";
 import type {
     ArtifactId,
     CapabilityId,
@@ -6,8 +6,8 @@ import type {
     DispatchPurpose,
     PendingCheckpoint,
     RunState,
-} from "../types.js"
-import type { WorkflowAction } from "./actions.js"
+} from "../types.js";
+import type { WorkflowAction } from "./actions.js";
 
 /**
  * Return whether a persisted artifact is still usable by the scheduler.
@@ -17,7 +17,7 @@ import type { WorkflowAction } from "./actions.js"
  * @returns `true` when the artifact is recorded with `validity === "valid"`.
  */
 const isComplete = (state: RunState, artifact: ArtifactId): boolean =>
-    state.artifacts[artifact]?.validity === "valid"
+    state.artifacts[artifact]?.validity === "valid";
 
 /**
  * Checkpoint-eligible artifact groups produced by a single completed dispatch.
@@ -32,10 +32,10 @@ const isComplete = (state: RunState, artifact: ArtifactId): boolean =>
  * share a capability or mode with a workflow dispatch.
  */
 const CHECKPOINT_ACTIONS: Array<{
-    capability: CapabilityId
-    purpose: DispatchPurpose
-    mode?: string
-    artifacts: ArtifactId[]
+    capability: CapabilityId;
+    purpose: DispatchPurpose;
+    mode?: string;
+    artifacts: ArtifactId[];
 }> = [
     // Lean planning produces tasks only.
     {
@@ -72,7 +72,7 @@ const CHECKPOINT_ACTIONS: Array<{
     // Verifier produces verification (Lean bundle also yields judgments/ledger
     // but those are assurance tail; the checkpoint is the verification phase).
     { capability: "verification", purpose: "workflow", artifacts: ["verification"] },
-]
+];
 
 /**
  * Return the checkpoint-eligible artifacts a completed dispatch produced.
@@ -93,7 +93,7 @@ export function checkpointArtifactsFor(state: RunState, action: WorkflowAction):
             entry.capability === action.capability &&
             entry.purpose === action.purpose &&
             (entry.mode === undefined || entry.mode === action.mode),
-    ).flatMap(entry => entry.artifacts.filter(artifact => isComplete(state, artifact)))
+    ).flatMap(entry => entry.artifacts.filter(artifact => isComplete(state, artifact)));
 }
 
 /**
@@ -113,7 +113,7 @@ export function snapshotCheckpointArtifacts(
     return artifacts.map(artifact => ({
         artifact,
         outputHash: state.artifacts[artifact]?.outputHash ?? "",
-    }))
+    }));
 }
 
 /**
@@ -133,11 +133,11 @@ export function hasCheckpointFor(
     dispatchId: string,
     artifacts: CheckpointArtifactSnapshot[],
 ): boolean {
-    const hash = checkpointSnapshotHash(artifacts)
+    const hash = checkpointSnapshotHash(artifacts);
     return state.checkpointHistory.some(
         record =>
             record.dispatchId === dispatchId && checkpointSnapshotHash(record.artifacts) === hash,
-    )
+    );
 }
 
 /**
@@ -155,7 +155,7 @@ function checkpointSnapshotHash(artifacts: CheckpointArtifactSnapshot[]): string
                     .sort(([left], [right]) => left.localeCompare(right)),
             ),
         )
-        .digest("hex")
+        .digest("hex");
 }
 
 /**
@@ -185,7 +185,7 @@ export function computeCheckpointBindingHash(
                 artifacts: checkpointSnapshotHash(artifacts),
             }),
         )
-        .digest("hex")
+        .digest("hex");
 }
 
 /**
@@ -199,18 +199,18 @@ export function computeCheckpointBindingHash(
  * @returns `true` when the binding is still current; `false` when stale.
  */
 export function isCheckpointBindingCurrent(state: RunState, pending: PendingCheckpoint): boolean {
-    if (state.requirements.policyHash !== pending.policyHash) return false
+    if (state.requirements.policyHash !== pending.policyHash) return false;
     if ((state.implementationDiffHash ?? "") !== (pending.implementationDiffHash ?? "")) {
-        return false
+        return false;
     }
     // Every snapshot artifact must still be valid with the recorded hash.
     for (const snapshot of pending.artifacts) {
-        const provenance = state.artifacts[snapshot.artifact]
-        if (!provenance || provenance.validity !== "valid") return false
-        if (provenance.outputHash !== snapshot.outputHash) return false
+        const provenance = state.artifacts[snapshot.artifact];
+        if (!provenance || provenance.validity !== "valid") return false;
+        if (provenance.outputHash !== snapshot.outputHash) return false;
     }
-    const dispatch = state.dispatches.find(record => record.id === pending.dispatchId)
-    if (!dispatch) return false
-    const recomputed = computeCheckpointBindingHash(state, dispatch, pending.artifacts)
-    return recomputed === pending.bindingHash
+    const dispatch = state.dispatches.find(record => record.id === pending.dispatchId);
+    if (!dispatch) return false;
+    const recomputed = computeCheckpointBindingHash(state, dispatch, pending.artifacts);
+    return recomputed === pending.bindingHash;
 }

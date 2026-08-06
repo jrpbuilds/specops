@@ -1,21 +1,21 @@
-import type { CapabilityId, DispatchPurpose, FrontierTier, RiskFacet } from "../types.js"
-import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./ids.js"
+import type { CapabilityId, DispatchPurpose, FrontierTier, RiskFacet } from "../types.js";
+import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./ids.js";
 
-export type { AgentId } from "./ids.js"
+export type { AgentId } from "./ids.js";
 
 /** Access control flags for a single agent. */
 type AgentPermission = {
-    bash: "allow" | "deny"
-    edit: "allow" | "deny"
-    read?: "allow" | "deny"
-    glob?: "allow" | "deny"
-    grep?: "allow" | "deny"
-    todowrite?: "allow" | "deny"
+    bash: "allow" | "deny";
+    edit: "allow" | "deny";
+    read?: "allow" | "deny";
+    glob?: "allow" | "deny";
+    grep?: "allow" | "deny";
+    todowrite?: "allow" | "deny";
     /** Subagent dispatch via the `task` tool. */
-    task?: "allow" | "deny"
+    task?: "allow" | "deny";
     /** Native user `question` tool for interactive checkpoints. */
-    question?: "allow" | "deny"
-}
+    question?: "allow" | "deny";
+};
 
 /**
  * Canonical capabilities, model defaults, and non-overridable permissions.
@@ -27,22 +27,22 @@ type AgentPermission = {
  * workflow-policy fields defined here.
  */
 export type AgentPolicy = {
-    id: AgentId
-    role: string
-    model: string
-    steps: number
-    mode: "primary" | "subagent"
-    permission: AgentPermission
-}
+    id: AgentId;
+    role: string;
+    model: string;
+    steps: number;
+    mode: "primary" | "subagent";
+    permission: AgentPermission;
+};
 
 /** Permission preset: no bash or edit access, no dispatch or checkpoints. */
-const READ_ONLY: AgentPermission = { bash: "deny", edit: "deny", task: "deny", question: "deny" }
+const READ_ONLY: AgentPermission = { bash: "deny", edit: "deny", task: "deny", question: "deny" };
 
 /** Permission preset: full bash and edit access, no dispatch or checkpoints. */
-const WRITER: AgentPermission = { bash: "allow", edit: "allow", task: "deny", question: "deny" }
+const WRITER: AgentPermission = { bash: "allow", edit: "allow", task: "deny", question: "deny" };
 
 /** Permission preset: bash access but no edit access, no dispatch or checkpoints. */
-const VERIFIER: AgentPermission = { bash: "allow", edit: "deny", task: "deny", question: "deny" }
+const VERIFIER: AgentPermission = { bash: "allow", edit: "deny", task: "deny", question: "deny" };
 
 /** Permission preset: controllers may only dispatch and present checkpoints. */
 const CONTROLLER_PERMISSION: AgentPermission = {
@@ -52,7 +52,7 @@ const CONTROLLER_PERMISSION: AgentPermission = {
     glob: "deny",
     grep: "deny",
     todowrite: "deny",
-}
+};
 
 /**
  * Human-readable role catalogue generated alongside the runtime policies.
@@ -92,7 +92,7 @@ const AGENT_ROLES: Record<AgentId, string> = {
     [AGENT_IDS.specialist.usability]: "Reviews user-facing interaction quality.",
     [AGENT_IDS.specialist.maintainability]:
         "Reviews clarity, structure, and long-term change cost.",
-}
+};
 
 /**
  * The only source of agent identity and authority. Manifests may tune provider
@@ -126,7 +126,7 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     [AGENT_IDS.review.frontierLow]: readOnly(AGENT_IDS.review.frontierLow, "", 8),
     [AGENT_IDS.review.frontierHigh]: readOnly(AGENT_IDS.review.frontierHigh, "", 12),
     [AGENT_IDS.core.repairer]: writer(AGENT_IDS.core.repairer, "", 64),
-}
+};
 
 /** Map every {@link RiskFacet} to its assigned specialist agent. */
 const SPECIALIST_BY_FACET: Record<RiskFacet, AgentId> = {
@@ -140,7 +140,7 @@ const SPECIALIST_BY_FACET: Record<RiskFacet, AgentId> = {
     infrastructure: AGENT_IDS.specialist.infrastructure,
     usability: AGENT_IDS.specialist.usability,
     maintainability: AGENT_IDS.specialist.maintainability,
-}
+};
 
 /**
  * Capabilities that may be selected by the deterministic scheduler.
@@ -172,7 +172,7 @@ export const SCHEDULER_CAPABILITIES: readonly CapabilityId[] = [
     "compliance-judgment",
     "refutation",
     "frontier",
-]
+];
 
 /**
  * Resolve a scheduler capability to its sole authorized agent identity.
@@ -195,39 +195,39 @@ export function agentForCapability(
     if (capability === "frontier") {
         return frontierTier === "high"
             ? AGENT_IDS.review.frontierHigh
-            : AGENT_IDS.review.frontierLow
+            : AGENT_IDS.review.frontierLow;
     }
     if (purpose === "judgment") {
         return capability === "compliance-judgment"
             ? AGENT_IDS.review.complianceJudge
-            : AGENT_IDS.review.correctnessJudge
+            : AGENT_IDS.review.correctnessJudge;
     }
 
     switch (capability) {
         case "assessment":
-            return AGENT_IDS.core.assessor
+            return AGENT_IDS.core.assessor;
         case "exploration":
-            return AGENT_IDS.core.explorer
+            return AGENT_IDS.core.explorer;
         case "planning":
-            return AGENT_IDS.core.planner
+            return AGENT_IDS.core.planner;
         case "design":
-            return AGENT_IDS.core.designer
+            return AGENT_IDS.core.designer;
         case "implementation":
-            return AGENT_IDS.core.implementer
+            return AGENT_IDS.core.implementer;
         case "verification":
-            return AGENT_IDS.core.verifier
+            return AGENT_IDS.core.verifier;
         case "correctness-judgment":
-            return AGENT_IDS.review.correctnessJudge
+            return AGENT_IDS.review.correctnessJudge;
         case "compliance-judgment":
-            return AGENT_IDS.review.complianceJudge
+            return AGENT_IDS.review.complianceJudge;
         case "repair":
-            return AGENT_IDS.core.repairer
+            return AGENT_IDS.core.repairer;
         case "general-risk":
-            return AGENT_IDS.review.risk
+            return AGENT_IDS.review.risk;
         case "refutation":
-            return AGENT_IDS.review.refuter
+            return AGENT_IDS.review.refuter;
         default:
-            return SPECIALIST_BY_FACET[capability]
+            return SPECIALIST_BY_FACET[capability];
     }
 }
 
@@ -254,7 +254,7 @@ function primary(id: AgentId, interactive: boolean): AgentPolicy {
             task: "allow",
             question: interactive ? "allow" : "deny",
         },
-    }
+    };
 }
 
 /**
@@ -274,7 +274,7 @@ function readOnly(id: AgentId, model: string, steps: number): AgentPolicy {
         steps,
         mode: "subagent",
         permission: READ_ONLY,
-    }
+    };
 }
 
 /**
@@ -293,7 +293,7 @@ function writer(id: AgentId, model: string, steps: number): AgentPolicy {
         steps,
         mode: "subagent",
         permission: WRITER,
-    }
+    };
 }
 
 /**
@@ -313,11 +313,11 @@ function verifier(id: AgentId, model: string, steps: number): AgentPolicy {
         steps,
         mode: "subagent",
         permission: VERIFIER,
-    }
+    };
 }
 
 // Reviewer and verifier agents share the same read-only shell policy.
 // Fail immediately during module loading if a registry edit drifts from IDs.
 if (Object.keys(AGENT_REGISTRY).length !== ALL_AGENT_IDS.length) {
-    throw new Error("SpecOps agent registry does not cover the canonical agent IDs")
+    throw new Error("SpecOps agent registry does not cover the canonical agent IDs");
 }

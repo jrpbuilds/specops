@@ -1,88 +1,90 @@
-import { access, readFile } from "node:fs/promises"
-import { AGENT_IDS } from "../agents/ids.js"
-import type { OpenSpecChangeStatus } from "../openspec/status.js"
-import { OpenSpecOperationalError } from "../openspec/errors.js"
-import { captureRepositoryBaseline, type RepositoryBaseline } from "../repository/baseline.js"
-import { explorationPath } from "../state/paths.js"
-import { recoverV1Run } from "../state/recovery.js"
-import type { RunState } from "../state/schema.js"
-import { createV1Run, readV1Run, updateV1Run } from "../state/store.js"
+import { access, readFile } from "node:fs/promises";
+import { AGENT_IDS } from "../agents/ids.js";
+import type { OpenSpecChangeStatus } from "../openspec/status.js";
+import { OpenSpecOperationalError } from "../openspec/errors.js";
+import { captureRepositoryBaseline, type RepositoryBaseline } from "../repository/baseline.js";
+import { explorationPath } from "../state/paths.js";
+import { recoverV1Run } from "../state/recovery.js";
+import type { RunState } from "../state/schema.js";
+import { createV1Run, readV1Run, updateV1Run } from "../state/store.js";
 import {
     runPlanning,
     type PlanningAgentRunner,
     type PlanningOpenSpecAdapter,
     type PlanningResult,
-} from "./planning.js"
+} from "./planning.js";
 import {
     runImplementation,
     type ImplementationResult,
     type ImplementationWorkflowOptions,
-} from "./implementation.js"
-import { runReview, type ReviewResult, type ReviewWorkflowOptions } from "./review.js"
+} from "./implementation.js";
+import { runReview, type ReviewResult, type ReviewWorkflowOptions } from "./review.js";
 
 /** Adapter contract consumed by the coordinator and intentionally fake-friendly. */
 export type CoordinatorOpenSpecAdapter = PlanningOpenSpecAdapter & {
-    version(): Promise<string>
-    assertStandardSchema(change: string): Promise<string>
-    createChange(change: string, goal: string): Promise<void>
-}
+    version(): Promise<string>;
+    assertStandardSchema(change: string): Promise<string>;
+    createChange(change: string, goal: string): Promise<void>;
+};
 
 /** Native explorer task boundary. The explorer alone writes the managed report. */
 export type ExplorerRunner = {
     run(input: {
-        agent: typeof AGENT_IDS.explorer
-        change: string
-        goal: string
-        directory: string
-    }): Promise<void>
-}
+        agent: typeof AGENT_IDS.explorer;
+        change: string;
+        goal: string;
+        directory: string;
+    }): Promise<void>;
+};
 
 /** Dependencies for starting or resuming a V1 planning run. */
 export type CoordinatorOptions = {
-    directory: string
-    adapter: CoordinatorOpenSpecAdapter
-    explorer: ExplorerRunner
-    planners: PlanningAgentRunner
-    implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">
-    review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">
-    captureBaseline?: (directory: string) => Promise<RepositoryBaseline>
+    directory: string;
+    adapter: CoordinatorOpenSpecAdapter;
+    explorer: ExplorerRunner;
+    planners: PlanningAgentRunner;
+    implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">;
+    review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">;
+    captureBaseline?: (directory: string) => Promise<RepositoryBaseline>;
     recover?: (
         directory: string,
         change: string,
         readStatus: (change: string) => Promise<OpenSpecChangeStatus>,
-    ) => Promise<{ state: RunState }>
-}
+    ) => Promise<{ state: RunState }>;
+};
 
 /** Result returned at the next coordinator-owned planning boundary. */
 export type CoordinatorResult = (PlanningResult | ImplementationResult | ReviewResult) & {
-    resumed: boolean
-}
+    resumed: boolean;
+};
 
 /** Start a standard OpenSpec change or resume its persisted coarse V1 planning boundary. */
 export async function startOrResumePlanning(
     options: CoordinatorOptions,
     input: { change: string; goal: string },
 ): Promise<CoordinatorResult> {
-    await options.adapter.version()
-    const existing = await existingRun(options.directory, input.change)
+    await options.adapter.version();
+    const existing = await existingRun(options.directory, input.change);
     if (existing) {
         const recovered = await (options.recover ?? recoverV1Run)(
             options.directory,
             input.change,
             change => options.adapter.status(change),
-        )
-        return { ...(await runWithOperationalFailure(options, recovered.state)), resumed: true }
+        );
+        return { ...(await runWithOperationalFailure(options, recovered.state)), resumed: true };
     }
 
-    await identifyOrCreateChange(options.adapter, input.change, input.goal)
-    await options.adapter.assertStandardSchema(input.change)
-    const baseline = await (options.captureBaseline ?? captureRepositoryBaseline)(options.directory)
+    await identifyOrCreateChange(options.adapter, input.change, input.goal);
+    await options.adapter.assertStandardSchema(input.change);
+    const baseline = await (options.captureBaseline ?? captureRepositoryBaseline)(
+        options.directory,
+    );
     const created = await createV1Run(options.directory, {
         change: input.change,
         goal: input.goal,
         baselineRepositoryState: baseline.identity,
-    })
-    return { ...(await runWithOperationalFailure(options, created)), resumed: false }
+    });
+    return { ...(await runWithOperationalFailure(options, created)), resumed: false };
 }
 
 /** Persist an OpenSpec operational failure without presenting it as an artifact correction. */
@@ -91,7 +93,7 @@ async function runWithOperationalFailure(
     state: RunState,
 ): Promise<PlanningResult | ImplementationResult | ReviewResult> {
     try {
-        return await resumePlanning(options, state)
+        return await resumePlanning(options, state);
     } catch (error) {
         if (error instanceof OpenSpecOperationalError) {
             await updateV1Run(options.directory, state.change, run => ({
@@ -102,9 +104,9 @@ async function runWithOperationalFailure(
                     message: error.message,
                     at: new Date().toISOString(),
                 },
-            }))
+            }));
         }
-        throw error
+        throw error;
     }
 }
 
@@ -119,13 +121,13 @@ async function resumePlanning(
             change: state.change,
             goal: state.goal,
             directory: options.directory,
-        })
-        await assertExploration(options.directory, state.change)
+        });
+        await assertExploration(options.directory, state.change);
         state = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "active",
             stage: "proposal",
-        }))
+        }));
     }
     if (
         options.implementation &&
@@ -139,7 +141,7 @@ async function resumePlanning(
                 adapter: options.adapter,
             },
             state,
-        )
+        );
     }
     if (
         options.review &&
@@ -153,7 +155,7 @@ async function resumePlanning(
                 adapter: options.adapter,
             },
             state,
-        )
+        );
     }
     return runPlanning(
         {
@@ -163,7 +165,7 @@ async function resumePlanning(
             implementation: options.implementation,
         },
         state,
-    )
+    );
 }
 
 /** Identify an existing change first; only a missing status is eligible for creation. */
@@ -173,35 +175,35 @@ async function identifyOrCreateChange(
     goal: string,
 ): Promise<OpenSpecChangeStatus> {
     try {
-        return await adapter.status(change)
+        return await adapter.status(change);
     } catch (error) {
         if (
             !(error instanceof Error) ||
             !/not found|unknown change|does not exist/i.test(error.message)
         ) {
-            throw error
+            throw error;
         }
-        await adapter.createChange(change, goal)
-        return adapter.status(change)
+        await adapter.createChange(change, goal);
+        return adapter.status(change);
     }
 }
 
 /** Verify that the explorer wrote a non-empty managed report before planning starts. */
 async function assertExploration(directory: string, change: string): Promise<void> {
-    const output = explorationPath(directory, change)
-    await access(output)
+    const output = explorationPath(directory, change);
+    await access(output);
     if (!(await readFile(output, "utf8")).trim()) {
-        throw new Error("explorer produced an empty exploration report")
+        throw new Error("explorer produced an empty exploration report");
     }
 }
 
 /** Return a persisted V1 state only when its managed path exists. */
 async function existingRun(directory: string, change: string): Promise<boolean> {
     try {
-        await readV1Run(directory, change)
-        return true
+        await readV1Run(directory, change);
+        return true;
     } catch (error) {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return false
-        throw error
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+        throw error;
     }
 }

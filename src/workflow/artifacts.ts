@@ -1,8 +1,8 @@
-import { writeArtifact } from "../openspec.js"
-import { writeMachine } from "../state/store.js"
-import { hash } from "../artifacts/lifecycle.js"
-import { redactSensitiveText } from "../security/redact.js"
-import type { ArtifactId, DispatchRecord, RunState } from "../types.js"
+import { writeArtifact } from "../openspec.js";
+import { writeMachine } from "../state/store.js";
+import { hash } from "../artifacts/lifecycle.js";
+import { redactSensitiveText } from "../security/redact.js";
+import type { ArtifactId, DispatchRecord, RunState } from "../types.js";
 
 /**
  * Maps persisted text artifacts to their on-disk file names under a change.
@@ -18,7 +18,7 @@ export const ARTIFACT_FILES: Partial<Record<ArtifactId, string>> = {
     tasks: "tasks.md",
     verification: "verification.md",
     "review-ledger": "review-ledger.json",
-}
+};
 
 /**
  * Write a text artifact to disk and record its provenance in state.
@@ -41,13 +41,13 @@ export async function persistArtifact(
     content: string,
     purpose: DispatchRecord["purpose"],
 ): Promise<void> {
-    const file = ARTIFACT_FILES[artifact]
+    const file = ARTIFACT_FILES[artifact];
     if (!file) {
-        throw new Error(`artifact ${artifact} is not a text artifact`)
+        throw new Error(`artifact ${artifact} is not a text artifact`);
     }
 
-    await writeArtifact(directory, change, file, content)
-    recordArtifact(state, artifact, producer, content, purpose)
+    await writeArtifact(directory, change, file, content);
+    recordArtifact(state, artifact, producer, content, purpose);
 }
 
 /**
@@ -70,7 +70,7 @@ export function recordArtifact(
     content: string,
     purpose: DispatchRecord["purpose"],
 ): void {
-    const persistedContent = redactSensitiveText(content.trim())
+    const persistedContent = redactSensitiveText(content.trim());
     state.artifacts[artifact] = {
         artifact,
         producer,
@@ -85,7 +85,7 @@ export function recordArtifact(
         scopeTier: state.scopeTier,
         capabilities: state.requirements.requiredCapabilities,
         validity: "valid",
-    }
+    };
 }
 
 /**
@@ -103,7 +103,7 @@ export async function writeArtifactIndex(
     await writeMachine(directory, change, "specops-artifacts.json", {
         version: 1,
         artifacts: state.artifacts,
-    })
+    });
 }
 
 /**
@@ -115,13 +115,13 @@ export async function writeArtifactIndex(
 function answerHashes(state: RunState): Record<string, string> {
     const questionHashes = state.questionHistory
         .filter(record => record.outcome === "answered" && record.answerHash)
-        .map(record => [record.id, record.answerHash] as [string, string])
+        .map(record => [record.id, record.answerHash] as [string, string]);
     const checkpointHashes = state.checkpointHistory
         .filter(record => record.outcome === "feedback" && record.feedbackHash)
-        .map(record => [record.dispatchId, record.feedbackHash] as [string, string])
-    const result: Record<string, string> = {}
+        .map(record => [record.dispatchId, record.feedbackHash] as [string, string]);
+    const result: Record<string, string> = {};
     for (const [k, v] of [...questionHashes, ...checkpointHashes]) {
-        result[k] = v
+        result[k] = v;
     }
-    return result
+    return result;
 }

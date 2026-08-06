@@ -1,4 +1,4 @@
-import type { RunState } from "../types.js"
+import type { RunState } from "../types.js";
 
 /**
  * A bounded, provenance-preserving context view for a dispatched worker.
@@ -11,14 +11,14 @@ import type { RunState } from "../types.js"
  * answer-driven staleness.
  */
 export type ContextPacket = {
-    goal: string
-    scopeTier: RunState["scopeTier"]
-    policyHash: string
-    riskFacets: RunState["riskFacets"]
-    artifactHashes: Record<string, string>
+    goal: string;
+    scopeTier: RunState["scopeTier"];
+    policyHash: string;
+    riskFacets: RunState["riskFacets"];
+    artifactHashes: Record<string, string>;
     /** Map of answered question id to answer hash, in resolution order. */
-    answerHashes: Record<string, string>
-}
+    answerHashes: Record<string, string>;
+};
 
 /**
  * Build stable context metadata shared by interactive and automatic dispatches.
@@ -43,5 +43,5 @@ export function contextPacket(state: RunState): ContextPacket {
                 .filter(record => record.outcome === "answered" && record.answerHash)
                 .map(record => [record.id, record.answerHash]),
         ),
-    }
+    };
 }

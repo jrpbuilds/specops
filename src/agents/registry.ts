@@ -1,15 +1,15 @@
-import { loadPrompt } from "../prompts/loader.js"
-import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./ids.js"
-import { AGENT_PERMISSIONS, type AgentPermission } from "./permissions.js"
+import { loadPrompt } from "../prompts/loader.js";
+import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./ids.js";
+import { AGENT_PERMISSIONS, type AgentPermission } from "./permissions.js";
 
 /** Immutable policy for one final SpecOps 1.0 agent. */
 export type AgentPolicy = {
-    id: AgentId
-    role: keyof typeof AGENT_IDS
-    mode: "primary" | "subagent"
-    maxSteps: number
-    permission: AgentPermission
-}
+    id: AgentId;
+    role: keyof typeof AGENT_IDS;
+    mode: "primary" | "subagent";
+    maxSteps: number;
+    permission: AgentPermission;
+};
 
 /** Final seven-agent catalogue. Workflow policies are not manifest-configurable. */
 export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
@@ -20,11 +20,11 @@ export const AGENT_REGISTRY: Record<AgentId, AgentPolicy> = {
     [AGENT_IDS.implementer]: policy(AGENT_IDS.implementer, "implementer", "subagent", 96),
     [AGENT_IDS.reviewer]: policy(AGENT_IDS.reviewer, "reviewer", "subagent", 64),
     [AGENT_IDS.frontier]: policy(AGENT_IDS.frontier, "frontier", "subagent", 48),
-}
+};
 
 /** Return the packaged Markdown prompt for a registered agent. */
 export function agentPrompt(id: AgentId): string {
-    return loadPrompt(id)
+    return loadPrompt(id);
 }
 
 /** Construct one immutable policy and prove its corresponding prompt exists. */
@@ -34,10 +34,10 @@ function policy(
     mode: AgentPolicy["mode"],
     maxSteps: number,
 ): AgentPolicy {
-    loadPrompt(id)
-    return { id, role, mode, maxSteps, permission: AGENT_PERMISSIONS[id] }
+    loadPrompt(id);
+    return { id, role, mode, maxSteps, permission: AGENT_PERMISSIONS[id] };
 }
 
 if (Object.keys(AGENT_REGISTRY).length !== ALL_AGENT_IDS.length) {
-    throw new Error("SpecOps agent registry does not match the final catalogue")
+    throw new Error("SpecOps agent registry does not match the final catalogue");
 }

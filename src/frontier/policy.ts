@@ -1,6 +1,6 @@
-import { createHash, randomUUID } from "node:crypto"
-import { stat } from "node:fs/promises"
-import path from "node:path"
+import { createHash, randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import type {
     ArtifactId,
     CommandEvidence,
@@ -13,16 +13,16 @@ import type {
     PendingFrontier,
     RepairMode,
     RunState,
-} from "../types.js"
-import { parseEvidenceRef } from "../worker_output.js"
+} from "../types.js";
+import { parseEvidenceRef } from "../worker_output.js";
 // The legacy frontier parser uses the canonical repair-mode set from contracts.
-import { REPAIR_MODES } from "../workflow/contracts.js"
+import { REPAIR_MODES } from "../workflow/contracts.js";
 
 /** Result of applying frontier admission policy to a worker request. */
 type FrontierQueueDecision =
     | { disposition: "queued"; pending: PendingFrontier }
     | { disposition: "continue" }
-    | { disposition: "blocked"; reason: string }
+    | { disposition: "blocked"; reason: string };
 
 /**
  * Validate repository-addressable evidence before it can spend frontier budget.
@@ -46,17 +46,17 @@ export async function verifyFrontierEvidence(
                     command => command.id === item.commandId && command.exitCode === item.exitCode,
                 )
             ) {
-                return false
+                return false;
             }
-            continue
+            continue;
         }
         if (item.kind === "test-failure") {
             if (
                 !commands.some(command => command.id === item.commandId && command.exitCode !== 0)
             ) {
-                return false
+                return false;
             }
-            continue
+            continue;
         }
         if (
             item.kind !== "changed-path" &&
@@ -64,17 +64,17 @@ export async function verifyFrontierEvidence(
             item.kind !== "symbol" &&
             item.kind !== "contract"
         ) {
-            continue
+            continue;
         }
-        const target = path.resolve(directory, item.path)
-        if (target !== directory && !target.startsWith(`${directory}${path.sep}`)) return false
+        const target = path.resolve(directory, item.path);
+        if (target !== directory && !target.startsWith(`${directory}${path.sep}`)) return false;
         try {
-            await stat(target)
+            await stat(target);
         } catch {
-            return false
+            return false;
         }
     }
-    return true
+    return true;
 }
 
 /**
@@ -92,29 +92,29 @@ export function queueWorkerFrontier(
     phase: ArtifactId,
     request: FrontierRequest,
 ): FrontierQueueDecision {
-    if (state.frontierPolicy!.mode !== "adaptive") return { disposition: "continue" }
-    const fingerprint = requestFingerprint(request, phase, dispatch.capability)
-    const prior = state.frontierHistory?.find(item => item.fingerprint === fingerprint)
+    if (state.frontierPolicy!.mode !== "adaptive") return { disposition: "continue" };
+    const fingerprint = requestFingerprint(request, phase, dispatch.capability);
+    const prior = state.frontierHistory?.find(item => item.fingerprint === fingerprint);
     const retryAfterAdvice =
         prior?.status === "advised" &&
         prior.selectedTier === "low" &&
         prior.dispatches === 1 &&
-        canDispatch(state, "high")
+        canDispatch(state, "high");
     if (!prior && !canStartEpisode(state)) {
         return {
             disposition: "blocked",
             reason: "Frontier escalation budget exhausted for an unresolved worker blocker.",
-        }
+        };
     }
     if (prior && !retryAfterAdvice) {
         return {
             disposition: "blocked",
             reason: "The worker remains blocked after the permitted frontier assistance.",
-        }
+        };
     }
 
-    const selectedTier = retryAfterAdvice ? "high" : selectTier(state, request.tier, request)
-    const episodeId = retryAfterAdvice ? prior.id : randomUUID()
+    const selectedTier = retryAfterAdvice ? "high" : selectTier(state, request.tier, request);
+    const episodeId = retryAfterAdvice ? prior.id : randomUUID();
     const pending: PendingFrontier = {
         episodeId,
         request,
@@ -126,10 +126,10 @@ export function queueWorkerFrontier(
         action: dispatch.action,
         originalDispatchId: dispatch.id,
         selectedTier,
-    }
-    state.pendingFrontier = pending
+    };
+    state.pendingFrontier = pending;
     if (!retryAfterAdvice) {
-        state.frontierUsage!.escalations += 1
+        state.frontierUsage!.escalations += 1;
         state.frontierHistory!.push({
             id: episodeId,
             trigger: "worker-request",
@@ -142,13 +142,13 @@ export function queueWorkerFrontier(
             status: "pending",
             requestHash: hashJson(request),
             at: new Date().toISOString(),
-        })
+        });
     } else {
-        prior.status = "promoted"
-        prior.selectedTier = "high"
-        prior.trigger = "repeated-blocker"
+        prior.status = "promoted";
+        prior.selectedTier = "high";
+        prior.trigger = "repeated-blocker";
     }
-    return { disposition: "queued", pending }
+    return { disposition: "queued", pending };
 }
 
 /**
@@ -168,8 +168,8 @@ export function queueReviewFrontier(
     mode: RepairMode,
     summary: string,
 ): boolean {
-    if (state.frontierPolicy!.mode !== "adaptive") return false
-    const normalisedSummary = summary.trim().toLowerCase().replace(/\s+/g, " ")
+    if (state.frontierPolicy!.mode !== "adaptive") return false;
+    const normalisedSummary = summary.trim().toLowerCase().replace(/\s+/g, " ");
     const fingerprint = createHash("sha256")
         .update(
             JSON.stringify({
@@ -179,12 +179,12 @@ export function queueReviewFrontier(
                 summary: normalisedSummary,
             }),
         )
-        .digest("hex")
-    const prior = state.frontierHistory?.find(item => item.fingerprint === fingerprint)
+        .digest("hex");
+    const prior = state.frontierHistory?.find(item => item.fingerprint === fingerprint);
     const selectedTier: FrontierTier =
-        prior?.status === "upheld" && canDispatch(state, "high") ? "high" : "low"
-    if (!prior && !canStartEpisode(state)) return false
-    if (prior && selectedTier === "low") return false
+        prior?.status === "upheld" && canDispatch(state, "high") ? "high" : "low";
+    if (!prior && !canStartEpisode(state)) return false;
+    if (prior && selectedTier === "low") return false;
 
     const request: FrontierRequest = {
         tier: selectedTier,
@@ -201,8 +201,8 @@ export function queueReviewFrontier(
             },
         ],
         attempts: [summary],
-    }
-    const episodeId = prior?.id ?? randomUUID()
+    };
+    const episodeId = prior?.id ?? randomUUID();
     state.pendingFrontier = {
         episodeId,
         request,
@@ -215,9 +215,9 @@ export function queueReviewFrontier(
         originalDispatchId: dispatch.id,
         selectedTier,
         reviewFailure: { mode, summary },
-    }
+    };
     if (!prior) {
-        state.frontierUsage!.escalations += 1
+        state.frontierUsage!.escalations += 1;
         state.frontierHistory!.push({
             id: episodeId,
             trigger: "review-blocker",
@@ -230,28 +230,28 @@ export function queueReviewFrontier(
             status: "pending",
             requestHash: hashJson(request),
             at: new Date().toISOString(),
-        })
+        });
     } else {
-        prior.status = "promoted"
-        prior.selectedTier = "high"
-        prior.trigger = "repeated-blocker"
+        prior.status = "promoted";
+        prior.selectedTier = "high";
+        prior.trigger = "repeated-blocker";
     }
-    return true
+    return true;
 }
 
 /** Return whether the current pending request may issue its selected tier. */
 export function canIssuePendingFrontier(state: RunState): boolean {
-    return Boolean(state.pendingFrontier && canDispatch(state, state.pendingFrontier.selectedTier))
+    return Boolean(state.pendingFrontier && canDispatch(state, state.pendingFrontier.selectedTier));
 }
 
 /** Record one issued frontier dispatch against episode and run budgets. */
 export function recordFrontierDispatch(state: RunState): void {
-    const pending = state.pendingFrontier
-    if (!pending) return
-    state.frontierUsage!.dispatches += 1
-    if (pending.selectedTier === "high") state.frontierUsage!.highDispatches += 1
-    const episode = state.frontierHistory!.find(item => item.id === pending.episodeId)
-    if (episode) episode.dispatches += 1
+    const pending = state.pendingFrontier;
+    if (!pending) return;
+    state.frontierUsage!.dispatches += 1;
+    if (pending.selectedTier === "high") state.frontierUsage!.highDispatches += 1;
+    const episode = state.frontierHistory!.find(item => item.id === pending.episodeId);
+    if (episode) episode.dispatches += 1;
 }
 
 /**
@@ -261,19 +261,19 @@ export function recordFrontierDispatch(state: RunState): void {
  * @returns Validated structured response.
  */
 export function parseFrontierResponse(output: string): FrontierResponse {
-    let value: unknown
+    let value: unknown;
     try {
-        value = JSON.parse(output)
+        value = JSON.parse(output);
     } catch {
-        throw new Error("frontier response is not valid JSON")
+        throw new Error("frontier response is not valid JSON");
     }
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error("frontier response must be an object")
+        throw new Error("frontier response must be an object");
     }
-    const item = value as Record<string, unknown>
-    const allowed = new Set(["disposition", "summary", "instruction", "repairMode", "evidence"])
+    const item = value as Record<string, unknown>;
+    const allowed = new Set(["disposition", "summary", "instruction", "repairMode", "evidence"]);
     if (Object.keys(item).some(key => !allowed.has(key))) {
-        throw new Error("frontier response contains an unknown field")
+        throw new Error("frontier response contains an unknown field");
     }
     if (
         ![
@@ -287,32 +287,32 @@ export function parseFrontierResponse(output: string): FrontierResponse {
         !item.summary.trim() ||
         !Array.isArray(item.evidence)
     ) {
-        throw new Error("frontier response has an invalid disposition, summary, or evidence")
+        throw new Error("frontier response has an invalid disposition, summary, or evidence");
     }
     if (item.summary.length > 2_000 || item.evidence.length > 20) {
-        throw new Error("frontier response exceeds bounded summary or evidence limits")
+        throw new Error("frontier response exceeds bounded summary or evidence limits");
     }
-    const evidence = item.evidence.map(parseEvidenceRef)
+    const evidence = item.evidence.map(parseEvidenceRef);
     if (
         item.instruction !== undefined &&
         (typeof item.instruction !== "string" || item.instruction.length > 4_000)
     ) {
-        throw new Error("frontier response instruction must be a bounded string")
+        throw new Error("frontier response instruction must be a bounded string");
     }
     if (item.repairMode !== undefined && !REPAIR_MODES.has(item.repairMode as RepairMode)) {
-        throw new Error("frontier response repairMode is invalid")
+        throw new Error("frontier response repairMode is invalid");
     }
     if (
         (item.disposition === "ADVISE" || item.disposition === "INSUFFICIENT_EVIDENCE") &&
         !(item.instruction as string | undefined)?.trim()
     ) {
-        throw new Error("frontier advice requires an instruction")
+        throw new Error("frontier advice requires an instruction");
     }
     if (
         (item.disposition === "UPHOLD_BLOCKER" || item.disposition === "DISMISS_BLOCKER") &&
         item.evidence.length === 0
     ) {
-        throw new Error("frontier blocker adjudication requires evidence")
+        throw new Error("frontier blocker adjudication requires evidence");
     }
     if (
         (item.disposition === "UPHOLD_BLOCKER" || item.disposition === "DISMISS_BLOCKER") &&
@@ -327,15 +327,15 @@ export function parseFrontierResponse(output: string): FrontierResponse {
             ].includes(reference.kind),
         )
     ) {
-        throw new Error("frontier blocker adjudication requires verifiable evidence")
+        throw new Error("frontier blocker adjudication requires verifiable evidence");
     }
     if (
         item.disposition === "UPHOLD_BLOCKER" &&
         (!(item.instruction as string | undefined)?.trim() || !item.repairMode)
     ) {
-        throw new Error("upheld frontier blocker requires repairMode and instruction")
+        throw new Error("upheld frontier blocker requires repairMode and instruction");
     }
-    return { ...item, evidence } as FrontierResponse
+    return { ...item, evidence } as FrontierResponse;
 }
 
 /** Update the compact episode with a completed response. */
@@ -344,10 +344,10 @@ export function completeFrontierEpisode(
     response: FrontierResponse,
     output: string,
 ): FrontierEpisode {
-    const pending = state.pendingFrontier
-    const episode = state.frontierHistory?.find(item => item.id === pending?.episodeId)
-    if (!pending || !episode) throw new Error("frontier response has no pending episode")
-    episode.responseHash = createHash("sha256").update(output).digest("hex")
+    const pending = state.pendingFrontier;
+    const episode = state.frontierHistory?.find(item => item.id === pending?.episodeId);
+    if (!pending || !episode) throw new Error("frontier response has no pending episode");
+    episode.responseHash = createHash("sha256").update(output).digest("hex");
     episode.status =
         response.disposition === "ADVISE"
             ? "advised"
@@ -357,13 +357,13 @@ export function completeFrontierEpisode(
                 ? "upheld"
                 : response.disposition === "DISMISS_BLOCKER"
                   ? "dismissed"
-                  : "insufficient"
-    return episode
+                  : "insufficient";
+    return episode;
 }
 
 /** Return whether a low-tier response may promote the current episode. */
 export function canPromotePending(state: RunState): boolean {
-    return Boolean(state.pendingFrontier?.selectedTier === "low" && canDispatch(state, "high"))
+    return Boolean(state.pendingFrontier?.selectedTier === "low" && canDispatch(state, "high"));
 }
 
 function canStartEpisode(state: RunState): boolean {
@@ -371,7 +371,7 @@ function canStartEpisode(state: RunState): boolean {
         state.frontierPolicy!.mode === "adaptive" &&
         state.frontierUsage!.escalations < state.frontierPolicy!.maxEscalationsPerRun &&
         canDispatch(state, "low")
-    )
+    );
 }
 
 function canDispatch(state: RunState, tier: FrontierTier): boolean {
@@ -379,7 +379,7 @@ function canDispatch(state: RunState, tier: FrontierTier): boolean {
         state.frontierUsage!.dispatches < state.frontierPolicy!.maxDispatchesPerRun &&
         (tier === "low" ||
             state.frontierUsage!.highDispatches < state.frontierPolicy!.maxHighDispatchesPerRun)
-    )
+    );
 }
 
 function selectTier(
@@ -387,7 +387,7 @@ function selectTier(
     requested: FrontierTier,
     request: FrontierRequest,
 ): FrontierTier {
-    if (requested === "low") return "low"
+    if (requested === "low") return "low";
     const critical =
         state.riskFacets.some(facet =>
             ["security", "data", "migration", "public-contract"].includes(facet),
@@ -396,8 +396,8 @@ function selectTier(
         state.assessment.changeKind === "migration" ||
         request.evidence.some(item => item.kind === "contract") ||
         (state.scopeTier === "full" &&
-            (state.confidence.requirements === "low" || state.confidence.design === "low"))
-    return critical && canDispatch(state, "high") ? "high" : "low"
+            (state.confidence.requirements === "low" || state.confidence.design === "low"));
+    return critical && canDispatch(state, "high") ? "high" : "low";
 }
 
 function requestFingerprint(
@@ -414,9 +414,9 @@ function requestFingerprint(
                 impact: request.impact,
             }),
         )
-        .digest("hex")
+        .digest("hex");
 }
 
 function hashJson(value: unknown): string {
-    return createHash("sha256").update(JSON.stringify(value)).digest("hex")
+    return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }

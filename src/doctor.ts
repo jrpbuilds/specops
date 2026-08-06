@@ -1,33 +1,33 @@
-import { readFile } from "node:fs/promises"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-import { isDeepStrictEqual } from "node:util"
-import { ALL_AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js"
-import { agentPrompt } from "./agents/registry.js"
-import { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } from "./capabilities/ids.js"
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
+import { ALL_AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js";
+import { agentPrompt } from "./agents/registry.js";
+import { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } from "./capabilities/ids.js";
 import {
     AGENT_REGISTRY,
     SCHEDULER_CAPABILITIES,
     agentForCapability,
-} from "./capabilities/registry.js"
-import { COMMANDS } from "./commands.js"
-import { type SpecOpsConfig, consumeConfigRepairs, validatePartialConfig } from "./config.js"
-import { runProcess } from "./git.js"
+} from "./capabilities/registry.js";
+import { COMMANDS } from "./commands.js";
+import { type SpecOpsConfig, consumeConfigRepairs, validatePartialConfig } from "./config.js";
+import { runProcess } from "./git.js";
 import {
     inspectAgentManifest,
     resolveGlobalConfigPath,
     resolveManifestPath,
-} from "./installation.js"
+} from "./installation.js";
 
 /**
  * Outcome of a single diagnostic check: `status` plus a human-readable
  * `message` and an optional `repair` hint shown only on `FAIL`.
  */
 type Diagnostic = {
-    status: "PASS" | "FAIL" | "INFO" | "WARN"
-    message: string
-    repair?: string
-}
+    status: "PASS" | "FAIL" | "INFO" | "WARN";
+    message: string;
+    repair?: string;
+};
 
 /**
  * Run integration diagnostics that catch command/controller drift before use.
@@ -43,7 +43,7 @@ type Diagnostic = {
  * hints appended to `FAIL` lines.
  */
 export async function doctor(directory: string, config: SpecOpsConfig): Promise<string> {
-    const subagentCount = ALL_AGENT_IDS.filter(id => AGENT_REGISTRY[id].mode === "subagent").length
+    const subagentCount = ALL_AGENT_IDS.filter(id => AGENT_REGISTRY[id].mode === "subagent").length;
     const diagnostics: Diagnostic[] = [
         { status: "PASS", message: `configuration format v${config.version} parsed` },
         {
@@ -53,27 +53,27 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
                     ? `MCP policy: disabled (configured MCP server tools denied for ${subagentCount} SpecOps subagents)`
                     : "MCP policy: allow (configured host MCP server tools granted to SpecOps subagents)",
         },
-    ]
+    ];
 
-    await checkConfigSources(diagnostics, directory)
-    surfaceConfigRepairs(diagnostics)
-    await checkPackageVersion(diagnostics)
-    await checkManifest(diagnostics)
-    checkCommandMappings(diagnostics)
-    await checkOpenCodeCli(directory, diagnostics)
-    checkAgentCatalogue(diagnostics)
-    checkCapabilityMappings(diagnostics)
-    checkPrompts(diagnostics)
-    await checkOpenSpecAssets(directory, diagnostics)
+    await checkConfigSources(diagnostics, directory);
+    surfaceConfigRepairs(diagnostics);
+    await checkPackageVersion(diagnostics);
+    await checkManifest(diagnostics);
+    checkCommandMappings(diagnostics);
+    await checkOpenCodeCli(directory, diagnostics);
+    checkAgentCatalogue(diagnostics);
+    checkCapabilityMappings(diagnostics);
+    checkPrompts(diagnostics);
+    await checkOpenSpecAssets(directory, diagnostics);
 
     return diagnostics
         .map(item => {
-            const base = `${item.status} ${item.message}`
+            const base = `${item.status} ${item.message}`;
             return item.status === "FAIL" && item.repair
                 ? `${base}\n  Repair: ${item.repair}`
-                : base
+                : base;
         })
-        .join("\n")
+        .join("\n");
 }
 
 /**
@@ -87,12 +87,12 @@ export async function doctor(directory: string, config: SpecOpsConfig): Promise<
 function surfaceConfigRepairs(diagnostics: Diagnostic[]): void {
     for (const repair of consumeConfigRepairs()) {
         const kept =
-            repair.recoveredSections.length > 0 ? repair.recoveredSections.join(", ") : "none"
+            repair.recoveredSections.length > 0 ? repair.recoveredSections.join(", ") : "none";
         diagnostics.push({
             status: "WARN",
             message: `configuration file ${repair.path} was repaired at load time: ${repair.reason}; kept sections: ${kept}`,
             repair: `Edit ${repair.path} and rerun /specops-doctor to confirm.`,
-        })
+        });
     }
 }
 
@@ -110,21 +110,21 @@ async function readPartialDiagnostic(
     diagnostics: Diagnostic[],
 ): Promise<Record<string, unknown> | undefined> {
     try {
-        const raw = JSON.parse(await readFile(filePath, "utf8"))
-        return validatePartialConfig(raw, filePath) as Record<string, unknown>
+        const raw = JSON.parse(await readFile(filePath, "utf8"));
+        return validatePartialConfig(raw, filePath) as Record<string, unknown>;
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return undefined
+            return undefined;
         }
         if (error instanceof Error) {
             diagnostics.push({
                 status: "FAIL",
                 message: `in ${filePath}: ${error.message}`,
                 repair: `Fix ${filePath} and rerun /specops-doctor.`,
-            })
-            return undefined
+            });
+            return undefined;
         }
-        throw error
+        throw error;
     }
 }
 
@@ -132,7 +132,7 @@ async function readPartialDiagnostic(
  * Determine whether a value is a plain object (not null and not an array).
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
@@ -148,18 +148,18 @@ function overridenDottedPaths(
     override: Record<string, unknown>,
     prefix = "",
 ): string[] {
-    const paths: string[] = []
+    const paths: string[] = [];
     for (const key of Object.keys(override)) {
-        const full = prefix ? `${prefix}.${key}` : key
-        const baseValue = base[key]
-        const overrideValue = override[key]
+        const full = prefix ? `${prefix}.${key}` : key;
+        const baseValue = base[key];
+        const overrideValue = override[key];
         if (isRecord(baseValue) && isRecord(overrideValue)) {
-            paths.push(...overridenDottedPaths(baseValue, overrideValue, full))
+            paths.push(...overridenDottedPaths(baseValue, overrideValue, full));
         } else if (baseValue !== undefined && !isDeepStrictEqual(baseValue, overrideValue)) {
-            paths.push(full)
+            paths.push(full);
         }
     }
-    return paths
+    return paths;
 }
 
 /**
@@ -174,34 +174,34 @@ function overridenDottedPaths(
  * @param directory - Project directory where `.opencode/specops.json` is read.
  */
 async function checkConfigSources(diagnostics: Diagnostic[], directory: string): Promise<void> {
-    const globalPath = resolveGlobalConfigPath()
-    const projectPath = path.join(directory, ".opencode", "specops.json")
-    const globalPartial = await readPartialDiagnostic(globalPath, diagnostics)
-    const projectPartial = await readPartialDiagnostic(projectPath, diagnostics)
+    const globalPath = resolveGlobalConfigPath();
+    const projectPath = path.join(directory, ".opencode", "specops.json");
+    const globalPartial = await readPartialDiagnostic(globalPath, diagnostics);
+    const projectPartial = await readPartialDiagnostic(projectPath, diagnostics);
 
     if (!globalPartial || !projectPartial) {
-        const sources: string[] = []
-        if (globalPartial) sources.push(`global ${globalPath}`)
-        if (projectPartial) sources.push(`project ${projectPath}`)
-        if (!sources.length) sources.push("using defaults")
+        const sources: string[] = [];
+        if (globalPartial) sources.push(`global ${globalPath}`);
+        if (projectPartial) sources.push(`project ${projectPath}`);
+        if (!sources.length) sources.push("using defaults");
         diagnostics.push({
             status: "INFO",
             message: `configuration sources: ${sources.join(", ")}`,
-        })
-        return
+        });
+        return;
     }
 
-    const overridden = overridenDottedPaths(globalPartial, projectPartial)
+    const overridden = overridenDottedPaths(globalPartial, projectPartial);
     if (overridden.length) {
         diagnostics.push({
             status: "WARN",
             message: `project configuration overrides global at: ${overridden.join(", ")}`,
-        })
+        });
     } else {
         diagnostics.push({
             status: "PASS",
             message: "project configuration does not override global values",
-        })
+        });
     }
 }
 
@@ -215,13 +215,13 @@ async function checkConfigSources(diagnostics: Diagnostic[], directory: string):
  */
 async function checkPackageVersion(diagnostics: Diagnostic[]): Promise<void> {
     try {
-        const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+        const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
         const metadata = JSON.parse(
             await readFile(path.join(packageRoot, "package.json"), "utf8"),
         ) as {
-            name?: string
-            version?: string
-        }
+            name?: string;
+            version?: string;
+        };
         diagnostics.push({
             status:
                 metadata.name === "@jrpbuilds/specops" && Boolean(metadata.version)
@@ -229,13 +229,13 @@ async function checkPackageVersion(diagnostics: Diagnostic[]): Promise<void> {
                     : "FAIL",
             message: `packaged plugin metadata: ${metadata.name ?? "missing"}@${metadata.version ?? "missing"}`,
             repair: "Rebuild and reinstall the packed @jrpbuilds/specops package.",
-        })
+        });
     } catch (error) {
         diagnostics.push({
             status: "FAIL",
             message: `packaged plugin metadata is unreadable: ${String(error)}`,
             repair: "Rebuild and reinstall the packed @jrpbuilds/specops package.",
-        })
+        });
     }
 }
 
@@ -248,21 +248,21 @@ async function checkPackageVersion(diagnostics: Diagnostic[]): Promise<void> {
  * @param diagnostics - Shared diagnostic accumulator.
  */
 async function checkManifest(diagnostics: Diagnostic[]): Promise<void> {
-    const manifestPath = resolveManifestPath()
-    const inspection = await inspectAgentManifest(manifestPath)
+    const manifestPath = resolveManifestPath();
+    const inspection = await inspectAgentManifest(manifestPath);
     if (inspection.status === "invalid") {
         diagnostics.push({
             status: "FAIL",
             message: `agent manifest ${inspection.path} is invalid: ${inspection.reason}`,
             repair: "Restart OpenCode to rematerialise the final manifest, or reinstall SpecOps; removed IDs are not retained.",
-        })
-        return
+        });
+        return;
     }
 
     diagnostics.push({
         status: "PASS",
         message: `agent manifest ${inspection.path} contains all ${ALL_AGENT_IDS.length} final agents`,
-    })
+    });
 }
 
 /**
@@ -285,7 +285,7 @@ function checkCommandMappings(diagnostics: Diagnostic[]): void {
             actual: COMMANDS["specops-auto"]?.agent,
             expected: AGENT_IDS.controller.automatic,
         },
-    ]
+    ];
     for (const mapping of mappings) {
         diagnostics.push({
             status:
@@ -294,7 +294,7 @@ function checkCommandMappings(diagnostics: Diagnostic[]): void {
                     : "FAIL",
             message: `${mapping.command} resolves ${mapping.actual ?? "no agent"}; expected ${mapping.expected}`,
             repair: "Rebuild and reinstall SpecOps so commands and the canonical agent registry match.",
-        })
+        });
     }
 }
 
@@ -318,26 +318,26 @@ async function checkOpenCodeCli(directory: string, diagnostics: Diagnostic[]): P
             AbortSignal.timeout(5_000),
             { PATH: process.env.PATH ?? "" },
             16_000,
-        )
-        const help = `${result.stdout}\n${result.stderr}`
+        );
+        const help = `${result.stdout}\n${result.stderr}`;
         const supported =
             result.code === 0 &&
             help.includes("--command") &&
             help.includes("--dir") &&
-            help.includes("--format")
+            help.includes("--format");
         diagnostics.push({
             status: supported ? "PASS" : "FAIL",
             message: supported
                 ? "CLI auto available: opencode run --command specops-auto --dir <project> <goal>"
                 : "installed OpenCode CLI does not expose run --command, --dir, and --format",
             repair: "Install a supported OpenCode release and rerun /specops-doctor.",
-        })
+        });
     } catch (error) {
         diagnostics.push({
             status: "FAIL",
             message: `OpenCode CLI auto check failed: ${String(error)}`,
             repair: "Install OpenCode on PATH and rerun /specops-doctor.",
-        })
+        });
     }
 }
 
@@ -352,26 +352,26 @@ async function checkOpenCodeCli(directory: string, diagnostics: Diagnostic[]): P
  */
 function checkAgentCatalogue(diagnostics: Diagnostic[]): void {
     for (const controller of CONTROLLER_AGENT_IDS) {
-        const policy = AGENT_REGISTRY[controller]
+        const policy = AGENT_REGISTRY[controller];
         diagnostics.push({
             status: policy?.mode === "primary" ? "PASS" : "FAIL",
             message: `controller ${controller} is registered as ${policy?.mode ?? "missing"}`,
             repair: `Reinstall SpecOps; ${controller} must come from the canonical registry as a primary agent.`,
-        })
+        });
     }
 
     const invalidWorker = ALL_AGENT_IDS.find(
         id =>
             !CONTROLLER_AGENT_IDS.includes(id as (typeof CONTROLLER_AGENT_IDS)[number]) &&
             AGENT_REGISTRY[id]?.mode !== "subagent",
-    )
+    );
     diagnostics.push({
         status: invalidWorker ? "FAIL" : "PASS",
         message: invalidWorker
             ? `worker ${invalidWorker} is not registered as a subagent`
             : "all capability workers are registered as subagents",
         repair: "Reinstall SpecOps from a package generated from the canonical registry.",
-    })
+    });
 }
 
 /**
@@ -389,16 +389,16 @@ function checkCapabilityMappings(diagnostics: Diagnostic[]): void {
             capability === "correctness-judgment" || capability === "compliance-judgment"
                 ? "judgment"
                 : "workflow",
-        )
-        return agent in AGENT_REGISTRY ? [] : [`${capability} -> ${String(agent)}`]
-    })
+        );
+        return agent in AGENT_REGISTRY ? [] : [`${capability} -> ${String(agent)}`];
+    });
     diagnostics.push({
         status: missing.length ? "FAIL" : "PASS",
         message: missing.length
             ? `capability mappings are unresolved: ${missing.join(", ")}`
             : `all ${SCHEDULER_CAPABILITIES.length} scheduler capabilities resolve registered agents`,
         repair: "Rebuild SpecOps; capability mappings must derive from the canonical agent IDs.",
-    })
+    });
 }
 
 /**
@@ -409,16 +409,16 @@ function checkCapabilityMappings(diagnostics: Diagnostic[]): void {
  * @param diagnostics - Shared diagnostic accumulator.
  */
 function checkPrompts(diagnostics: Diagnostic[]): void {
-    const missing = V1_AGENT_IDS.filter(id => !agentPrompt(id).trim())
-    const status = missing.length ? "FAIL" : "PASS"
+    const missing = V1_AGENT_IDS.filter(id => !agentPrompt(id).trim());
+    const status = missing.length ? "FAIL" : "PASS";
     const message = missing.length
         ? `packaged prompts are missing for: ${missing.join(", ")}`
-        : `packaged Markdown prompts resolve for all ${V1_AGENT_IDS.length} final agents`
+        : `packaged Markdown prompts resolve for all ${V1_AGENT_IDS.length} final agents`;
     diagnostics.push({
         status,
         message,
         repair: "Reinstall the package so all prompts/ assets are present.",
-    })
+    });
 }
 
 /**
@@ -429,14 +429,14 @@ function checkPrompts(diagnostics: Diagnostic[]): void {
  */
 async function checkOpenSpecAssets(directory: string, diagnostics: Diagnostic[]): Promise<void> {
     try {
-        const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8")
-        if (!/^schema:\s*spec-driven\s*$/m.test(config)) throw new Error("unsupported schema")
-        diagnostics.push({ status: "PASS", message: "OpenSpec project uses spec-driven" })
+        const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8");
+        if (!/^schema:\s*spec-driven\s*$/m.test(config)) throw new Error("unsupported schema");
+        diagnostics.push({ status: "PASS", message: "OpenSpec project uses spec-driven" });
     } catch {
         diagnostics.push({
             status: "FAIL",
             message: "OpenSpec project is not configured for spec-driven",
             repair: "Run /specops-onboard in this repository.",
-        })
+        });
     }
 }

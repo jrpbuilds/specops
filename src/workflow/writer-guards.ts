@@ -1,10 +1,10 @@
-import { readdir, readFile } from "node:fs/promises"
-import path from "node:path"
-import { hash } from "../artifacts/lifecycle.js"
-import { changeRoot } from "../state/store.js"
-import { baseCommit, stashFingerprint } from "../git.js"
-import { ARTIFACT_FILES } from "./artifacts.js"
-import type { ArtifactId, DispatchRecord, RunState } from "../types.js"
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { hash } from "../artifacts/lifecycle.js";
+import { changeRoot } from "../state/store.js";
+import { baseCommit, stashFingerprint } from "../git.js";
+import { ARTIFACT_FILES } from "./artifacts.js";
+import type { ArtifactId, DispatchRecord, RunState } from "../types.js";
 
 /**
  * Reject writer completion when Git history or controller-owned artifacts changed.
@@ -18,14 +18,14 @@ export async function assertWriterGuards(
     state: RunState,
     dispatch: DispatchRecord,
 ): Promise<void> {
-    if (!dispatch.writerGuard) return
+    if (!dispatch.writerGuard) return;
     if (dispatch.writerGuard.baseline !== state.baseline) {
-        throw new Error("Writer guard found modified run baseline")
+        throw new Error("Writer guard found modified run baseline");
     }
     if (/^[0-9a-f]{40}$/i.test(dispatch.writerGuard.baseline)) {
-        const head = await baseCommit(directory)
+        const head = await baseCommit(directory);
         if (head !== dispatch.writerGuard.baseline) {
-            throw new Error("Writer guard rejected a changed Git HEAD")
+            throw new Error("Writer guard rejected a changed Git HEAD");
         }
     }
     if (
@@ -34,18 +34,18 @@ export async function assertWriterGuards(
     ) {
         throw new Error(
             "Writer guard detected a changed Git stash list; workers must not stash changes",
-        )
+        );
     }
 
-    const currentArtifacts = await protectedControllerTree(directory, change)
-    const expectedFiles = Object.keys(dispatch.writerGuard.artifacts).sort()
-    const currentFiles = Object.keys(currentArtifacts).sort()
+    const currentArtifacts = await protectedControllerTree(directory, change);
+    const expectedFiles = Object.keys(dispatch.writerGuard.artifacts).sort();
+    const currentFiles = Object.keys(currentArtifacts).sort();
     if (JSON.stringify(currentFiles) !== JSON.stringify(expectedFiles)) {
-        throw new Error("Writer guard found a changed controller artifact tree")
+        throw new Error("Writer guard found a changed controller artifact tree");
     }
     for (const [file, expectedHash] of Object.entries(dispatch.writerGuard.artifacts)) {
         if (currentArtifacts[file] !== expectedHash) {
-            throw new Error(`Writer guard found modified controller artifact: ${file}`)
+            throw new Error(`Writer guard found modified controller artifact: ${file}`);
         }
     }
 }
@@ -56,21 +56,21 @@ export async function captureWriterGuard(
     change: string,
     state: RunState,
 ): Promise<NonNullable<DispatchRecord["writerGuard"]>> {
-    const artifacts = await protectedControllerTree(directory, change)
+    const artifacts = await protectedControllerTree(directory, change);
     for (const [artifact, file] of Object.entries(ARTIFACT_FILES) as Array<[ArtifactId, string]>) {
         if (artifact === "implementation" || state.artifacts[artifact]?.validity !== "valid") {
-            continue
+            continue;
         }
         if (!(file in artifacts) && /^[0-9a-f]{40}$/i.test(state.baseline)) {
-            throw new Error(`Writer guard cannot issue with missing controller artifact: ${file}`)
+            throw new Error(`Writer guard cannot issue with missing controller artifact: ${file}`);
         }
     }
     if (state.artifacts.specs?.validity === "valid") {
         const specifications = Object.keys(artifacts).filter(
             relative => relative.startsWith("specs/") && relative.endsWith("/spec.md"),
-        )
+        );
         if (specifications.length === 0 && /^[0-9a-f]{40}$/i.test(state.baseline)) {
-            throw new Error("Writer guard cannot issue with missing controller specifications")
+            throw new Error("Writer guard cannot issue with missing controller specifications");
         }
     }
     return {
@@ -79,7 +79,7 @@ export async function captureWriterGuard(
         stashFingerprint: /^[0-9a-f]{40}$/i.test(state.baseline)
             ? await stashFingerprint(directory)
             : undefined,
-    }
+    };
 }
 
 /**
@@ -93,42 +93,42 @@ async function protectedControllerTree(
     directory: string,
     change: string,
 ): Promise<Record<string, string>> {
-    const root = changeRoot(directory, change)
+    const root = changeRoot(directory, change);
     const excluded = new Set([
         "specops-run.json",
         "specops-progress.json",
         "specops-evidence.json",
         "specops-run.lock",
         "specops-transaction",
-    ])
-    const entries: Record<string, string> = {}
+    ]);
+    const entries: Record<string, string> = {};
 
     async function visit(current: string): Promise<void> {
         for (const entry of (await readdir(current, { withFileTypes: true })).sort((left, right) =>
             left.name.localeCompare(right.name),
         )) {
-            const absolute = path.join(current, entry.name)
-            const relative = path.relative(root, absolute).split(path.sep).join("/")
-            if (excluded.has(relative)) continue
+            const absolute = path.join(current, entry.name);
+            const relative = path.relative(root, absolute).split(path.sep).join("/");
+            if (excluded.has(relative)) continue;
             if (entry.isSymbolicLink()) {
                 throw new Error(
                     `Writer guard rejected symbolic link in controller tree: ${relative}`,
-                )
+                );
             }
             if (entry.isDirectory()) {
-                entries[`${relative}/`] = hash("directory")
-                await visit(absolute)
-                continue
+                entries[`${relative}/`] = hash("directory");
+                await visit(absolute);
+                continue;
             }
             if (!entry.isFile()) {
                 throw new Error(
                     `Writer guard rejected special file in controller tree: ${relative}`,
-                )
+                );
             }
-            entries[relative] = hash((await readFile(absolute, "utf8")).trim())
+            entries[relative] = hash((await readFile(absolute, "utf8")).trim());
         }
     }
 
-    await visit(root)
-    return entries
+    await visit(root);
+    return entries;
 }

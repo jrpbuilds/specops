@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto"
-import type { ArtifactId, RunState } from "../types.js"
-import { downstream } from "./graph.js"
+import { createHash } from "node:crypto";
+import type { ArtifactId, RunState } from "../types.js";
+import { downstream } from "./graph.js";
 
 /**
  * Produce a stable content hash for provenance and invalidation.
@@ -8,7 +8,7 @@ import { downstream } from "./graph.js"
  * @param content - The artifact bytes to hash.
  * @returns A lowercase hex SHA-256 digest of `content`.
  */
-export const hash = (content: string): string => createHash("sha256").update(content).digest("hex")
+export const hash = (content: string): string => createHash("sha256").update(content).digest("hex");
 
 /**
  * Mark a changed artifact and all of its dependents stale.
@@ -25,15 +25,15 @@ export const hash = (content: string): string => createHash("sha256").update(con
  * transitively dependent artifacts).
  */
 export function invalidate(state: RunState, targets: ArtifactId[], reason: string): ArtifactId[] {
-    const affected = downstream(targets)
+    const affected = downstream(targets);
     for (const artifact of affected) {
-        const current = state.artifacts[artifact]
+        const current = state.artifacts[artifact];
         if (current) {
-            current.validity = "stale"
-            current.invalidationReason = reason
+            current.validity = "stale";
+            current.invalidationReason = reason;
         }
     }
 
-    state.invalidations.push({ artifacts: affected, reason, at: new Date().toISOString() })
-    return affected
+    state.invalidations.push({ artifacts: affected, reason, at: new Date().toISOString() });
+    return affected;
 }

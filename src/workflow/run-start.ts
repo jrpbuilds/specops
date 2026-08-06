@@ -1,12 +1,12 @@
-import type { SpecOpsConfig } from "../config.js"
-import { AGENT_IDS } from "../capabilities/ids.js"
-import { assertCleanWorktree, baseCommit } from "../git.js"
-import { createChange, uniqueChangeName } from "../openspec.js"
-import { parseAssessment } from "../routing/assessment.js"
-import { requirementsFor } from "../routing/policy.js"
-import { withRunLock, writeMachine, writeRun } from "../state/store.js"
-import { persistArtifact, writeArtifactIndex } from "./artifacts.js"
-import type { RunState } from "../types.js"
+import type { SpecOpsConfig } from "../config.js";
+import { AGENT_IDS } from "../capabilities/ids.js";
+import { assertCleanWorktree, baseCommit } from "../git.js";
+import { createChange, uniqueChangeName } from "../openspec.js";
+import { parseAssessment } from "../routing/assessment.js";
+import { requirementsFor } from "../routing/policy.js";
+import { withRunLock, writeMachine, writeRun } from "../state/store.js";
+import { persistArtifact, writeArtifactIndex } from "./artifacts.js";
+import type { RunState } from "../types.js";
 
 /**
  * Start a clean, final-format run and persist controller-owned machine state.
@@ -25,23 +25,23 @@ export async function startRun(
     directory: string,
     config: SpecOpsConfig,
     input: {
-        goal: string
-        assessmentOutput: string
-        requestedTier: "auto" | RunState["scopeTier"]
-        mode: RunState["mode"]
+        goal: string;
+        assessmentOutput: string;
+        requestedTier: "auto" | RunState["scopeTier"];
+        mode: RunState["mode"];
     },
 ): Promise<{ change: string; state: RunState }> {
-    const assessment = parseAssessment(input.assessmentOutput)
-    const routed = requirementsFor(assessment, input.requestedTier, config)
-    const change = await uniqueChangeName(directory, input.goal)
+    const assessment = parseAssessment(input.assessmentOutput);
+    const routed = requirementsFor(assessment, input.requestedTier, config);
+    const change = await uniqueChangeName(directory, input.goal);
 
     if (config.automation.requireCleanWorktree) {
-        await assertCleanWorktree(directory)
+        await assertCleanWorktree(directory);
     }
-    await createChange(directory, config, change, input.goal, routed.requirements.scopeTier)
+    await createChange(directory, config, change, input.goal, routed.requirements.scopeTier);
 
     return withRunLock(directory, change, "start run", async () => {
-        const now = new Date().toISOString()
+        const now = new Date().toISOString();
         const state: RunState = {
             version: 7,
             revision: 0,
@@ -77,9 +77,9 @@ export async function startRun(
             createdAt: now,
             updatedAt: now,
             status: "running",
-        }
+        };
 
-        state.baseline = await baseCommit(directory)
+        state.baseline = await baseCommit(directory);
 
         await persistArtifact(
             directory,
@@ -89,7 +89,7 @@ export async function startRun(
             "specops-engine",
             routingMarkdown(state),
             "workflow",
-        )
+        );
         if (state.scopeTier === "lean") {
             await persistArtifact(
                 directory,
@@ -99,9 +99,9 @@ export async function startRun(
                 AGENT_IDS.core.assessor,
                 assessmentExplorationMarkdown(state),
                 "workflow",
-            )
+            );
         }
-        await writeRun(directory, change, state)
+        await writeRun(directory, change, state);
         await writeMachine(directory, change, "specops-context.json", {
             version: 1,
             goal: input.goal,
@@ -111,12 +111,15 @@ export async function startRun(
             openQuestions: assessment.unresolvedQuestions,
             relevantPaths: assessment.inspectedPaths,
             decisions: [],
-        })
-        await writeMachine(directory, change, "specops-evidence.json", { version: 2, commands: [] })
-        await writeArtifactIndex(directory, change, state)
+        });
+        await writeMachine(directory, change, "specops-evidence.json", {
+            version: 2,
+            commands: [],
+        });
+        await writeArtifactIndex(directory, change, state);
 
-        return { change, state }
-    })
+        return { change, state };
+    });
 }
 
 /**
@@ -133,7 +136,7 @@ function routingMarkdown(state: RunState): string {
         "",
         ...state.routingReasons.map(reason => `- ${reason}`),
         "",
-    ].join("\n")
+    ].join("\n");
 }
 
 /**
@@ -146,13 +149,13 @@ function routingMarkdown(state: RunState): string {
  * @returns Evidence-backed exploration Markdown.
  */
 function assessmentExplorationMarkdown(state: RunState): string {
-    const assessment = state.assessment
+    const assessment = state.assessment;
     const section = (title: string, values: string[]): string[] => [
         `## ${title}`,
         "",
         ...(values.length ? values.map(value => `- ${value}`) : ["- None."]),
         "",
-    ]
+    ];
     return [
         "# Exploration",
         "",
@@ -168,5 +171,5 @@ function assessmentExplorationMarkdown(state: RunState): string {
                     `${validation.executable} ${validation.args.join(" ")} — ${validation.purpose}`,
             ),
         ),
-    ].join("\n")
+    ].join("\n");
 }

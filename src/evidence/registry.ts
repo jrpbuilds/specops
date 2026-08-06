@@ -1,6 +1,6 @@
-import path from "node:path"
-import type { CommandEvidence, DispatchRecord, RunState, ValidationRequirement } from "../types.js"
-import { readMachine, writeMachine } from "../state/store.js"
+import path from "node:path";
+import type { CommandEvidence, DispatchRecord, RunState, ValidationRequirement } from "../types.js";
+import { readMachine, writeMachine } from "../state/store.js";
 
 /**
  * Shape of a registered `command` validation requirement.
@@ -8,32 +8,32 @@ import { readMachine, writeMachine } from "../state/store.js"
  * The barrier and the public validation tool both execute only this kind of
  * requirement; `openspec-strict` and `traceability` are enforced elsewhere.
  */
-export type CommandRequirement = Extract<ValidationRequirement, { kind: "command" }>
+export type CommandRequirement = Extract<ValidationRequirement, { kind: "command" }>;
 
 /**
  * On-disk shape of the evidence sidecar persisted under each change.
  */
 export type EvidenceRegistry = {
-    version: number
-    commands: CommandEvidence[]
-}
+    version: number;
+    commands: CommandEvidence[];
+};
 
 /** Create an empty registry without sharing mutable command arrays. */
 function emptyRegistry(): EvidenceRegistry {
-    return { version: 2, commands: [] }
+    return { version: 2, commands: [] };
 }
 
 /** Return whether a value has the minimal persisted evidence registry shape. */
 function isEvidenceRegistry(value: unknown): value is EvidenceRegistry {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false
-    const record = value as Record<string, unknown>
-    return record.version === 2 && Array.isArray(record.commands)
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const record = value as Record<string, unknown>;
+    return record.version === 2 && Array.isArray(record.commands);
 }
 
 /** Return whether a sidecar row has the fields required for safe matching. */
 function isCommandEvidence(value: unknown): value is CommandEvidence {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false
-    const record = value as Record<string, unknown>
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const record = value as Record<string, unknown>;
     return (
         typeof record.id === "string" &&
         typeof record.executable === "string" &&
@@ -43,7 +43,7 @@ function isCommandEvidence(value: unknown): value is CommandEvidence {
         typeof record.exitCode === "number" &&
         typeof record.validationId === "string" &&
         typeof record.dispatchId === "string"
-    )
+    );
 }
 
 /**
@@ -53,7 +53,7 @@ function isCommandEvidence(value: unknown): value is CommandEvidence {
  * requirement declared with another.
  */
 function normalizeCwd(root: string, cwd: string | undefined): string {
-    return path.resolve(root, cwd ?? ".")
+    return path.resolve(root, cwd ?? ".");
 }
 
 /**
@@ -81,7 +81,7 @@ function evidenceSatisfiesRequirement(
         evidence.exitCode === 0 &&
         evidence.implementationDiffHash === implementationDiffHash &&
         evidence.policyHash === policyHash
-    )
+    );
 }
 
 /**
@@ -93,9 +93,9 @@ export async function readEvidenceRegistry(
     directory: string,
     change: string,
 ): Promise<EvidenceRegistry> {
-    const value = await readMachine<unknown>(directory, change, "specops-evidence.json", undefined)
-    if (!isEvidenceRegistry(value)) return emptyRegistry()
-    return { version: 2, commands: value.commands.filter(isCommandEvidence) }
+    const value = await readMachine<unknown>(directory, change, "specops-evidence.json", undefined);
+    if (!isEvidenceRegistry(value)) return emptyRegistry();
+    return { version: 2, commands: value.commands.filter(isCommandEvidence) };
 }
 
 /**
@@ -107,7 +107,7 @@ async function writeEvidenceRegistry(
     change: string,
     registry: EvidenceRegistry,
 ): Promise<void> {
-    await writeMachine(directory, change, "specops-evidence.json", registry)
+    await writeMachine(directory, change, "specops-evidence.json", registry);
 }
 
 /**
@@ -121,10 +121,10 @@ export async function appendEvidence(
     change: string,
     evidence: CommandEvidence,
 ): Promise<void> {
-    const registry = await readEvidenceRegistry(directory, change)
-    registry.version = 2
-    registry.commands.push(evidence)
-    await writeEvidenceRegistry(directory, change, registry)
+    const registry = await readEvidenceRegistry(directory, change);
+    registry.version = 2;
+    registry.commands.push(evidence);
+    await writeEvidenceRegistry(directory, change, registry);
 }
 
 /**
@@ -140,7 +140,7 @@ export function findCommandRequirement(
     return state.requirements.requiredValidations.find(
         (requirement): requirement is CommandRequirement =>
             requirement.id === validationId && requirement.kind === "command",
-    )
+    );
 }
 
 /**
@@ -155,8 +155,8 @@ export function missingCommandRequirements(
     state: RunState,
     registry: EvidenceRegistry,
 ): CommandRequirement[] {
-    const diffHash = state.implementationDiffHash
-    const policyHash = state.requirements.policyHash
+    const diffHash = state.implementationDiffHash;
+    const policyHash = state.requirements.policyHash;
     return state.requirements.requiredValidations
         .filter((requirement): requirement is CommandRequirement => requirement.kind === "command")
         .filter(
@@ -164,7 +164,7 @@ export function missingCommandRequirements(
                 !registry.commands.some(row =>
                     evidenceSatisfiesRequirement(root, row, requirement, diffHash, policyHash),
                 ),
-        )
+        );
 }
 
 /**
@@ -180,15 +180,15 @@ export function latestImplementationDispatch(state: RunState): DispatchRecord | 
         dispatch =>
             dispatch.status === "completed" &&
             (dispatch.capability === "implementation" || dispatch.capability === "repair"),
-    )
-    if (completed.length === 0) return undefined
+    );
+    if (completed.length === 0) return undefined;
     return completed.reduce((latest, dispatch) =>
         (dispatch.finishedAt ?? dispatch.at) > (latest.finishedAt ?? latest.at) ? dispatch : latest,
-    )
+    );
 }
 
 /**
  * Re-export the executor so callers can import barrier helpers and the
  * confined runner from one module surface.
  */
-export { executeValidation } from "./commands.js"
+export { executeValidation } from "./commands.js";

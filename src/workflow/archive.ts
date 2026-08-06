@@ -1,8 +1,8 @@
-import { readFile, readdir, realpath, stat } from "node:fs/promises"
-import path from "node:path"
-import type { SpecOpsConfig } from "../config.js"
-import { collectDiff } from "../git.js"
-import { archiveChange, countIncompleteTasks } from "../openspec.js"
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import path from "node:path";
+import type { SpecOpsConfig } from "../config.js";
+import { collectDiff } from "../git.js";
+import { archiveChange, countIncompleteTasks } from "../openspec.js";
 import {
     changeRoot,
     withArchiveLock,
@@ -13,17 +13,17 @@ import {
     readArchiveAttemptSidecar,
     writeArchiveAttemptSidecar,
     type ArchiveAttemptRecord,
-} from "../state/store.js"
-import { hash } from "../artifacts/lifecycle.js"
-import { redactSensitiveText } from "../security/redact.js"
-import { ARTIFACT_FILES } from "./artifacts.js"
-import type { ArtifactId, RunState } from "../types.js"
+} from "../state/store.js";
+import { hash } from "../artifacts/lifecycle.js";
+import { redactSensitiveText } from "../security/redact.js";
+import { ARTIFACT_FILES } from "./artifacts.js";
+import type { ArtifactId, RunState } from "../types.js";
 
 /**
  * Structured archive failure category, mirroring {@link RunState}'s
  * `archiveError.kind`.
  */
-type ArchiveErrorKind = NonNullable<NonNullable<RunState["archiveError"]>["kind"]>
+type ArchiveErrorKind = NonNullable<NonNullable<RunState["archiveError"]>["kind"]>;
 
 /**
  * Archive a completed (verified) OpenSpec change as a first-class finalization
@@ -54,35 +54,35 @@ export async function archiveCompletedRun(
 ): Promise<RunState> {
     return withArchiveLock(directory, change, () =>
         withRunMutationLock(directory, change, async () => {
-            const activeDir = changeRoot(directory, change)
-            const archiveDir = path.join(directory, "openspec", "changes", "archive")
+            const activeDir = changeRoot(directory, change);
+            const archiveDir = path.join(directory, "openspec", "changes", "archive");
 
-            let activeState: RunState
+            let activeState: RunState;
             try {
-                activeState = await readRunIn(activeDir)
+                activeState = await readRunIn(activeDir);
             } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-                    throw error
+                    throw error;
                 }
-                return recoverArchivedRun(directory, change, archiveDir)
+                return recoverArchivedRun(directory, change, archiveDir);
             }
 
             if (activeState.status === "completed" && activeState.archivedAt) {
-                return activeState
+                return activeState;
             }
 
-            assertArchiveEligible(change, activeState)
-            const archiveCandidates = await listArchiveCandidates(archiveDir, change)
+            assertArchiveEligible(change, activeState);
+            const archiveCandidates = await listArchiveCandidates(archiveDir, change);
             if (archiveCandidates.length > 0) {
                 return recordArchiveFailureAt(
                     activeDir,
                     "path_conflict",
                     `Change '${change}' has both an active directory and an existing archive entry; resolve the conflict before archiving.`,
-                )
+                );
             }
-            return archiveFromActive(directory, change, config, activeDir, activeState)
+            return archiveFromActive(directory, change, config, activeDir, activeState);
         }),
-    )
+    );
 }
 
 /**
@@ -100,15 +100,15 @@ async function archiveFromActive(
     activeDir: string,
     state: RunState,
 ): Promise<RunState> {
-    assertArchiveEligible(change, state)
+    assertArchiveEligible(change, state);
 
-    const incompleteTasks = await countIncompleteTasks(directory, change)
+    const incompleteTasks = await countIncompleteTasks(directory, change);
     if (incompleteTasks > 0) {
         return recordArchiveFailureAt(
             activeDir,
             "incomplete_tasks",
             `SpecOps archive: ${incompleteTasks} incomplete task(s) remain; complete them before archiving`,
-        )
+        );
     }
 
     const artifactFailure = await validateArchiveArtifacts(
@@ -116,19 +116,19 @@ async function archiveFromActive(
         change,
         state,
         config.review.maxDiffBytes,
-    )
+    );
     if (artifactFailure) {
-        return recordArchiveFailureAt(activeDir, "invalid_artifact", artifactFailure)
+        return recordArchiveFailureAt(activeDir, "invalid_artifact", artifactFailure);
     }
 
     const priorSidecar =
         state.status === "archiving"
             ? await readArchiveAttemptSidecar(directory, change)
-            : undefined
+            : undefined;
     const expectedArchivedAs =
-        priorSidecar?.expectedArchivedAs ?? computeExpectedArchiveName(change)
-    const now = new Date().toISOString()
-    const nextRevision = state.revision + 1
+        priorSidecar?.expectedArchivedAs ?? computeExpectedArchiveName(change);
+    const now = new Date().toISOString();
+    const nextRevision = state.revision + 1;
 
     // Strict write order: sidecar first (the independent identity record), then
     // the `archiving` state, then the archive command. The sidecar stores the
@@ -140,15 +140,15 @@ async function archiveFromActive(
         runCreatedAt: state.createdAt,
         runBaseline: state.baseline,
         attemptAt: now,
-    }
-    await writeArchiveAttemptSidecar(directory, change, sidecar)
+    };
+    await writeArchiveAttemptSidecar(directory, change, sidecar);
 
-    const archivingState: RunState = { ...state, status: "archiving", archiveError: undefined }
-    await writeRunIn(activeDir, archivingState)
+    const archivingState: RunState = { ...state, status: "archiving", archiveError: undefined };
+    await writeRunIn(activeDir, archivingState);
 
-    let result
+    let result;
     try {
-        result = await archiveChange(directory, config, change, state.scopeTier === "lean")
+        result = await archiveChange(directory, config, change, state.scopeTier === "lean");
     } catch (error) {
         return handleArchiveAttemptFailure(
             directory,
@@ -158,15 +158,15 @@ async function archiveFromActive(
             String(error),
             sidecar,
             state.archiveError?.attempt ?? 0,
-        )
+        );
     }
 
     if (result.code !== 0) {
         const output =
-            result.stderr || result.stdout || `OpenSpec archive exited with code ${result.code}`
+            result.stderr || result.stdout || `OpenSpec archive exited with code ${result.code}`;
         const kind = /already exists|archive_target_exists/i.test(output)
             ? "path_conflict"
-            : "command_failed"
+            : "command_failed";
         return handleArchiveAttemptFailure(
             directory,
             change,
@@ -175,10 +175,10 @@ async function archiveFromActive(
             output,
             sidecar,
             state.archiveError?.attempt ?? 0,
-        )
+        );
     }
 
-    const archiveResult = parseArchiveResult(result.stdout)
+    const archiveResult = parseArchiveResult(result.stdout);
     if (!archiveResult) {
         return handleArchiveAttemptFailure(
             directory,
@@ -188,7 +188,7 @@ async function archiveFromActive(
             "OpenSpec archive succeeded but returned no archive location",
             sidecar,
             state.archiveError?.attempt ?? 0,
-        )
+        );
     }
 
     try {
@@ -197,8 +197,8 @@ async function archiveFromActive(
             change,
             archiveResult,
             sidecar,
-        )
-        return completeArchivedCandidate(directory, change, archivePath, sidecar)
+        );
+        return completeArchivedCandidate(directory, change, archivePath, sidecar);
     } catch (error) {
         return handleArchiveAttemptFailure(
             directory,
@@ -208,7 +208,7 @@ async function archiveFromActive(
             String(error),
             sidecar,
             state.archiveError?.attempt ?? 0,
-        )
+        );
     }
 }
 
@@ -225,42 +225,42 @@ async function recoverArchivedRun(
     change: string,
     archiveDir: string,
 ): Promise<RunState> {
-    const sidecar = await readArchiveAttemptSidecar(directory, change)
-    const candidates = await listArchiveCandidates(archiveDir, change)
+    const sidecar = await readArchiveAttemptSidecar(directory, change);
+    const candidates = await listArchiveCandidates(archiveDir, change);
 
     if (!sidecar) {
         throw new Error(
             `SpecOps archive: recovery identity is unavailable for '${change}'; no archived archiving state was changed`,
-        )
+        );
     }
 
-    const matches: Array<{ path: string; state: RunState }> = []
+    const matches: Array<{ path: string; state: RunState }> = [];
     for (const candidate of candidates) {
-        if (path.basename(candidate) !== sidecar.expectedArchivedAs) continue
-        let state: RunState
+        if (path.basename(candidate) !== sidecar.expectedArchivedAs) continue;
+        let state: RunState;
         try {
-            const canonical = await canonicalArchiveCandidate(archiveDir, candidate)
-            state = await readRunIn(canonical)
-            if (!matchesIdentity(state, sidecar)) continue
-            matches.push({ path: canonical, state })
+            const canonical = await canonicalArchiveCandidate(archiveDir, candidate);
+            state = await readRunIn(canonical);
+            if (!matchesIdentity(state, sidecar)) continue;
+            matches.push({ path: canonical, state });
         } catch {
             // A candidate directory without a valid run state cannot be this run.
-            continue
+            continue;
         }
     }
 
     if (matches.length === 0) {
         throw new Error(
             `SpecOps archive: no archived candidate matches the recovery identity for '${change}'; inspect the archive before retrying`,
-        )
+        );
     }
     if (matches.length > 1) {
         return throwPathConflict(
             `SpecOps archive: multiple archived candidates match run '${change}'; resolve manually before completing`,
-        )
+        );
     }
 
-    return completeArchivedCandidate(directory, change, matches[0]!.path, sidecar)
+    return completeArchivedCandidate(directory, change, matches[0]!.path, sidecar);
 }
 
 /** Return whether a run state is a valid source for an archive attempt. */
@@ -270,15 +270,15 @@ function isArchiveEligible(state: RunState): boolean {
         state.status === "archiving" ||
         state.status === "archive_failed" ||
         (state.status === "completed" && state.archivedAt === undefined)
-    )
+    );
 }
 
 /** Reject archive attempts that would mutate an active workflow state. */
 function assertArchiveEligible(change: string, state: RunState): void {
-    if (isArchiveEligible(state)) return
+    if (isArchiveEligible(state)) return;
     throw new Error(
         `SpecOps archive: run '${change}' is ${state.status}, not archivable; only passed, archiving, archive_failed, or completed-unarchived runs can be archived.`,
-    )
+    );
 }
 
 /** Verify the moved run still represents the sidecar's archive attempt. */
@@ -287,7 +287,7 @@ function matchesIdentity(state: RunState, sidecar: ArchiveAttemptRecord): boolea
         state.revision === sidecar.runRevision &&
         state.createdAt === sidecar.runCreatedAt &&
         state.baseline === sidecar.runBaseline
-    )
+    );
 }
 
 /** Complete one identity-verified archived candidate and clean the sidecar best-effort. */
@@ -297,28 +297,28 @@ async function completeArchivedCandidate(
     archivePath: string,
     sidecar: ArchiveAttemptRecord,
 ): Promise<RunState> {
-    const archivedState = await readRunIn(archivePath)
+    const archivedState = await readRunIn(archivePath);
     if (!matchesIdentity(archivedState, sidecar)) {
-        throw new Error(`SpecOps archive: archived state identity does not match '${change}'`)
+        throw new Error(`SpecOps archive: archived state identity does not match '${change}'`);
     }
     if (archivedState.status === "completed" && archivedState.archivedAt) {
-        await deleteArchiveAttemptSidecar(directory, change).catch(() => {})
-        return archivedState
+        await deleteArchiveAttemptSidecar(directory, change).catch(() => {});
+        return archivedState;
     }
     if (archivedState.status !== "archiving") {
         throw new Error(
             `SpecOps archive: archived candidate for '${change}' is ${archivedState.status}`,
-        )
+        );
     }
     const completedState: RunState = {
         ...archivedState,
         status: "completed",
         archivedAt: new Date().toISOString(),
         archiveError: undefined,
-    }
-    await writeRunIn(archivePath, completedState)
-    await deleteArchiveAttemptSidecar(directory, change).catch(() => {})
-    return completedState
+    };
+    await writeRunIn(archivePath, completedState);
+    await deleteArchiveAttemptSidecar(directory, change).catch(() => {});
+    return completedState;
 }
 
 /** Complete a failure only when the active source remains available. */
@@ -331,23 +331,23 @@ async function handleArchiveAttemptFailure(
     sidecar: ArchiveAttemptRecord,
     previousAttempt: number,
 ): Promise<RunState> {
-    const recovered = await tryRecoverArchivedCandidate(directory, change, sidecar)
-    if (recovered) return recovered
+    const recovered = await tryRecoverArchivedCandidate(directory, change, sidecar);
+    if (recovered) return recovered;
 
     try {
-        await stat(path.join(activeDir, "specops-run.json"))
+        await stat(path.join(activeDir, "specops-run.json"));
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
             throw new Error(
                 `SpecOps archive: archive outcome is ambiguous for '${change}'; recovery sidecar retained for retry`,
-            )
+            );
         }
-        throw error
+        throw error;
     }
 
-    const failed = await recordArchiveFailureAt(activeDir, kind, message, previousAttempt)
-    await deleteArchiveAttemptSidecar(directory, change).catch(() => {})
-    return failed
+    const failed = await recordArchiveFailureAt(activeDir, kind, message, previousAttempt);
+    await deleteArchiveAttemptSidecar(directory, change).catch(() => {});
+    return failed;
 }
 
 /** Find and complete an exact sidecar-identified candidate after an uncertain command result. */
@@ -356,35 +356,35 @@ async function tryRecoverArchivedCandidate(
     change: string,
     sidecar: ArchiveAttemptRecord,
 ): Promise<RunState | undefined> {
-    const archiveDir = path.join(directory, "openspec", "changes", "archive")
-    const candidates = await listArchiveCandidates(archiveDir, change)
+    const archiveDir = path.join(directory, "openspec", "changes", "archive");
+    const candidates = await listArchiveCandidates(archiveDir, change);
     for (const candidate of candidates) {
-        if (path.basename(candidate) !== sidecar.expectedArchivedAs) continue
+        if (path.basename(candidate) !== sidecar.expectedArchivedAs) continue;
         try {
-            const canonical = await canonicalArchiveCandidate(archiveDir, candidate)
-            const state = await readRunIn(canonical)
-            if (!matchesIdentity(state, sidecar)) continue
-            return completeArchivedCandidate(directory, change, canonical, sidecar)
+            const canonical = await canonicalArchiveCandidate(archiveDir, candidate);
+            const state = await readRunIn(canonical);
+            if (!matchesIdentity(state, sidecar)) continue;
+            return completeArchivedCandidate(directory, change, canonical, sidecar);
         } catch {
             // Continue searching without mutating a candidate that failed identity checks.
         }
     }
-    return undefined
+    return undefined;
 }
 
 /** Ensure a candidate resolves inside the canonical archive directory. */
 async function canonicalArchiveCandidate(archiveDir: string, candidate: string): Promise<string> {
-    const root = await realpath(archiveDir)
-    const resolved = await realpath(candidate)
+    const root = await realpath(archiveDir);
+    const resolved = await realpath(candidate);
     if (!isContainedPath(root, resolved) || path.dirname(resolved) !== root) {
-        throw new Error("SpecOps archive: archive candidate escaped the archive directory")
+        throw new Error("SpecOps archive: archive candidate escaped the archive directory");
     }
-    return resolved
+    return resolved;
 }
 
 /** Verify that a resolved path is within a directory without accepting the directory itself. */
 function isContainedPath(root: string, target: string): boolean {
-    return target.startsWith(`${root}${path.sep}`)
+    return target.startsWith(`${root}${path.sep}`);
 }
 
 /**
@@ -402,17 +402,17 @@ async function recordArchiveFailureAt(
     message: string,
     prevAttempt = 0,
 ): Promise<RunState> {
-    const state = await readRunIn(activeDir)
-    const previousAttempt = Math.max(prevAttempt, state.archiveError?.attempt ?? 0)
-    state.status = "archive_failed"
+    const state = await readRunIn(activeDir);
+    const previousAttempt = Math.max(prevAttempt, state.archiveError?.attempt ?? 0);
+    state.status = "archive_failed";
     state.archiveError = {
         attempt: previousAttempt + 1,
         kind,
         message: redactSensitiveText(message).slice(0, 2_000),
         at: new Date().toISOString(),
-    }
-    await writeRunIn(activeDir, state)
-    return state
+    };
+    await writeRunIn(activeDir, state);
+    return state;
 }
 
 /** Validate the CLI path and archive name before any moved state is accessed. */
@@ -425,28 +425,28 @@ async function validateArchiveResultPath(
     if (result.archivedAs !== sidecar.expectedArchivedAs) {
         throw new Error(
             `SpecOps archive: archivedAs '${result.archivedAs}' does not match expected '${sidecar.expectedArchivedAs}' for '${change}'`,
-        )
+        );
     }
     if (result.path.split(/[\\/]/).includes("..")) {
-        throw new Error("SpecOps archive: archive result path contains traversal")
+        throw new Error("SpecOps archive: archive result path contains traversal");
     }
 
-    const archiveDir = path.resolve(directory, "openspec", "changes", "archive")
-    const canonicalRoot = await realpath(archiveDir)
+    const archiveDir = path.resolve(directory, "openspec", "changes", "archive");
+    const canonicalRoot = await realpath(archiveDir);
     const requested = path.isAbsolute(result.path)
         ? path.resolve(result.path)
-        : path.resolve(directory, result.path)
+        : path.resolve(directory, result.path);
     if (!isContainedPath(canonicalRoot, requested)) {
-        throw new Error("SpecOps archive: archive result path escaped the archive directory")
+        throw new Error("SpecOps archive: archive result path escaped the archive directory");
     }
-    const canonical = await realpath(requested)
+    const canonical = await realpath(requested);
     if (!isContainedPath(canonicalRoot, canonical) || path.dirname(canonical) !== canonicalRoot) {
-        throw new Error("SpecOps archive: archive result path escaped the archive directory")
+        throw new Error("SpecOps archive: archive result path escaped the archive directory");
     }
     if (path.basename(canonical) !== result.archivedAs) {
-        throw new Error("SpecOps archive: archive result basename disagrees with archivedAs")
+        throw new Error("SpecOps archive: archive result basename disagrees with archivedAs");
     }
-    return canonical
+    return canonical;
 }
 
 /** Resolve and hash every required artifact immediately before archive movement. */
@@ -456,69 +456,69 @@ async function validateArchiveArtifacts(
     state: RunState,
     maxDiffBytes: number,
 ): Promise<string | undefined> {
-    const root = changeRoot(directory, change)
+    const root = changeRoot(directory, change);
     const files: Partial<Record<ArtifactId, string>> = {
         ...ARTIFACT_FILES,
         "correctness-judgment": "judgment-correctness.json",
         "compliance-judgment": "judgment-compliance.json",
         receipt: "specops-receipt.json",
-    }
+    };
 
     for (const artifact of state.requirements.requiredArtifacts) {
-        const provenance = state.artifacts[artifact]
+        const provenance = state.artifacts[artifact];
         if (!provenance || provenance.validity !== "valid") {
-            return `SpecOps archive: required artifact '${artifact}' is not marked valid`
+            return `SpecOps archive: required artifact '${artifact}' is not marked valid`;
         }
 
         try {
-            let content: string
+            let content: string;
             if (artifact === "implementation") {
-                const diffHash = hash(await collectDiff(directory, maxDiffBytes))
+                const diffHash = hash(await collectDiff(directory, maxDiffBytes));
                 if (state.implementationDiffHash !== diffHash) {
-                    return "SpecOps archive: implementation diff changed after verification"
+                    return "SpecOps archive: implementation diff changed after verification";
                 }
-                content = diffHash
+                content = diffHash;
             } else if (artifact === "specs") {
-                content = await currentSpecsArtifactContent(root)
+                content = await currentSpecsArtifactContent(root);
             } else {
-                const relative = files[artifact]
-                if (!relative) return `SpecOps archive: no file mapping exists for '${artifact}'`
-                content = await readFile(path.join(root, relative), "utf8")
+                const relative = files[artifact];
+                if (!relative) return `SpecOps archive: no file mapping exists for '${artifact}'`;
+                content = await readFile(path.join(root, relative), "utf8");
             }
 
-            const persisted = redactSensitiveText(content.trim())
+            const persisted = redactSensitiveText(content.trim());
             if (hash(persisted) !== provenance.outputHash) {
-                return `SpecOps archive: required artifact '${artifact}' changed after verification`
+                return `SpecOps archive: required artifact '${artifact}' changed after verification`;
             }
         } catch {
-            return `SpecOps archive: required artifact '${artifact}' is missing or unreadable`
+            return `SpecOps archive: required artifact '${artifact}' is missing or unreadable`;
         }
     }
-    return undefined
+    return undefined;
 }
 
 /** Serialize the current specs bundle using the same stable shape as provenance. */
 async function currentSpecsArtifactContent(root: string): Promise<string> {
-    const specsRoot = path.join(root, "specs")
+    const specsRoot = path.join(root, "specs");
     const entries = (await readdir(specsRoot, { withFileTypes: true })).sort((left, right) =>
         left.name.localeCompare(right.name),
-    )
-    const specs: Record<string, string> = {}
+    );
+    const specs: Record<string, string> = {};
     for (const entry of entries) {
-        if (!entry.isDirectory()) continue
+        if (!entry.isDirectory()) continue;
         specs[entry.name] = (
             await readFile(path.join(specsRoot, entry.name, "spec.md"), "utf8")
-        ).trim()
+        ).trim();
     }
-    return JSON.stringify(specs)
+    return JSON.stringify(specs);
 }
 
 /** Compute the expected archive entry name for a change (a recovery hint only). */
 function computeExpectedArchiveName(change: string): string {
-    if (/^\d{4}-\d{2}-\d{2}-/.test(change)) return change
-    const now = new Date()
-    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-    return `${date}-${change}`
+    if (/^\d{4}-\d{2}-\d{2}-/.test(change)) return change;
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return `${date}-${change}`;
 }
 
 /**
@@ -530,18 +530,18 @@ function computeExpectedArchiveName(change: string): string {
 function parseArchiveResult(stdout: string): { path: string; archivedAs: string } | undefined {
     try {
         const value = JSON.parse(stdout) as {
-            archive?: { path?: string; archivedAs?: string } | null
-        }
+            archive?: { path?: string; archivedAs?: string } | null;
+        };
         if (
             !value.archive ||
             typeof value.archive.path !== "string" ||
             typeof value.archive.archivedAs !== "string"
         ) {
-            return undefined
+            return undefined;
         }
-        return { path: value.archive.path, archivedAs: value.archive.archivedAs }
+        return { path: value.archive.path, archivedAs: value.archive.archivedAs };
     } catch {
-        return undefined
+        return undefined;
     }
 }
 
@@ -553,19 +553,19 @@ function parseArchiveResult(stdout: string): { path: string; archivedAs: string 
  * hint for recovery; identity is verified from each candidate's state file.
  */
 async function listArchiveCandidates(archiveDir: string, change: string): Promise<string[]> {
-    let entries: string[]
+    let entries: string[];
     try {
-        entries = await readdir(archiveDir)
+        entries = await readdir(archiveDir);
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-        return []
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        return [];
     }
     return entries
         .filter(name => name === change || name.endsWith(`-${change}`))
-        .map(name => path.join(archiveDir, name))
+        .map(name => path.join(archiveDir, name));
 }
 
 /** Throw a controlled path-conflict diagnostic. */
 function throwPathConflict(message: string): never {
-    throw new Error(message)
+    throw new Error(message);
 }

@@ -1,15 +1,15 @@
-import type { Config, Plugin } from "@opencode-ai/plugin"
-import { ActiveAgentSessions, createPermissionAskHook } from "./agents/permission-hook.js"
-import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js"
-import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./agents/manifest.js"
+import type { Config, Plugin } from "@opencode-ai/plugin";
+import { ActiveAgentSessions, createPermissionAskHook } from "./agents/permission-hook.js";
+import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js";
+import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./agents/manifest.js";
 import {
     materializeAgentManifest,
     registerManifestAgents,
     resolveManifestPath,
-} from "./installation.js"
-import { materializeGlobalConfig } from "./config.js"
-import { readConfig } from "./openspec.js"
-import { SpecOpsPlugin } from "./orchestrator.js"
+} from "./installation.js";
+import { materializeGlobalConfig } from "./config.js";
+import { readConfig } from "./openspec.js";
+import { SpecOpsPlugin } from "./orchestrator.js";
 
 /**
  * Default manifest location resolved with OpenCode's XDG configuration rules.
@@ -17,7 +17,7 @@ import { SpecOpsPlugin } from "./orchestrator.js"
  * Computed once at module load so the same path is reused by the plugin loader,
  * diagnostics, and installation tests.
  */
-export const MANIFEST_PATH = resolveManifestPath()
+export const MANIFEST_PATH = resolveManifestPath();
 
 /**
  * Backward-free public loader used by diagnostics and install tests.
@@ -28,7 +28,7 @@ export const MANIFEST_PATH = resolveManifestPath()
  * @returns The currently persisted {@link SpecOpsManifest}.
  */
 export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
-    return (await materializeAgentManifest(MANIFEST_PATH)).manifest
+    return (await materializeAgentManifest(MANIFEST_PATH)).manifest;
 }
 
 /**
@@ -44,36 +44,40 @@ export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
  * manifest-driven agents.
  */
 export const SpecOpsPluginWithManifest: Plugin = async input => {
-    const inner = await SpecOpsPlugin(input)
-    const materialisation = await materializeAgentManifest()
-    await materializeGlobalConfig()
-    const sessions = new ActiveAgentSessions()
-    const innerChatMessage = inner["chat.message"]
-    const innerPermissionAsk = inner["permission.ask"]
-    const permissionAsk = createPermissionAskHook(sessions)
+    const inner = await SpecOpsPlugin(input);
+    const materialisation = await materializeAgentManifest();
+    await materializeGlobalConfig();
+    const sessions = new ActiveAgentSessions();
+    const innerChatMessage = inner["chat.message"];
+    const innerPermissionAsk = inner["permission.ask"];
+    const permissionAsk = createPermissionAskHook(sessions);
 
     return {
         ...inner,
         config: async (config: Config) => {
-            const specOpsConfig = await readConfig(input.directory)
-            await inner.config?.(config)
-            registerManifestAgents(config, materialisation.manifest, specOpsConfig.integrations.mcp)
+            const specOpsConfig = await readConfig(input.directory);
+            await inner.config?.(config);
+            registerManifestAgents(
+                config,
+                materialisation.manifest,
+                specOpsConfig.integrations.mcp,
+            );
         },
         "chat.message": async (message, output) => {
             if (message.agent && isAgentId(message.agent))
-                sessions.set(message.sessionID, message.agent)
-            await innerChatMessage?.(message, output)
+                sessions.set(message.sessionID, message.agent);
+            await innerChatMessage?.(message, output);
         },
         "permission.ask": async (request, output) => {
-            await innerPermissionAsk?.(request, output)
-            await permissionAsk(request, output)
+            await innerPermissionAsk?.(request, output);
+            await permissionAsk(request, output);
         },
-    }
-}
+    };
+};
 
 /** Narrow a host-provided agent identifier to the V1 SpecOps catalogue. */
 function isAgentId(value: string): value is AgentId {
-    return ALL_AGENT_IDS.includes(value as AgentId)
+    return ALL_AGENT_IDS.includes(value as AgentId);
 }
 
 /**
@@ -85,7 +89,7 @@ function isAgentId(value: string): value is AgentId {
 export default {
     id: "specops",
     server: SpecOpsPluginWithManifest,
-} satisfies import("@opencode-ai/plugin").PluginModule
+} satisfies import("@opencode-ai/plugin").PluginModule;
 
-export { DEFAULT_MANIFEST, manifestAgentConfig, SpecOpsPlugin }
-export type { SpecOpsManifest }
+export { DEFAULT_MANIFEST, manifestAgentConfig, SpecOpsPlugin };
+export type { SpecOpsManifest };

@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, open, rename, unlink } from "node:fs/promises"
-import path from "node:path"
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rename, unlink } from "node:fs/promises";
+import path from "node:path";
 
 /**
  * Atomically replace a UTF-8 text file after creating its parent directory.
@@ -9,18 +9,18 @@ import path from "node:path"
  * @param content - Complete UTF-8 content to persist.
  */
 export async function writeFileAtomic(destination: string, content: string): Promise<void> {
-    await mkdir(path.dirname(destination), { recursive: true })
-    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
-    const handle = await open(temporary, "wx")
+    await mkdir(path.dirname(destination), { recursive: true });
+    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
+    const handle = await open(temporary, "wx");
     try {
-        await handle.writeFile(content, "utf8")
-        await handle.sync()
+        await handle.writeFile(content, "utf8");
+        await handle.sync();
     } finally {
-        await handle.close()
+        await handle.close();
     }
     try {
-        await rename(temporary, destination)
+        await rename(temporary, destination);
     } finally {
-        await unlink(temporary).catch(() => undefined)
+        await unlink(temporary).catch(() => undefined);
     }
 }

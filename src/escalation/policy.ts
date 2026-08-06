@@ -2,9 +2,9 @@
  * Escalation policy: verify claims, enforce budgets, narrow patches, and
  * record controller decisions on worker-raised escalations.
  */
-import { createHash } from "node:crypto"
-import type { SpecOpsConfig } from "../config.js"
-import { artifactsFor, capabilitiesFor } from "../routing/policy.js"
+import { createHash } from "node:crypto";
+import type { SpecOpsConfig } from "../config.js";
+import { artifactsFor, capabilitiesFor } from "../routing/policy.js";
 import type {
     ArtifactId,
     CapabilityId,
@@ -14,10 +14,10 @@ import type {
     RiskFacet,
     RunState,
     ScopeTier,
-} from "../types.js"
+} from "../types.js";
 
 /** Numeric rank of each tier; used to refuse scope downgrades from a patch. */
-const TIER_RANK = { lean: 0, standard: 1, full: 2 } as const
+const TIER_RANK = { lean: 0, standard: 1, full: 2 } as const;
 /** The complete set of valid {@link RiskFacet} values; used to identify specialist capabilities. */
 const REVIEW_FACETS = new Set<RiskFacet>([
     "security",
@@ -30,7 +30,7 @@ const REVIEW_FACETS = new Set<RiskFacet>([
     "migration",
     "usability",
     "maintainability",
-])
+]);
 
 /**
  * Apply a finite escalation patch after controller-side structural checks.
@@ -58,27 +58,27 @@ export function decideEscalation(
                 patch: claim.requestedPatch,
             }),
         )
-        .digest("hex")
+        .digest("hex");
     const priorMatches = state.decisions.filter(
         decision => decision.fingerprint === fingerprint,
-    ).length
+    ).length;
 
     if (priorMatches >= state.requirements.budgets.maxRepeatedFailureFingerprints) {
         return rejected(
             claim.requestedPatch,
             fingerprint,
             "Repeated escalation fingerprint exceeded its budget.",
-        )
+        );
     }
 
-    const normalizedRequest = normalizeRiskTier(claim.requestedPatch, routing.routing)
-    const patch = narrowPatch(state, normalizedRequest)
+    const normalizedRequest = normalizeRiskTier(claim.requestedPatch, routing.routing);
+    const patch = narrowPatch(state, normalizedRequest);
     if (!hasPatch(patch)) {
         return rejected(
             claim.requestedPatch,
             fingerprint,
             "The claim did not add a new bounded requirement.",
-        )
+        );
     }
 
     if (
@@ -86,12 +86,12 @@ export function decideEscalation(
         (state.budgetUsage.maxScopeEscalations ?? 0) >=
             state.requirements.budgets.maxScopeEscalations
     ) {
-        return rejected(claim.requestedPatch, fingerprint, "Scope-escalation budget is exhausted.")
+        return rejected(claim.requestedPatch, fingerprint, "Scope-escalation budget is exhausted.");
     }
 
     const specialistCount = (patch.addCapabilities ?? []).filter(capability =>
         REVIEW_FACETS.has(capability as RiskFacet),
-    ).length
+    ).length;
     if (
         specialistCount > 0 &&
         (state.budgetUsage.maxSpecialistDispatches ?? 0) + specialistCount >
@@ -101,7 +101,7 @@ export function decideEscalation(
             claim.requestedPatch,
             fingerprint,
             "Specialist-dispatch budget is exhausted.",
-        )
+        );
     }
 
     return {
@@ -116,7 +116,7 @@ export function decideEscalation(
         rejectedEvidence: [],
         fingerprint,
         reason: "The bounded patch adds requirements not already represented in the run state.",
-    }
+    };
 }
 
 /**
@@ -133,56 +133,56 @@ export function decideEscalation(
  */
 export function applyEscalation(state: RunState, patch: EscalationPatch): void {
     if (patch.raiseScopeTier) {
-        state.scopeTier = patch.raiseScopeTier
-        state.requirements.scopeTier = patch.raiseScopeTier
+        state.scopeTier = patch.raiseScopeTier;
+        state.requirements.scopeTier = patch.raiseScopeTier;
         state.requirements.requiredArtifacts = unique<ArtifactId>([
             ...artifactsFor(patch.raiseScopeTier),
             ...state.requirements.requiredArtifacts,
-        ])
+        ]);
         state.requirements.requiredCapabilities = unique<CapabilityId>([
             ...capabilitiesFor(
                 patch.raiseScopeTier,
                 state.requirements.requiredReviewFacets as CapabilityId[],
             ),
             ...state.requirements.requiredCapabilities,
-        ])
+        ]);
         state.requirements.judgePolicy.required =
-            patch.raiseScopeTier === "lean" ? ["correctness"] : ["correctness", "compliance"]
-        state.budgetUsage.maxScopeEscalations = (state.budgetUsage.maxScopeEscalations ?? 0) + 1
+            patch.raiseScopeTier === "lean" ? ["correctness"] : ["correctness", "compliance"];
+        state.budgetUsage.maxScopeEscalations = (state.budgetUsage.maxScopeEscalations ?? 0) + 1;
     }
 
     if (patch.addCapabilities) {
         state.requirements.requiredCapabilities = unique([
             ...state.requirements.requiredCapabilities,
             ...patch.addCapabilities,
-        ])
+        ]);
         const count = patch.addCapabilities.filter(capability =>
             REVIEW_FACETS.has(capability as RiskFacet),
-        ).length
+        ).length;
         if (count) {
             state.budgetUsage.maxSpecialistDispatches =
-                (state.budgetUsage.maxSpecialistDispatches ?? 0) + count
+                (state.budgetUsage.maxSpecialistDispatches ?? 0) + count;
         }
     }
 
     if (patch.addReviewFacets) {
-        state.riskFacets = unique([...state.riskFacets, ...patch.addReviewFacets]) as RiskFacet[]
+        state.riskFacets = unique([...state.riskFacets, ...patch.addReviewFacets]) as RiskFacet[];
         state.requirements.requiredReviewFacets = unique([
             ...state.requirements.requiredReviewFacets,
             ...patch.addReviewFacets,
-        ]) as RiskFacet[]
+        ]) as RiskFacet[];
     }
 
     if (patch.addValidations) {
         state.requirements.requiredValidations = [
             ...state.requirements.requiredValidations,
             ...patch.addValidations,
-        ]
+        ];
     }
 
     state.requirements.policyHash = createHash("sha256")
         .update(JSON.stringify(state.requirements))
-        .digest("hex")
+        .digest("hex");
 }
 
 /**
@@ -201,7 +201,7 @@ function normalizeRiskTier(
         ...((patch.addCapabilities ?? []).filter(capability =>
             REVIEW_FACETS.has(capability as RiskFacet),
         ) as RiskFacet[]),
-    ])
+    ]);
     const inferred: ScopeTier | undefined = facets.some(
         facet =>
             facet === "migration" ||
@@ -211,14 +211,14 @@ function normalizeRiskTier(
         ? "full"
         : facets.length
           ? "standard"
-          : undefined
-    const requested = patch.raiseScopeTier
+          : undefined;
+    const requested = patch.raiseScopeTier;
     const raiseScopeTier =
         requested && inferred
             ? TIER_RANK[requested] >= TIER_RANK[inferred]
                 ? requested
                 : inferred
-            : (requested ?? inferred)
+            : (requested ?? inferred);
     return {
         ...patch,
         raiseScopeTier,
@@ -226,7 +226,7 @@ function normalizeRiskTier(
             ? unique<CapabilityId>([...(patch.addCapabilities ?? []), ...facets])
             : patch.addCapabilities,
         addReviewFacets: facets.length ? facets : patch.addReviewFacets,
-    }
+    };
 }
 
 /**
@@ -243,38 +243,38 @@ function normalizeRiskTier(
  * @returns A new patch containing only the net-new requirements, possibly empty.
  */
 function narrowPatch(state: RunState, requested: EscalationPatch): EscalationPatch {
-    const patch: EscalationPatch = {}
+    const patch: EscalationPatch = {};
     if (
         requested.raiseScopeTier &&
         TIER_RANK[requested.raiseScopeTier] > TIER_RANK[state.scopeTier]
     ) {
-        patch.raiseScopeTier = requested.raiseScopeTier
+        patch.raiseScopeTier = requested.raiseScopeTier;
     }
 
     const capabilities = (requested.addCapabilities ?? []).filter(
         capability => !state.requirements.requiredCapabilities.includes(capability),
-    )
+    );
     if (capabilities.length) {
-        patch.addCapabilities = unique(capabilities) as CapabilityId[]
+        patch.addCapabilities = unique(capabilities) as CapabilityId[];
     }
 
     const facets = (requested.addReviewFacets ?? []).filter(
         facet =>
             REVIEW_FACETS.has(facet) && !state.requirements.requiredReviewFacets.includes(facet),
-    )
+    );
     if (facets.length) {
-        patch.addReviewFacets = unique(facets) as RiskFacet[]
+        patch.addReviewFacets = unique(facets) as RiskFacet[];
     }
 
     if (requested.addValidations?.length) {
-        patch.addValidations = requested.addValidations
+        patch.addValidations = requested.addValidations;
     }
 
     if (requested.invalidate?.length) {
-        patch.invalidate = unique(requested.invalidate)
+        patch.invalidate = unique(requested.invalidate);
     }
 
-    return patch
+    return patch;
 }
 
 /**
@@ -299,7 +299,7 @@ function rejected(
         rejectedEvidence: [],
         fingerprint,
         reason,
-    }
+    };
 }
 
 /**
@@ -315,7 +315,7 @@ function hasPatch(patch: EscalationPatch): boolean {
         patch.addReviewFacets?.length ||
         patch.addValidations?.length ||
         patch.invalidate?.length,
-    )
+    );
 }
 
 /**
@@ -329,7 +329,7 @@ function hasPatch(patch: EscalationPatch): boolean {
  * @returns `true` when the serialised forms are identical.
  */
 function samePatch(left: EscalationPatch, right: EscalationPatch): boolean {
-    return JSON.stringify(left) === JSON.stringify(right)
+    return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**
@@ -340,5 +340,5 @@ function samePatch(left: EscalationPatch, right: EscalationPatch): boolean {
  * @returns A new array with duplicates removed, preserving insertion order.
  */
 function unique<T>(values: T[]): T[] {
-    return [...new Set(values)]
+    return [...new Set(values)];
 }

@@ -1,9 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-import { resolveGlobalConfigPath } from "./installation.js"
-import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js"
-import { isObject, asObject, assertKeys } from "./config/fields.js"
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveGlobalConfigPath } from "./installation.js";
+import type { EscalationBudget, RiskFacet, ScopeTier } from "./types.js";
+import { isObject, asObject, assertKeys } from "./config/fields.js";
 import {
     parseAutomation,
     parseEscalation,
@@ -13,7 +13,7 @@ import {
     parseReview,
     parseRouting,
     parseWorkflow,
-} from "./config/sections.js"
+} from "./config/sections.js";
 
 /**
  * Strict, clean-install configuration for the final SpecOps architecture.
@@ -24,7 +24,7 @@ import {
  */
 export type SpecOpsConfig = {
     /** Schema version; currently always `2`. */
-    version: 2
+    version: 2;
     /**
      * OpenSpec integration.
      *
@@ -32,50 +32,50 @@ export type SpecOpsConfig = {
      * bundled executable. `autoArchive` controls whether a successful workflow
      * finalization archives the change automatically (default `true`).
      */
-    openspec: { command: string[] | null; autoArchive: boolean }
+    openspec: { command: string[] | null; autoArchive: boolean };
     /** Workflow routing and scope-tier configuration. */
     workflow: {
         /** Default tier selected when no assessment-level suggestion overrides it. */
-        defaultTier: "auto" | ScopeTier
+        defaultTier: "auto" | ScopeTier;
         /** File/module counts at which the lean and full tiers are selected. */
         scopeThresholds: {
-            leanMaxFiles: number
-            leanMaxModules: number
-            fullMinFiles: number
-            fullMinModules: number
-        }
-    }
+            leanMaxFiles: number;
+            leanMaxModules: number;
+            fullMinFiles: number;
+            fullMinModules: number;
+        };
+    };
     /** Routing overrides that force the full tier for changes touching certain risk facets. */
-    routing: { forceFullForFacets: RiskFacet[] }
+    routing: { forceFullForFacets: RiskFacet[] };
     /** Automation gate configuration (e.g. clean-worktree requirement). */
-    automation: { requireCleanWorktree: boolean }
+    automation: { requireCleanWorktree: boolean };
     /** Escalation budget limits consumed by the controller. */
-    escalation: { budgets: EscalationBudget }
+    escalation: { budgets: EscalationBudget };
     /** Optional adaptive low/high frontier escalation policy. */
     frontier: {
-        mode: "disabled" | "adaptive"
-        maxEscalationsPerRun: number
-        maxDispatchesPerRun: number
-        maxHighDispatchesPerRun: number
-    }
+        mode: "disabled" | "adaptive";
+        maxEscalationsPerRun: number;
+        maxDispatchesPerRun: number;
+        maxHighDispatchesPerRun: number;
+    };
     /** Reviewer dispatch and command execution limits. */
     review: {
         /** Severity levels that block a run when raised by a reviewer. */
-        blockingSeverities: Array<"BLOCKER" | "HIGH" | "MEDIUM" | "LOW">
+        blockingSeverities: Array<"BLOCKER" | "HIGH" | "MEDIUM" | "LOW">;
         /** Maximum diff bytes passed to a reviewer agent. */
-        maxDiffBytes: number
+        maxDiffBytes: number;
         /** Maximum context bytes passed to a reviewer agent. */
-        maxContextBytes: number
+        maxContextBytes: number;
         /** Number of transient reviewer failures tolerated before escalation. */
-        transientRetries: number
+        transientRetries: number;
         /** Hard timeout for a review command execution, in seconds. */
-        commandTimeoutSeconds: number
+        commandTimeoutSeconds: number;
         /** Maximum bytes of command output retained as evidence. */
-        commandOutputBytes: number
-    }
+        commandOutputBytes: number;
+    };
     /** Integration toggles; `mcp` controls MCP tool access for SpecOps subagents. */
-    integrations: { mcp: "allow" | "disabled" }
-}
+    integrations: { mcp: "allow" | "disabled" };
+};
 
 /**
  * Defaults chosen to favour bounded execution in a clean final installation.
@@ -126,7 +126,7 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
     },
     /** Allow SpecOps subagents to use configured OpenCode MCP server tools. */
     integrations: { mcp: "allow" },
-}
+};
 
 /**
  * Bound frontier parser: supplies `DEFAULT_CONFIG.frontier` as the defaults
@@ -134,7 +134,7 @@ export const DEFAULT_CONFIG: SpecOpsConfig = {
  * used everywhere `config.ts` used to call the unbound parser.
  */
 const parseFrontierConfig = (value: unknown): SpecOpsConfig["frontier"] =>
-    parseFrontier(value, DEFAULT_CONFIG.frontier)
+    parseFrontier(value, DEFAULT_CONFIG.frontier);
 
 /**
  * Relative schema reference shared by the generated global and project
@@ -143,7 +143,7 @@ const parseFrontierConfig = (value: unknown): SpecOpsConfig["frontier"] =>
  * SpecOps materialises a sibling `specops.schema.json` next to each generated
  * config file so editor validation works without network access.
  */
-const SPECOPS_CONFIG_SCHEMA_REFERENCE = "./specops.schema.json"
+const SPECOPS_CONFIG_SCHEMA_REFERENCE = "./specops.schema.json";
 
 // `config.ts` is emitted directly into `dist`, so one parent reaches the
 // package root in both source and packed layouts. Keeping this package-relative
@@ -153,13 +153,13 @@ const PACKAGED_CONFIG_SCHEMA_PATH = path.resolve(
     "..",
     "examples",
     "specops.schema.json",
-)
+);
 
 /** Result of creating or finding the global user configuration. */
 export type GlobalConfigMaterialisation = {
-    path: string
-    created: boolean
-}
+    path: string;
+    created: boolean;
+};
 
 /**
  * Record of a configuration file that was repaired during load.
@@ -172,12 +172,12 @@ export type GlobalConfigMaterialisation = {
  */
 export type ConfigRepair = {
     /** Absolute path of the file that was rewritten. */
-    path: string
+    path: string;
     /** First validation error that triggered the repair. */
-    reason: string
+    reason: string;
     /** Top-level section keys salvaged from the original (e.g. `["review"]`). */
-    recoveredSections: readonly string[]
-}
+    recoveredSections: readonly string[];
+};
 
 /**
  * Repairs performed during the most recent {@link resolveConfig} call.
@@ -186,7 +186,7 @@ export type ConfigRepair = {
  * time" without re-running the lenient validator. Consumed (cleared) by
  * {@link consumeConfigRepairs} so each repair is reported exactly once.
  */
-let lastRepairs: ConfigRepair[] = []
+let lastRepairs: ConfigRepair[] = [];
 
 /**
  * Return and clear the repairs recorded by the most recent {@link resolveConfig}.
@@ -195,14 +195,14 @@ let lastRepairs: ConfigRepair[] = []
  *   return an empty array until the next resolution repairs another file.
  */
 export function consumeConfigRepairs(): ConfigRepair[] {
-    const repairs = lastRepairs
-    lastRepairs = []
-    return repairs
+    const repairs = lastRepairs;
+    lastRepairs = [];
+    return repairs;
 }
 
 /** Reset recorded repairs; used by tests to isolate resolution behaviour. */
 export function resetConfigRepairs(): void {
-    lastRepairs = []
+    lastRepairs = [];
 }
 
 /**
@@ -215,10 +215,10 @@ export function resetConfigRepairs(): void {
  * @param destination - Path of the adjacent user configuration file.
  */
 async function materializeConfigSchema(destination: string): Promise<void> {
-    await mkdir(path.dirname(destination), { recursive: true })
-    const schema = await readFile(PACKAGED_CONFIG_SCHEMA_PATH, "utf8")
-    const schemaDestination = path.join(path.dirname(destination), "specops.schema.json")
-    await writeFile(schemaDestination, schema, { encoding: "utf8" })
+    await mkdir(path.dirname(destination), { recursive: true });
+    const schema = await readFile(PACKAGED_CONFIG_SCHEMA_PATH, "utf8");
+    const schemaDestination = path.join(path.dirname(destination), "specops.schema.json");
+    await writeFile(schemaDestination, schema, { encoding: "utf8" });
 }
 
 /**
@@ -234,22 +234,22 @@ async function materializeConfigSchema(destination: string): Promise<void> {
 export async function materializeGlobalConfig(
     destination: string = resolveGlobalConfigPath(),
 ): Promise<GlobalConfigMaterialisation> {
-    await materializeConfigSchema(destination)
+    await materializeConfigSchema(destination);
     const document = {
         $schema: SPECOPS_CONFIG_SCHEMA_REFERENCE,
         ...structuredClone(DEFAULT_CONFIG),
-    }
+    };
     try {
         await writeFile(destination, `${JSON.stringify(document, null, 2)}\n`, {
             encoding: "utf8",
             flag: "wx",
-        })
-        return { path: destination, created: true }
+        });
+        return { path: destination, created: true };
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-            return { path: destination, created: false }
+            return { path: destination, created: false };
         }
-        throw error
+        throw error;
     }
 }
 
@@ -261,36 +261,36 @@ export async function materializeGlobalConfig(
  */
 function deepMerge(base: unknown, ...sources: unknown[]): unknown {
     if (sources.length === 0) {
-        return structuredClone(base)
+        return structuredClone(base);
     }
     if (!isObject(base)) {
-        return structuredClone(sources.at(-1) ?? base)
+        return structuredClone(sources.at(-1) ?? base);
     }
-    const result = structuredClone(base) as Record<string, unknown>
+    const result = structuredClone(base) as Record<string, unknown>;
     for (const source of sources) {
         if (!isObject(source)) {
-            return structuredClone(source)
+            return structuredClone(source);
         }
         for (const key of Object.keys(source)) {
-            const sourceValue = source[key]
-            const targetValue = result[key]
+            const sourceValue = source[key];
+            const targetValue = result[key];
             if (key === "$schema") {
                 // $schema is a metadata annotation; keep the most specific source.
-                result[key] = structuredClone(sourceValue)
-                continue
+                result[key] = structuredClone(sourceValue);
+                continue;
             }
             if (isObject(sourceValue) && isObject(targetValue)) {
-                result[key] = deepMerge(targetValue, sourceValue)
+                result[key] = deepMerge(targetValue, sourceValue);
             } else {
-                result[key] = structuredClone(sourceValue)
+                result[key] = structuredClone(sourceValue);
             }
         }
     }
-    return result
+    return result;
 }
 
 /** Recursive partial type used by {@link deepMergeConfig}. */
-type DeepPartial<T> = { [K in keyof T]?: DeepPartial<T[K]> }
+type DeepPartial<T> = { [K in keyof T]?: DeepPartial<T[K]> };
 
 /**
  * Merge a base configuration with any number of partial overrides.
@@ -301,7 +301,7 @@ export function deepMergeConfig(
     base: SpecOpsConfig,
     ...overrides: Array<DeepPartial<SpecOpsConfig>>
 ): SpecOpsConfig {
-    return deepMerge(base, ...overrides) as SpecOpsConfig
+    return deepMerge(base, ...overrides) as SpecOpsConfig;
 }
 
 /**
@@ -317,7 +317,7 @@ export function deepMergeConfig(
  * @throws {Error} If any field is unknown, mistyped, or out of range.
  */
 export function validateConfig(value: unknown): SpecOpsConfig {
-    const root = asObject(value, "root")
+    const root = asObject(value, "root");
     assertKeys(
         root,
         [
@@ -333,19 +333,19 @@ export function validateConfig(value: unknown): SpecOpsConfig {
             "$schema",
         ],
         "root",
-    )
+    );
     if (root.version !== 2) {
-        throw new Error("invalid SpecOps configuration field: version")
+        throw new Error("invalid SpecOps configuration field: version");
     }
 
-    const openspec = parseOpenSpec(root.openspec)
-    const workflow = parseWorkflow(root.workflow)
-    const routing = parseRouting(root.routing)
-    const automation = parseAutomation(root.automation)
-    const escalation = parseEscalation(root.escalation)
-    const frontier = parseFrontierConfig(root.frontier ?? {})
-    const review = parseReview(root.review)
-    const integrations = parseIntegrations(root.integrations)
+    const openspec = parseOpenSpec(root.openspec);
+    const workflow = parseWorkflow(root.workflow);
+    const routing = parseRouting(root.routing);
+    const automation = parseAutomation(root.automation);
+    const escalation = parseEscalation(root.escalation);
+    const frontier = parseFrontierConfig(root.frontier ?? {});
+    const review = parseReview(root.review);
+    const integrations = parseIntegrations(root.integrations);
 
     return {
         version: 2,
@@ -357,7 +357,7 @@ export function validateConfig(value: unknown): SpecOpsConfig {
         frontier,
         review,
         integrations,
-    }
+    };
 }
 
 /**
@@ -375,14 +375,14 @@ export function validateConfig(value: unknown): SpecOpsConfig {
  * @throws {Error} If any present field is unknown, mistyped, or out of range.
  */
 export function validatePartialConfig(value: unknown, sourcePath?: string): Partial<SpecOpsConfig> {
-    const prefix = sourcePath ? `in ${sourcePath}: ` : ""
+    const prefix = sourcePath ? `in ${sourcePath}: ` : "";
     const fail = (error: unknown): never => {
-        const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`${prefix}${message}`)
-    }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${prefix}${message}`);
+    };
 
     try {
-        const root = asObject(value, "root")
+        const root = asObject(value, "root");
         assertKeys(
             root,
             [
@@ -398,14 +398,14 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "$schema",
             ],
             "root",
-        )
+        );
 
-        const partial: Record<string, unknown> = {}
+        const partial: Record<string, unknown> = {};
         if ("version" in root) {
             if (root.version !== 2) {
-                throw new Error("invalid SpecOps configuration field: version")
+                throw new Error("invalid SpecOps configuration field: version");
             }
-            partial.version = 2
+            partial.version = 2;
         }
         if (root.openspec !== undefined) {
             partial.openspec = validateSectionPartial(
@@ -413,7 +413,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "openspec",
                 DEFAULT_CONFIG.openspec,
                 parseOpenSpec,
-            )
+            );
         }
         if (root.workflow !== undefined) {
             partial.workflow = validateSectionPartial(
@@ -421,7 +421,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "workflow",
                 DEFAULT_CONFIG.workflow,
                 parseWorkflow,
-            )
+            );
         }
         if (root.routing !== undefined) {
             partial.routing = validateSectionPartial(
@@ -429,7 +429,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "routing",
                 DEFAULT_CONFIG.routing,
                 parseRouting,
-            )
+            );
         }
         if (root.automation !== undefined) {
             partial.automation = validateSectionPartial(
@@ -437,7 +437,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "automation",
                 DEFAULT_CONFIG.automation,
                 parseAutomation,
-            )
+            );
         }
         if (root.escalation !== undefined) {
             partial.escalation = validateSectionPartial(
@@ -445,7 +445,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "escalation",
                 DEFAULT_CONFIG.escalation,
                 parseEscalation,
-            )
+            );
         }
         if (root.frontier !== undefined) {
             partial.frontier = validateSectionPartial(
@@ -453,7 +453,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "frontier",
                 DEFAULT_CONFIG.frontier,
                 parseFrontierConfig,
-            )
+            );
         }
         if (root.review !== undefined) {
             partial.review = validateSectionPartial(
@@ -461,7 +461,7 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "review",
                 DEFAULT_CONFIG.review,
                 parseReview,
-            )
+            );
         }
         if (root.integrations !== undefined) {
             partial.integrations = validateSectionPartial(
@@ -469,11 +469,11 @@ export function validatePartialConfig(value: unknown, sourcePath?: string): Part
                 "integrations",
                 DEFAULT_CONFIG.integrations,
                 parseIntegrations,
-            )
+            );
         }
-        return partial as Partial<SpecOpsConfig>
+        return partial as Partial<SpecOpsConfig>;
     } catch (error) {
-        return fail(error)
+        return fail(error);
     }
 }
 
@@ -492,9 +492,9 @@ function validateSectionPartial<T>(
     defaultSection: T,
     parseStrict: (merged: unknown) => T,
 ): Partial<T> {
-    const partial = asObject(value, name)
-    parseStrict(deepMerge(defaultSection, partial) as T)
-    return partial as Partial<T>
+    const partial = asObject(value, name);
+    parseStrict(deepMerge(defaultSection, partial) as T);
+    return partial as Partial<T>;
 }
 
 /**
@@ -511,7 +511,7 @@ const CONFIG_SECTIONS = [
     "frontier",
     "review",
     "integrations",
-] as const
+] as const;
 
 /**
  * Best-effort salvage of a configuration file that has failed strict validation.
@@ -526,32 +526,32 @@ const CONFIG_SECTIONS = [
  * @returns The salvaged partial and the list of top-level sections kept.
  */
 export function validateConfigLenient(value: unknown): {
-    partial: Partial<SpecOpsConfig>
-    recoveredSections: string[]
+    partial: Partial<SpecOpsConfig>;
+    recoveredSections: string[];
 } {
-    const recoveredSections: string[] = []
+    const recoveredSections: string[] = [];
     if (!isObject(value)) {
-        return { partial: {}, recoveredSections }
+        return { partial: {}, recoveredSections };
     }
-    const root = value as Record<string, unknown>
-    const partial: Record<string, unknown> = {}
+    const root = value as Record<string, unknown>;
+    const partial: Record<string, unknown> = {};
     if (root.version === 2) {
-        partial.version = 2
+        partial.version = 2;
     }
     for (const name of CONFIG_SECTIONS) {
-        const sectionValue = root[name]
-        if (sectionValue === undefined) continue
-        const parser = SECTION_PARSERS[name]
+        const sectionValue = root[name];
+        if (sectionValue === undefined) continue;
+        const parser = SECTION_PARSERS[name];
         try {
-            const sectionPartial = asObject(sectionValue, name)
-            parser(deepMerge(DEFAULT_CONFIG[name], sectionPartial))
-            partial[name] = structuredClone(sectionPartial)
-            recoveredSections.push(name)
+            const sectionPartial = asObject(sectionValue, name);
+            parser(deepMerge(DEFAULT_CONFIG[name], sectionPartial));
+            partial[name] = structuredClone(sectionPartial);
+            recoveredSections.push(name);
         } catch {
             // Drop the entire section; its default is filled by deep-merge.
         }
     }
-    return { partial: partial as Partial<SpecOpsConfig>, recoveredSections }
+    return { partial: partial as Partial<SpecOpsConfig>, recoveredSections };
 }
 
 /** Strict section parsers keyed by top-level section name. */
@@ -564,7 +564,7 @@ const SECTION_PARSERS: Record<(typeof CONFIG_SECTIONS)[number], (merged: unknown
     frontier: parseFrontierConfig,
     review: parseReview,
     integrations: parseIntegrations,
-}
+};
 
 /**
  * Resolve configuration from defaults, the global user file, and the project
@@ -587,37 +587,37 @@ const SECTION_PARSERS: Record<(typeof CONFIG_SECTIONS)[number], (merged: unknown
  * @returns A validated {@link SpecOpsConfig}.
  */
 export async function resolveConfig(directory: string): Promise<SpecOpsConfig> {
-    resetConfigRepairs()
-    const globalPath = resolveGlobalConfigPath()
-    const projectPath = path.join(directory, ".opencode", "specops.json")
+    resetConfigRepairs();
+    const globalPath = resolveGlobalConfigPath();
+    const projectPath = path.join(directory, ".opencode", "specops.json");
     const [globalResult, projectResult] = await Promise.all([
         readPartialConfigWithRepair(globalPath),
         readPartialConfigWithRepair(projectPath),
-    ])
-    const repairs: ConfigRepair[] = []
-    if (globalResult.repair) repairs.push(globalResult.repair)
-    if (projectResult.repair) repairs.push(projectResult.repair)
+    ]);
+    const repairs: ConfigRepair[] = [];
+    if (globalResult.repair) repairs.push(globalResult.repair);
+    if (projectResult.repair) repairs.push(projectResult.repair);
 
-    let merged: SpecOpsConfig
+    let merged: SpecOpsConfig;
     try {
         merged = validateConfig(
             deepMergeConfig(DEFAULT_CONFIG, globalResult.partial, projectResult.partial),
-        )
+        );
     } catch (error) {
         // The merge of valid partials onto defaults must always validate; if it
         // somehow does not, fall back to pure defaults. The repairs collected
         // from the read step already describe the offending files.
-        const message = error instanceof Error ? error.message : String(error)
-        void message
-        merged = structuredClone(DEFAULT_CONFIG)
+        const message = error instanceof Error ? error.message : String(error);
+        void message;
+        merged = structuredClone(DEFAULT_CONFIG);
     }
 
     for (const repair of repairs) {
-        const salvaged = repair.path === globalPath ? globalResult.partial : projectResult.partial
-        await writeRepairedConfig(repair.path, repair.recoveredSections, salvaged)
+        const salvaged = repair.path === globalPath ? globalResult.partial : projectResult.partial;
+        await writeRepairedConfig(repair.path, repair.recoveredSections, salvaged);
     }
-    lastRepairs = repairs
-    return merged
+    lastRepairs = repairs;
+    return merged;
 }
 
 /**
@@ -633,30 +633,30 @@ export async function resolveConfig(directory: string): Promise<SpecOpsConfig> {
 async function readPartialConfigWithRepair(
     filePath: string,
 ): Promise<{ partial: Partial<SpecOpsConfig>; repair?: ConfigRepair }> {
-    let raw: unknown
+    let raw: unknown;
     try {
-        raw = JSON.parse(await readFile(filePath, "utf8"))
+        raw = JSON.parse(await readFile(filePath, "utf8"));
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            return { partial: {} }
+            return { partial: {} };
         }
-        const reason = error instanceof Error ? error.message : String(error)
-        const { partial, recoveredSections } = validateConfigLenient({})
+        const reason = error instanceof Error ? error.message : String(error);
+        const { partial, recoveredSections } = validateConfigLenient({});
         return {
             partial,
             repair: { path: filePath, reason, recoveredSections },
-        }
+        };
     }
     try {
-        const partial = validatePartialConfig(raw, filePath)
-        return { partial }
+        const partial = validatePartialConfig(raw, filePath);
+        return { partial };
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        const { partial, recoveredSections } = validateConfigLenient(raw)
+        const reason = error instanceof Error ? error.message : String(error);
+        const { partial, recoveredSections } = validateConfigLenient(raw);
         return {
             partial,
             repair: { path: filePath, reason, recoveredSections },
-        }
+        };
     }
 }
 
@@ -674,19 +674,19 @@ async function writeRepairedConfig(
     recoveredSections: readonly string[],
     salvagedPartial: Partial<SpecOpsConfig>,
 ): Promise<void> {
-    await materializeConfigSchema(destination)
-    const salvaged: Record<string, unknown> = { version: 2 }
-    const salvagedRecord = salvagedPartial as Record<string, unknown>
+    await materializeConfigSchema(destination);
+    const salvaged: Record<string, unknown> = { version: 2 };
+    const salvagedRecord = salvagedPartial as Record<string, unknown>;
     for (const name of recoveredSections) {
-        const value = salvagedRecord[name]
-        if (value !== undefined) salvaged[name] = structuredClone(value)
+        const value = salvagedRecord[name];
+        if (value !== undefined) salvaged[name] = structuredClone(value);
     }
     const document = {
         $schema: SPECOPS_CONFIG_SCHEMA_REFERENCE,
         ...structuredClone(DEFAULT_CONFIG),
         ...salvaged,
-    }
+    };
     await writeFile(destination, `${JSON.stringify(document, null, 2)}\n`, {
         encoding: "utf8",
-    })
+    });
 }

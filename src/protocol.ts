@@ -42,10 +42,10 @@ export const TOOL_IDS = {
     doctor: "specops_doctor",
     /** Run a read-only OpenSpec command. */
     openSpec: "specops_openspec",
-} as const
+} as const;
 
 /** Union of every canonical tool id. */
-export type ToolId = (typeof TOOL_IDS)[keyof typeof TOOL_IDS]
+export type ToolId = (typeof TOOL_IDS)[keyof typeof TOOL_IDS];
 
 /**
  * Complete exact-set catalogue used by integration drift checks.
@@ -53,4 +53,4 @@ export type ToolId = (typeof TOOL_IDS)[keyof typeof TOOL_IDS]
  * Computed from {@link TOOL_IDS} so adding a tool id is the only edit needed
  * to keep drift tests in sync.
  */
-export const ALL_TOOL_IDS: readonly ToolId[] = Object.values(TOOL_IDS)
+export const ALL_TOOL_IDS: readonly ToolId[] = Object.values(TOOL_IDS);

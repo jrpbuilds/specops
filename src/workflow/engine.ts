@@ -10,14 +10,14 @@
  * sub-modules.
  */
 
-export { archiveCompletedRun } from "./archive.js"
-export { startRun } from "./run-start.js"
-export { issueDirective, recoverDispatch } from "./directive.js"
-export { finalizeRun } from "./finalization.js"
-export { completeAction, resumeCheckpointAction } from "./completion.js"
+export { archiveCompletedRun } from "./archive.js";
+export { startRun } from "./run-start.js";
+export { issueDirective, recoverDispatch } from "./directive.js";
+export { finalizeRun } from "./finalization.js";
+export { completeAction, resumeCheckpointAction } from "./completion.js";
 export {
     answerQuestionAction,
     answerQuestionsAction,
     cancelRun,
     dismissQuestionAction,
-} from "./interactive.js"
+} from "./interactive.js";

@@ -1,23 +1,23 @@
-import { readFile } from "node:fs/promises"
-import path from "node:path"
-import type { Plugin } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
-import { contextPacket } from "./capabilities/context.js"
-import { COMMANDS } from "./commands.js"
-import { doctor } from "./doctor.js"
-import { executeValidation } from "./evidence/commands.js"
-import { appendEvidence, findCommandRequirement } from "./evidence/registry.js"
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { Plugin } from "@opencode-ai/plugin";
+import { tool } from "@opencode-ai/plugin";
+import { contextPacket } from "./capabilities/context.js";
+import { COMMANDS } from "./commands.js";
+import { doctor } from "./doctor.js";
+import { executeValidation } from "./evidence/commands.js";
+import { appendEvidence, findCommandRequirement } from "./evidence/registry.js";
 import {
     MAX_CHANGE_NAME_LENGTH,
     READ_ONLY_OPENSPEC_COMMANDS,
     openSpecOrThrow,
     onboard,
     readConfig,
-} from "./openspec.js"
-import { publishProgress, type MetadataContext } from "./progress.js"
-import { summarize } from "./summary.js"
-import { TOOL_IDS } from "./protocol.js"
-import { changeRoot, readRun, withRunLock } from "./state/store.js"
+} from "./openspec.js";
+import { publishProgress, type MetadataContext } from "./progress.js";
+import { summarize } from "./summary.js";
+import { TOOL_IDS } from "./protocol.js";
+import { changeRoot, readRun, withRunLock } from "./state/store.js";
 import {
     archiveCompletedRun,
     cancelRun,
@@ -30,12 +30,12 @@ import {
     answerQuestionAction,
     answerQuestionsAction,
     dismissQuestionAction,
-} from "./workflow/engine.js"
-import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js"
+} from "./workflow/engine.js";
+import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js";
 
 /** Validated change-name pattern used by every tool that accepts a `change` argument. */
-const CHANGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const CHANGE_NAME_SCHEMA = tool.schema.string().max(MAX_CHANGE_NAME_LENGTH).regex(CHANGE_NAME)
+const CHANGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const CHANGE_NAME_SCHEMA = tool.schema.string().max(MAX_CHANGE_NAME_LENGTH).regex(CHANGE_NAME);
 
 /**
  * Allow-list of artifact file names that may be requested through the
@@ -50,7 +50,7 @@ const CONTEXT_ARTIFACTS = new Set([
     "tasks.md",
     "verification.md",
     "review-ledger.json",
-])
+]);
 
 /**
  * Register the final SpecOps command and tool surface.
@@ -64,9 +64,9 @@ const CONTEXT_ARTIFACTS = new Set([
  */
 export const SpecOpsPlugin: Plugin = async _input => ({
     config: async config => {
-        config.command ??= {}
+        config.command ??= {};
         for (const [name, command] of Object.entries(COMMANDS)) {
-            config.command[name] ??= command
+            config.command[name] ??= command;
         }
     },
     tool: {
@@ -79,22 +79,22 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 mode: tool.schema.enum(["automatic", "interactive"]),
             },
             async execute(args, context) {
-                const config = await readConfig(context.directory)
-                await onboard(context.directory)
+                const config = await readConfig(context.directory);
+                await onboard(context.directory);
                 try {
                     const started = await startRun(context.directory, config, {
                         goal: args.goal,
                         assessmentOutput: args.assessment,
                         requestedTier: args.requestedTier,
                         mode: args.mode,
-                    })
-                    return summarize(started.state, started.change, "Run started")
+                    });
+                    return summarize(started.state, started.change, "Run started");
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error)
+                    const message = error instanceof Error ? error.message : String(error);
                     if (/ResourceExhausted|rate.limit|429|too many requests/i.test(message)) {
-                        return "SpecOps could not start the run: the upstream LLM provider returned a rate-limit error. Wait a moment and retry with the same specops_start_run call; no run state was persisted."
+                        return "SpecOps could not start the run: the upstream LLM provider returned a rate-limit error. Wait a moment and retry with the same specops_start_run call; no run state was persisted.";
                     }
-                    throw error
+                    throw error;
                 }
             },
         }),
@@ -111,7 +111,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     ),
                     null,
                     2,
-                )
+                );
             },
         }),
         [TOOL_IDS.completeAction]: tool({
@@ -128,18 +128,18 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.dispatchId,
                     args.output,
                     await readConfig(context.directory),
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                const dispatch = state.dispatches.find(d => d.id === args.dispatchId)
+                );
+                const dispatch = state.dispatches.find(d => d.id === args.dispatchId);
                 const label = dispatch
                     ? `${dispatch.capability}${dispatch.purpose === "judgment" ? " judgment" : ""} completed`
-                    : "Action completed"
-                return summarize(state, args.change, label)
+                    : "Action completed";
+                return summarize(state, args.change, label);
             },
         }),
         [TOOL_IDS.recoverDispatch]: tool({
@@ -155,14 +155,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     args.dispatchId,
                     args.reason,
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                return summarize(state, args.change, "Interrupted dispatch recovered")
+                );
+                return summarize(state, args.change, "Interrupted dispatch recovered");
             },
         }),
         [TOOL_IDS.answerQuestion]: tool({
@@ -175,7 +175,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             },
             async execute(args, context) {
                 if ((args.selectedOption === undefined) === (args.otherText === undefined)) {
-                    throw new Error("Provide exactly one of selectedOption or otherText")
+                    throw new Error("Provide exactly one of selectedOption or otherText");
                 }
                 const state = await answerQuestionAction(
                     context.directory,
@@ -183,14 +183,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.questionId,
                     args.selectedOption,
                     args.otherText,
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                return summarize(state, args.change, "Question answered")
+                );
+                return summarize(state, args.change, "Question answered");
             },
         }),
         [TOOL_IDS.answerQuestions]: tool({
@@ -214,14 +214,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                         selectedOption: a.selectedOption,
                         otherText: a.otherText,
                     })),
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                return summarize(state, args.change, "Questions answered")
+                );
+                return summarize(state, args.change, "Questions answered");
             },
         }),
         [TOOL_IDS.dismissQuestion]: tool({
@@ -235,14 +235,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     context.directory,
                     args.change,
                     args.questionId,
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                return summarize(state, args.change, "Question dismissed")
+                );
+                return summarize(state, args.change, "Question dismissed");
             },
         }),
         [TOOL_IDS.resumeCheckpoint]: tool({
@@ -262,14 +262,14 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.feedback,
                     await readConfig(context.directory),
                     args.resolution,
-                )
+                );
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
-                return summarize(state, args.change, "Checkpoint resolved")
+                );
+                return summarize(state, args.change, "Checkpoint resolved");
             },
         }),
         [TOOL_IDS.requestContext]: tool({
@@ -279,11 +279,11 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 artifacts: tool.schema.array(tool.schema.string()).optional(),
             },
             async execute(args, context) {
-                const config = await readConfig(context.directory)
-                const state = await readRun(context.directory, args.change)
-                const names = args.artifacts ?? []
+                const config = await readConfig(context.directory);
+                const state = await readRun(context.directory, args.change);
+                const names = args.artifacts ?? [];
                 if (names.some(name => !CONTEXT_ARTIFACTS.has(name))) {
-                    throw new Error("requested context artifact is not available")
+                    throw new Error("requested context artifact is not available");
                 }
 
                 const artifacts = await readContextArtifacts(
@@ -291,8 +291,8 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     args.change,
                     names,
                     config.review.maxContextBytes,
-                )
-                return JSON.stringify({ context: contextPacket(state), artifacts }, null, 2)
+                );
+                return JSON.stringify({ context: contextPacket(state), artifacts }, null, 2);
             },
         }),
         [TOOL_IDS.runValidation]: tool({
@@ -307,18 +307,18 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             },
             async execute(args, context) {
                 return withRunLock(context.directory, args.change, "run validation", async () => {
-                    const config = await readConfig(context.directory)
-                    const state = await readRun(context.directory, args.change)
+                    const config = await readConfig(context.directory);
+                    const state = await readRun(context.directory, args.change);
                     if (
                         !state.dispatches.some(
                             dispatch =>
                                 dispatch.id === args.dispatchId && dispatch.status === "issued",
                         )
                     ) {
-                        throw new Error("validation requires an issued dispatch")
+                        throw new Error("validation requires an issued dispatch");
                     }
 
-                    const requirement = findCommandRequirement(state, args.validationId)
+                    const requirement = findCommandRequirement(state, args.validationId);
                     if (
                         !requirement ||
                         requirement.executable !== args.executable ||
@@ -327,7 +327,7 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     ) {
                         throw new Error(
                             "validation command does not match the run evidence registry",
-                        )
+                        );
                     }
 
                     const evidence = await executeValidation(
@@ -339,17 +339,17 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                             policyHash: state.requirements.policyHash,
                         },
                         context.abort,
-                    )
-                    await appendEvidence(context.directory, args.change, evidence)
-                    return JSON.stringify(evidence, null, 2)
-                })
+                    );
+                    await appendEvidence(context.directory, args.change, evidence);
+                    return JSON.stringify(evidence, null, 2);
+                });
             },
         }),
         [TOOL_IDS.getStatus]: tool({
             description: "Read final-format deterministic run state.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                return JSON.stringify(await readRun(context.directory, args.change), null, 2)
+                return JSON.stringify(await readRun(context.directory, args.change), null, 2);
             },
         }),
         [TOOL_IDS.cancelRun]: tool({
@@ -359,8 +359,8 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                 reason: tool.schema.string().min(1).optional(),
             },
             async execute(args, context) {
-                const state = await cancelRun(context.directory, args.change, args.reason)
-                return summarize(state, args.change, "Run cancelled")
+                const state = await cancelRun(context.directory, args.change, args.reason);
+                return summarize(state, args.change, "Run cancelled");
             },
         }),
         [TOOL_IDS.finalize]: tool({
@@ -371,21 +371,21 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     context.directory,
                     args.change,
                     await readConfig(context.directory),
-                )
-                const questionDto = pendingQuestionBlockView(state, args.change)
+                );
+                const questionDto = pendingQuestionBlockView(state, args.change);
                 if (questionDto) {
-                    return JSON.stringify(questionDto, null, 2)
+                    return JSON.stringify(questionDto, null, 2);
                 }
-                const checkpointDto = pendingCheckpointBlockView(state, args.change)
+                const checkpointDto = pendingCheckpointBlockView(state, args.change);
                 if (checkpointDto) {
-                    return JSON.stringify(checkpointDto, null, 2)
+                    return JSON.stringify(checkpointDto, null, 2);
                 }
                 await publishProgress(
                     context as MetadataContext,
                     context.directory,
                     args.change,
                     state,
-                )
+                );
                 const label =
                     state.status === "completed"
                         ? "Run completed"
@@ -393,8 +393,8 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                           ? "Run passed, archival failed"
                           : state.status === "passed"
                             ? "Run passed"
-                            : "Run finalized"
-                return summarize(state, args.change, label)
+                            : "Run finalized";
+                return summarize(state, args.change, label);
             },
         }),
         [TOOL_IDS.archive]: tool({
@@ -406,31 +406,31 @@ export const SpecOpsPlugin: Plugin = async _input => ({
                     context.directory,
                     args.change,
                     await readConfig(context.directory),
-                )
+                );
                 if (state.archiveError) {
                     return (
                         summarize(state, args.change, "Archive failed") +
                         `\nArchive error (${state.archiveError.kind}, attempt ${state.archiveError.attempt}): ${state.archiveError.message}` +
                         `\nCall specops_archive_run again after addressing the failure.`
-                    )
+                    );
                 }
-                const label = state.archivedAt ? "Run archived" : "Archive not completed"
-                return summarize(state, args.change, label)
+                const label = state.archivedAt ? "Run archived" : "Archive not completed";
+                return summarize(state, args.change, label);
             },
         }),
         [TOOL_IDS.onboard]: tool({
             description: "Install final SpecOps OpenSpec assets.",
             args: {},
             async execute(_args, context) {
-                await onboard(context.directory)
-                return "SpecOps final assets installed."
+                await onboard(context.directory);
+                return "SpecOps final assets installed.";
             },
         }),
         [TOOL_IDS.doctor]: tool({
             description: "Diagnose final SpecOps configuration and assets.",
             args: {},
             async execute(_args, context) {
-                return doctor(context.directory, await readConfig(context.directory))
+                return doctor(context.directory, await readConfig(context.directory));
             },
         }),
         [TOOL_IDS.openSpec]: tool({
@@ -438,17 +438,17 @@ export const SpecOpsPlugin: Plugin = async _input => ({
             args: { args: tool.schema.array(tool.schema.string()).min(1) },
             async execute(args, context) {
                 if (!READ_ONLY_OPENSPEC_COMMANDS.has(args.args[0])) {
-                    throw new Error("OpenSpec command is not read-only")
+                    throw new Error("OpenSpec command is not read-only");
                 }
                 return openSpecOrThrow(
                     context.directory,
                     await readConfig(context.directory),
                     args.args,
-                )
+                );
             },
         }),
     },
-})
+});
 
 /**
  * Read a subset of context artifact files from a change directory, honouring
@@ -466,15 +466,15 @@ async function readContextArtifacts(
     names: string[],
     limit: number,
 ): Promise<Record<string, string>> {
-    const result: Record<string, string> = {}
-    let remaining = limit
+    const result: Record<string, string> = {};
+    let remaining = limit;
     for (const name of names) {
         if (remaining <= 0) {
-            break
+            break;
         }
-        const content = await readFile(path.join(changeRoot(directory, change), name), "utf8")
-        result[name] = content.slice(0, remaining)
-        remaining -= Buffer.byteLength(result[name])
+        const content = await readFile(path.join(changeRoot(directory, change), name), "utf8");
+        result[name] = content.slice(0, remaining);
+        remaining -= Buffer.byteLength(result[name]);
     }
-    return result
+    return result;
 }

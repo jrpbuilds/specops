@@ -5,12 +5,12 @@
  * `NO_COLOR` and a narrow `PATH` to minimise environment leakage.
  */
 
-import { readFile } from "node:fs/promises"
-import path from "node:path"
-import { runProcess } from "./process.js"
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { runProcess } from "./process.js";
 
-export { runProcess } from "./process.js"
-export type { ProcessResult } from "./process.js"
+export { runProcess } from "./process.js";
+export type { ProcessResult } from "./process.js";
 
 /**
  * Read the current implementation baseline commit.
@@ -19,7 +19,7 @@ export type { ProcessResult } from "./process.js"
  * @throws If the underlying `git rev-parse HEAD` invocation fails.
  */
 export async function baseCommit(directory: string): Promise<string> {
-    return (await git(directory, ["rev-parse", "HEAD"])).trim()
+    return (await git(directory, ["rev-parse", "HEAD"])).trim();
 }
 
 /**
@@ -29,7 +29,7 @@ export async function baseCommit(directory: string): Promise<string> {
  * @returns A stable newline-delimited stash fingerprint.
  */
 export async function stashFingerprint(directory: string): Promise<string> {
-    return git(directory, ["stash", "list", "--format=%H"])
+    return git(directory, ["stash", "list", "--format=%H"]);
 }
 
 /**
@@ -39,13 +39,13 @@ export async function stashFingerprint(directory: string): Promise<string> {
  * @throws If any non-`openspec/` tracked or untracked paths are present in the worktree.
  */
 export async function assertCleanWorktree(directory: string): Promise<void> {
-    const status = await git(directory, ["status", "--porcelain=v1", "--untracked-files=all"])
+    const status = await git(directory, ["status", "--porcelain=v1", "--untracked-files=all"]);
     const changes = status
         .split("\n")
         .filter(Boolean)
-        .filter(line => !line.slice(3).replace(/^"|"$/g, "").startsWith("openspec/"))
+        .filter(line => !line.slice(3).replace(/^"|"$/g, "").startsWith("openspec/"));
     if (changes.length) {
-        throw new Error(`SpecOps requires a clean implementation worktree.\n${changes.join("\n")}`)
+        throw new Error(`SpecOps requires a clean implementation worktree.\n${changes.join("\n")}`);
     }
 }
 
@@ -66,7 +66,7 @@ export async function collectDiff(directory: string, maxBytes: number): Promise<
         "--",
         ".",
         ":(exclude)openspec/**",
-    ])
+    ]);
     const untracked = (
         await git(directory, [
             "ls-files",
@@ -80,29 +80,29 @@ export async function collectDiff(directory: string, maxBytes: number): Promise<
     )
         .split("\0")
         .filter(Boolean)
-        .sort()
-    const sections = [tracked]
+        .sort();
+    const sections = [tracked];
     for (const relative of untracked) {
-        const data = await readFile(path.join(directory, relative))
+        const data = await readFile(path.join(directory, relative));
         sections.push(
             `\ndiff --git a/${relative} b/${relative}\nnew file mode 100644\n--- /dev/null\n+++ b/${relative}\n${data
                 .toString("utf8")
                 .split("\n")
                 .map(line => `+${line}`)
                 .join("\n")}`,
-        )
+        );
     }
 
-    const diff = sections.join("") || "(no implementation diff)"
-    const bytes = Buffer.byteLength(diff)
+    const diff = sections.join("") || "(no implementation diff)";
+    const bytes = Buffer.byteLength(diff);
     if (bytes > maxBytes) {
-        const changedPaths = await collectChangedPaths(directory)
+        const changedPaths = await collectChangedPaths(directory);
         throw new Error(
             `review diff exceeds configured maximum of ${maxBytes} bytes (actual ${bytes} bytes across ${changedPaths.length} changed paths); ` +
                 "run from a clean worktree, reduce the implementation scope, or raise review.maxDiffBytes",
-        )
+        );
     }
-    return diff
+    return diff;
 }
 
 /**
@@ -125,7 +125,7 @@ export async function collectChangedPaths(directory: string): Promise<string[]> 
         "--",
         ".",
         ":(exclude)openspec/**",
-    ])
+    ]);
     const untracked = await git(directory, [
         "ls-files",
         "--others",
@@ -134,8 +134,8 @@ export async function collectChangedPaths(directory: string): Promise<string[]> 
         "--",
         ".",
         ":(exclude)openspec/**",
-    ])
-    return [...new Set([...tracked.split("\0"), ...untracked.split("\0")].filter(Boolean))].sort()
+    ]);
+    return [...new Set([...tracked.split("\0"), ...untracked.split("\0")].filter(Boolean))].sort();
 }
 
 /**
@@ -149,9 +149,9 @@ async function git(directory: string, args: string[]): Promise<string> {
     const result = await runProcess("git", args, directory, undefined, {
         PATH: process.env.PATH ?? "",
         NO_COLOR: "1",
-    })
+    });
     if (result.code !== 0) {
-        throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`)
+        throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
     }
-    return result.stdout
+    return result.stdout;
 }

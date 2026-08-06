@@ -1,13 +1,13 @@
-import { readRun, withRunLock, writeRun } from "../state/store.js"
-import type { RunState } from "../types.js"
-import { writeArtifactIndex } from "./artifacts.js"
+import { readRun, withRunLock, writeRun } from "../state/store.js";
+import type { RunState } from "../types.js";
+import { writeArtifactIndex } from "./artifacts.js";
 import {
     answerQuestion,
     dismissQuestion,
     flushPendingQuestionOnCancel,
     writeQuestionLedger,
-} from "./questions.js"
-import { isActive, setOutcome } from "./run-state.js"
+} from "./questions.js";
+import { isActive, setOutcome } from "./run-state.js";
 
 /**
  * Record an answer to the run's pending question and resume scheduling.
@@ -29,7 +29,7 @@ export async function answerQuestionAction(
 ): Promise<RunState> {
     return withRunLock(directory, change, "answer question", () =>
         answerQuestionActionLocked(directory, change, questionId, selectedOptionId, otherText),
-    )
+    );
 }
 
 /** Answer a question after the caller has acquired the run mutation lock. */
@@ -40,12 +40,12 @@ async function answerQuestionActionLocked(
     selectedOption?: string,
     otherText?: string,
 ): Promise<RunState> {
-    const state = await readRun(directory, change)
-    answerQuestion(state, questionId, selectedOption, otherText)
-    await writeArtifactIndex(directory, change, state)
-    await writeRun(directory, change, state)
-    await writeQuestionLedger(directory, change, state)
-    return state
+    const state = await readRun(directory, change);
+    answerQuestion(state, questionId, selectedOption, otherText);
+    await writeArtifactIndex(directory, change, state);
+    await writeRun(directory, change, state);
+    await writeQuestionLedger(directory, change, state);
+    return state;
 }
 
 /**
@@ -77,7 +77,7 @@ export async function answerQuestionsAction(
 ): Promise<RunState> {
     return withRunLock(directory, change, "answer questions", () =>
         answerQuestionsActionLocked(directory, change, answers),
-    )
+    );
 }
 
 /** Answer a question batch after the caller has acquired the run mutation lock. */
@@ -85,63 +85,63 @@ async function answerQuestionsActionLocked(
     directory: string,
     change: string,
     answers: Array<{
-        questionId: string
-        selectedOption?: string
-        otherText?: string
+        questionId: string;
+        selectedOption?: string;
+        otherText?: string;
     }>,
 ): Promise<RunState> {
-    const state = await readRun(directory, change)
+    const state = await readRun(directory, change);
 
     // Preflight: validate the whole batch against the current pending
     // questions before applying any answer so a rejected batch cannot leave
     // the run in a half-answered state.
-    const pending = state.pendingQuestions
+    const pending = state.pendingQuestions;
     if (!answers || answers.length === 0) {
-        throw new Error("SpecOps answer batch must contain at least one answer")
+        throw new Error("SpecOps answer batch must contain at least one answer");
     }
     if (!pending || pending.length === 0) {
-        throw new Error("SpecOps answer batch received but no questions are pending")
+        throw new Error("SpecOps answer batch received but no questions are pending");
     }
     if (answers.length !== pending.length) {
         throw new Error(
             `SpecOps answer batch must answer every pending question ` +
                 `(expected ${pending.length}, received ${answers.length})`,
-        )
+        );
     }
-    const pendingIds = new Set(pending.map(q => q.id))
-    const seenAnswerIds = new Set<string>()
+    const pendingIds = new Set(pending.map(q => q.id));
+    const seenAnswerIds = new Set<string>();
     for (const answer of answers) {
         if (!answer.questionId || !answer.questionId.trim()) {
-            throw new Error("SpecOps answer batch contains an empty question id")
+            throw new Error("SpecOps answer batch contains an empty question id");
         }
         if (!pendingIds.has(answer.questionId)) {
             throw new Error(
                 `SpecOps answer batch references unknown or already-answered question: ${answer.questionId}`,
-            )
+            );
         }
         if (seenAnswerIds.has(answer.questionId)) {
             throw new Error(
                 `SpecOps answer batch contains a duplicate question id: ${answer.questionId}`,
-            )
+            );
         }
-        seenAnswerIds.add(answer.questionId)
-        const hasOption = answer.selectedOption !== undefined
-        const hasOther = answer.otherText !== undefined
+        seenAnswerIds.add(answer.questionId);
+        const hasOption = answer.selectedOption !== undefined;
+        const hasOther = answer.otherText !== undefined;
         if (hasOption === hasOther) {
             throw new Error(
                 `SpecOps answer for ${answer.questionId} must provide exactly one of selectedOption or otherText`,
-            )
+            );
         }
     }
     // The batch answers every pending question exactly once; apply it.
 
     for (const answer of answers) {
-        answerQuestion(state, answer.questionId, answer.selectedOption, answer.otherText)
+        answerQuestion(state, answer.questionId, answer.selectedOption, answer.otherText);
     }
-    await writeArtifactIndex(directory, change, state)
-    await writeRun(directory, change, state)
-    await writeQuestionLedger(directory, change, state)
-    return state
+    await writeArtifactIndex(directory, change, state);
+    await writeRun(directory, change, state);
+    await writeQuestionLedger(directory, change, state);
+    return state;
 }
 
 /**
@@ -162,7 +162,7 @@ export async function dismissQuestionAction(
 ): Promise<RunState> {
     return withRunLock(directory, change, "dismiss question", () =>
         dismissQuestionActionLocked(directory, change, questionId),
-    )
+    );
 }
 
 /** Dismiss a question after the caller has acquired the run mutation lock. */
@@ -171,11 +171,11 @@ async function dismissQuestionActionLocked(
     change: string,
     questionId: string,
 ): Promise<RunState> {
-    const state = await readRun(directory, change)
-    dismissQuestion(state, questionId)
-    await writeRun(directory, change, state)
-    await writeQuestionLedger(directory, change, state)
-    return state
+    const state = await readRun(directory, change);
+    dismissQuestion(state, questionId);
+    await writeRun(directory, change, state);
+    await writeQuestionLedger(directory, change, state);
+    return state;
 }
 
 /**
@@ -197,7 +197,7 @@ export async function cancelRun(
 ): Promise<RunState> {
     return withRunLock(directory, change, "cancel run", () =>
         cancelRunLocked(directory, change, reason),
-    )
+    );
 }
 
 /** Cancel a run after the caller has acquired the run mutation lock. */
@@ -206,26 +206,26 @@ async function cancelRunLocked(
     change: string,
     reason = "Cancelled by user.",
 ): Promise<RunState> {
-    const state = await readRun(directory, change)
+    const state = await readRun(directory, change);
     if (!isActive(state.status)) {
-        return state
+        return state;
     }
     for (const dispatch of state.dispatches) {
         if (dispatch.status === "issued") {
-            dispatch.status = "failed"
+            dispatch.status = "failed";
         }
     }
-    state.pendingFrontier = undefined
-    state.frontierResume = undefined
+    state.pendingFrontier = undefined;
+    state.frontierResume = undefined;
     for (const task of state.repairTasks ?? []) {
-        if (task.status === "queued") task.status = "cancelled"
+        if (task.status === "queued") task.status = "cancelled";
     }
-    state.pendingRepair = undefined
-    flushPendingQuestionOnCancel(state)
+    state.pendingRepair = undefined;
+    flushPendingQuestionOnCancel(state);
     // Flush any pending checkpoint into history as cancelled so the terminal
     // state is consistent and the pause reason is never left dangling.
     if (state.pendingCheckpoint) {
-        const pending = state.pendingCheckpoint
+        const pending = state.pendingCheckpoint;
 
         state.checkpointHistory.push({
             dispatchId: pending.dispatchId,
@@ -240,11 +240,11 @@ async function cancelRunLocked(
             resolvedAt: new Date().toISOString(),
             outcome: "cancelled",
             invalidatedArtifacts: [],
-        })
-        state.pendingCheckpoint = undefined
+        });
+        state.pendingCheckpoint = undefined;
     }
-    setOutcome(state, "cancelled", "cancelled", reason)
-    await writeRun(directory, change, state)
-    await writeQuestionLedger(directory, change, state)
-    return state
+    setOutcome(state, "cancelled", "cancelled", reason);
+    await writeRun(directory, change, state);
+    await writeQuestionLedger(directory, change, state);
+    return state;
 }

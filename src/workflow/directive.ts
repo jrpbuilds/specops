@@ -1,22 +1,22 @@
-import { hash, invalidate } from "../artifacts/lifecycle.js"
-import { redactSensitiveText } from "../security/redact.js"
-import { readRun, writeRun, withRunLock } from "../state/store.js"
-import type { SpecOpsConfig } from "../config.js"
-import type { DispatchRecord, RunState } from "../types.js"
-import { writeArtifactIndex } from "./artifacts.js"
-import type { ControllerDirective } from "./scheduler.js"
-import { assuranceEpoch, dispatchHash, nextDirective } from "./scheduler.js"
-import { consumeResumeTarget } from "./questions.js"
-import { recordFrontierDispatch } from "../frontier/policy.js"
+import { hash, invalidate } from "../artifacts/lifecycle.js";
+import { redactSensitiveText } from "../security/redact.js";
+import { readRun, writeRun, withRunLock } from "../state/store.js";
+import type { SpecOpsConfig } from "../config.js";
+import type { DispatchRecord, RunState } from "../types.js";
+import { writeArtifactIndex } from "./artifacts.js";
+import type { ControllerDirective } from "./scheduler.js";
+import { assuranceEpoch, dispatchHash, nextDirective } from "./scheduler.js";
+import { consumeResumeTarget } from "./questions.js";
+import { recordFrontierDispatch } from "../frontier/policy.js";
 import {
     appendEvidence,
     executeValidation,
     latestImplementationDispatch,
     missingCommandRequirements,
     readEvidenceRegistry,
-} from "../evidence/registry.js"
-import { refreshImplementationBinding, setOutcome } from "./run-state.js"
-import { captureWriterGuard } from "./writer-guards.js"
+} from "../evidence/registry.js";
+import { refreshImplementationBinding, setOutcome } from "./run-state.js";
+import { captureWriterGuard } from "./writer-guards.js";
 
 /**
  * Compute and persist the next controller directive.
@@ -39,7 +39,7 @@ export async function issueDirective(
 ): Promise<ControllerDirective> {
     return withRunLock(directory, change, "issue directive", () =>
         issueDirectiveLocked(directory, change, config),
-    )
+    );
 }
 
 /**
@@ -62,20 +62,20 @@ export async function recoverDispatch(
     reason: string,
 ): Promise<RunState> {
     return withRunLock(directory, change, "recover dispatch", async () => {
-        const state = await readRun(directory, change)
-        const dispatch = state.dispatches.find(item => item.id === dispatchId)
-        if (!dispatch) throw new Error(`unknown SpecOps dispatch: ${dispatchId}`)
+        const state = await readRun(directory, change);
+        const dispatch = state.dispatches.find(item => item.id === dispatchId);
+        if (!dispatch) throw new Error(`unknown SpecOps dispatch: ${dispatchId}`);
         if (dispatch.status !== "issued") {
-            throw new Error(`SpecOps dispatch ${dispatchId} is already ${dispatch.status}`)
+            throw new Error(`SpecOps dispatch ${dispatchId} is already ${dispatch.status}`);
         }
         const otherIssued = state.dispatches.find(
             item => item.status === "issued" && item.id !== dispatchId,
-        )
+        );
         if (otherIssued) {
-            throw new Error(`SpecOps has another issued dispatch: ${otherIssued.id}`)
+            throw new Error(`SpecOps has another issued dispatch: ${otherIssued.id}`);
         }
-        const trimmed = redactSensitiveText(reason.trim()).slice(0, 1_000)
-        if (!trimmed) throw new Error("dispatch recovery reason must be non-empty")
+        const trimmed = redactSensitiveText(reason.trim()).slice(0, 1_000);
+        if (!trimmed) throw new Error("dispatch recovery reason must be non-empty");
         const fingerprint = hash(
             JSON.stringify({
                 capability: dispatch.capability,
@@ -83,15 +83,15 @@ export async function recoverDispatch(
                 action: dispatch.action,
                 inputHash: dispatch.inputHash,
             }),
-        )
+        );
         const attempt =
-            state.dispatches.filter(item => item.recovery?.fingerprint === fingerprint).length + 1
-        dispatch.status = "failed"
-        dispatch.finishedAt = new Date().toISOString()
-        dispatch.failureReason = `Interrupted dispatch recovered: ${trimmed}`.slice(0, 2_000)
-        dispatch.recovery = { reason: trimmed, at: dispatch.finishedAt, fingerprint, attempt }
+            state.dispatches.filter(item => item.recovery?.fingerprint === fingerprint).length + 1;
+        dispatch.status = "failed";
+        dispatch.finishedAt = new Date().toISOString();
+        dispatch.failureReason = `Interrupted dispatch recovered: ${trimmed}`.slice(0, 2_000);
+        dispatch.recovery = { reason: trimmed, at: dispatch.finishedAt, fingerprint, attempt };
         if (dispatch.capability === "implementation" || dispatch.capability === "repair") {
-            invalidate(state, ["implementation"], "implementation worker interrupted")
+            invalidate(state, ["implementation"], "implementation worker interrupted");
         }
         if (attempt > state.requirements.budgets.maxRepeatedFailureFingerprints) {
             setOutcome(
@@ -100,12 +100,12 @@ export async function recoverDispatch(
                 "policy-blocked",
                 `Interrupted dispatch recovery budget exhausted for ${dispatch.capability}.`,
                 "budget-exhausted",
-            )
+            );
         }
-        await writeArtifactIndex(directory, change, state)
-        await writeRun(directory, change, state)
-        return state
-    })
+        await writeArtifactIndex(directory, change, state);
+        await writeRun(directory, change, state);
+        return state;
+    });
 }
 
 /** Issue a directive after the caller has acquired the run mutation lock. */
@@ -114,26 +114,28 @@ async function issueDirectiveLocked(
     change: string,
     config: Pick<SpecOpsConfig, "review" | "frontier">,
 ): Promise<ControllerDirective> {
-    const state = await readRun(directory, change)
+    const state = await readRun(directory, change);
 
-    const issued = state.dispatches.find(dispatch => dispatch.status === "issued")
+    const issued = state.dispatches.find(dispatch => dispatch.status === "issued");
     if (issued) {
-        throw new Error(`SpecOps dispatch ${issued.id} is still issued and must be completed first`)
+        throw new Error(
+            `SpecOps dispatch ${issued.id} is still issued and must be completed first`,
+        );
     }
 
-    await refreshImplementationBinding(directory, state, config.review.maxDiffBytes)
+    await refreshImplementationBinding(directory, state, config.review.maxDiffBytes);
 
-    const validationFailure = await runValidationBarrier(directory, change, state, config)
+    const validationFailure = await runValidationBarrier(directory, change, state, config);
     if (validationFailure) {
-        setOutcome(state, "failed", "validation-failed", validationFailure, "validation-failed")
-        await writeRun(directory, change, state)
-        return { type: "block", reason: "validation-failed", resumable: false }
+        setOutcome(state, "failed", "validation-failed", validationFailure, "validation-failed");
+        await writeRun(directory, change, state);
+        return { type: "block", reason: "validation-failed", resumable: false };
     }
 
-    const directive = nextDirective(state)
+    const directive = nextDirective(state);
 
     if (directive.type === "dispatch") {
-        const inputHash = dispatchHash(directive.action, state)
+        const inputHash = dispatchHash(directive.action, state);
         const record: DispatchRecord = {
             id: directive.action.id,
             action: directive.action.mode ?? directive.action.capability,
@@ -152,22 +154,22 @@ async function issueDirectiveLocked(
             status: "issued",
             at: new Date().toISOString(),
             assuranceEpoch: assuranceEpoch(state),
-        }
+        };
         if (
             directive.action.capability === "implementation" ||
             directive.action.capability === "repair"
         ) {
             try {
-                record.writerGuard = await captureWriterGuard(directory, change, state)
+                record.writerGuard = await captureWriterGuard(directory, change, state);
             } catch (error) {
-                setOutcome(state, "blocked", "policy-blocked", String(error), "policy-rejected")
-                await writeRun(directory, change, state)
-                return { type: "block", reason: "policy-rejected", resumable: false }
+                setOutcome(state, "blocked", "policy-blocked", String(error), "policy-rejected");
+                await writeRun(directory, change, state);
+                return { type: "block", reason: "policy-rejected", resumable: false };
             }
         }
 
         // Persist resume target metadata on the dispatch before consuming it.
-        const resumeTarget = state.resumeTarget
+        const resumeTarget = state.resumeTarget;
         const resume =
             resumeTarget &&
             directive.type === "dispatch" &&
@@ -175,7 +177,7 @@ async function issueDirectiveLocked(
             resumeTarget.purpose === directive.action.purpose &&
             resumeTarget.action === (directive.action.mode ?? directive.action.capability)
                 ? consumeResumeTarget(state)
-                : undefined
+                : undefined;
         if (resume) {
             record.resume = {
                 sourceId: resume.sourceId,
@@ -186,7 +188,7 @@ async function issueDirectiveLocked(
                 purpose: resume.purpose,
                 action: resume.action,
                 origin: resume.origin,
-            }
+            };
         }
         if (
             state.frontierResume &&
@@ -203,11 +205,11 @@ async function issueDirectiveLocked(
                 capability: state.frontierResume.capability,
                 purpose: state.frontierResume.purpose,
                 action: state.frontierResume.action,
-            }
-            state.frontierResume.consumed = true
+            };
+            state.frontierResume.consumed = true;
         }
-        state.dispatches.push(record)
-        state.schedulerHistory ??= []
+        state.dispatches.push(record);
+        state.schedulerHistory ??= [];
         state.schedulerHistory.push({
             sequence: state.schedulerHistory.length + 1,
             revision: state.revision,
@@ -217,10 +219,10 @@ async function issueDirectiveLocked(
             purpose: record.purpose,
             bindingHash: record.inputHash,
             at: record.at,
-        })
-        if (state.schedulerHistory.length > 256) state.schedulerHistory.shift()
+        });
+        if (state.schedulerHistory.length > 256) state.schedulerHistory.shift();
         if (directive.action.capability === "frontier") {
-            recordFrontierDispatch(state)
+            recordFrontierDispatch(state);
         }
     } else if (directive.type === "block" && directive.reason === "workflow-stalled") {
         setOutcome(
@@ -231,11 +233,11 @@ async function issueDirectiveLocked(
                 ? "SpecOps could not reconstruct the exact action targeted by the pending resume request."
                 : "SpecOps detected repeated scheduling for the same assurance epoch without implementation progress.",
             "workflow-stalled",
-        )
+        );
     }
 
-    await writeRun(directory, change, state)
-    return directive
+    await writeRun(directory, change, state);
+    return directive;
 }
 
 /**
@@ -265,20 +267,20 @@ async function runValidationBarrier(
         state.pendingCheckpoint ||
         state.artifacts.implementation?.validity !== "valid"
     ) {
-        return undefined
+        return undefined;
     }
 
-    const registry = await readEvidenceRegistry(directory, change)
-    const missing = missingCommandRequirements(directory, state, registry)
-    if (missing.length === 0) return undefined
+    const registry = await readEvidenceRegistry(directory, change);
+    const missing = missingCommandRequirements(directory, state, registry);
+    if (missing.length === 0) return undefined;
 
-    const sourceDispatch = latestImplementationDispatch(state)
+    const sourceDispatch = latestImplementationDispatch(state);
     if (!sourceDispatch) {
-        return "Registered validation evidence cannot be bound to an implementation dispatch."
+        return "Registered validation evidence cannot be bound to an implementation dispatch.";
     }
 
     for (const requirement of missing) {
-        let evidence: import("../types.js").CommandEvidence
+        let evidence: import("../types.js").CommandEvidence;
         try {
             evidence = await executeValidation(directory, config, {
                 executable: requirement.executable,
@@ -288,16 +290,16 @@ async function runValidationBarrier(
                 dispatchId: sourceDispatch.id,
                 implementationDiffHash: state.implementationDiffHash,
                 policyHash: state.requirements.policyHash,
-            })
-            await appendEvidence(directory, change, evidence)
+            });
+            await appendEvidence(directory, change, evidence);
         } catch (error) {
-            return `Registered validation ${requirement.id} could not execute: ${String(error)}`
+            return `Registered validation ${requirement.id} could not execute: ${String(error)}`;
         }
 
         if (evidence.exitCode !== 0) {
-            return `Registered validation ${requirement.id} failed with exit code ${evidence.exitCode}.`
+            return `Registered validation ${requirement.id} failed with exit code ${evidence.exitCode}.`;
         }
     }
 
-    return undefined
+    return undefined;
 }

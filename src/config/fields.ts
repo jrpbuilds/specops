@@ -1,6 +1,6 @@
 /** Check whether a value is a plain object (not null and not an array). */
 export function isObject(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
@@ -14,9 +14,9 @@ export function isObject(value: unknown): value is Record<string, unknown> {
  */
 export function asObject(value: unknown, name: string): Record<string, unknown> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error(`invalid SpecOps configuration: ${name}`)
+        throw new Error(`invalid SpecOps configuration: ${name}`);
     }
-    return value as Record<string, unknown>
+    return value as Record<string, unknown>;
 }
 
 /**
@@ -35,7 +35,7 @@ export function assertKeys(
 ): void {
     for (const key of Object.keys(value)) {
         if (!allowed.includes(key)) {
-            throw new Error(`invalid SpecOps configuration field: ${name}.${key}`)
+            throw new Error(`invalid SpecOps configuration field: ${name}.${key}`);
         }
     }
 }
@@ -51,9 +51,9 @@ export function assertKeys(
  */
 export function positiveInteger(value: unknown, name: string, minimum: number = 1): number {
     if (!Number.isInteger(value) || Number(value) < minimum) {
-        throw new Error(`invalid SpecOps configuration field: ${name}`)
+        throw new Error(`invalid SpecOps configuration field: ${name}`);
     }
-    return Number(value)
+    return Number(value);
 }
 
 /**
@@ -64,5 +64,5 @@ export function positiveInteger(value: unknown, name: string, minimum: number = 
  * @returns `true` when `value` is a string contained in `choices`.
  */
 export function isOneOf<T extends string>(value: unknown, choices: readonly T[]): value is T {
-    return typeof value === "string" && choices.includes(value as T)
+    return typeof value === "string" && choices.includes(value as T);
 }

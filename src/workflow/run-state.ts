@@ -1,10 +1,10 @@
-import { collectDiff } from "../git.js"
-import { applyEscalation, decideEscalation } from "../escalation/policy.js"
-import { scopeForActualDiff } from "../routing/policy.js"
-import { hash, invalidate } from "../artifacts/lifecycle.js"
-import { redactSensitiveText } from "../security/redact.js"
-import type { SpecOpsConfig } from "../config.js"
-import type { BlockReason, EscalationClaim, RunState, WorkflowOutcome } from "../types.js"
+import { collectDiff } from "../git.js";
+import { applyEscalation, decideEscalation } from "../escalation/policy.js";
+import { scopeForActualDiff } from "../routing/policy.js";
+import { hash, invalidate } from "../artifacts/lifecycle.js";
+import { redactSensitiveText } from "../security/redact.js";
+import type { SpecOpsConfig } from "../config.js";
+import type { BlockReason, EscalationClaim, RunState, WorkflowOutcome } from "../types.js";
 
 /**
  * Assign the machine-readable terminal or paused outcome representation.
@@ -22,24 +22,24 @@ export function setOutcome(
     message: string,
     blockReason?: BlockReason,
 ): void {
-    state.status = status
-    state.pauseReason = undefined
-    state.resumable = undefined
+    state.status = status;
+    state.pauseReason = undefined;
+    state.resumable = undefined;
     if (blockReason) {
-        state.blockReason = blockReason
+        state.blockReason = blockReason;
     }
     if (status !== "cancelled") {
         state.outcome = {
             category,
             message: redactSensitiveText(message),
             at: new Date().toISOString(),
-        }
+        };
     } else {
         state.outcome = {
             category,
             message: redactSensitiveText(message),
             at: new Date().toISOString(),
-        }
+        };
     }
 }
 
@@ -50,7 +50,7 @@ export function setOutcome(
  * @returns `true` for `running` and `paused` (resumable); `false` for terminal.
  */
 export function isActive(status: RunState["status"]): boolean {
-    return status === "running" || status === "paused"
+    return status === "running" || status === "paused";
 }
 
 /**
@@ -66,17 +66,17 @@ export async function refreshImplementationBinding(
     maxDiffBytes: number,
 ): Promise<boolean> {
     if (state.status !== "running" || state.artifacts.implementation?.validity !== "valid") {
-        return false
+        return false;
     }
     // Repository diff collection requires a real git commit baseline; skip
     // the refresh for synthetic test baselines where no git context exists.
-    if (!/^[0-9a-f]{40}$/i.test(state.baseline)) return false
-    const current = hash(await collectDiff(directory, maxDiffBytes))
-    const previous = state.implementationDiffHash
-    state.implementationDiffHash = current
-    if (previous === undefined || previous === current) return false
-    invalidate(state, ["implementation"], "implementation diff changed outside writer completion")
-    return true
+    if (!/^[0-9a-f]{40}$/i.test(state.baseline)) return false;
+    const current = hash(await collectDiff(directory, maxDiffBytes));
+    const previous = state.implementationDiffHash;
+    state.implementationDiffHash = current;
+    if (previous === undefined || previous === current) return false;
+    invalidate(state, ["implementation"], "implementation diff changed outside writer completion");
+    return true;
 }
 
 /**
@@ -91,20 +91,20 @@ export function applyClaim(
     config: Pick<SpecOpsConfig, "routing">,
 ): void {
     if (!claim) {
-        return
+        return;
     }
 
-    const decision = decideEscalation(state, claim, config)
-    state.decisions.push(decision)
+    const decision = decideEscalation(state, claim, config);
+    state.decisions.push(decision);
     if (decision.disposition === "accepted" || decision.disposition === "narrowed") {
-        applyEscalation(state, decision.appliedPatch)
-        const invalidationRoots = decision.appliedPatch.invalidate ?? []
+        applyEscalation(state, decision.appliedPatch);
+        const invalidationRoots = decision.appliedPatch.invalidate ?? [];
         if (invalidationRoots.length) {
             invalidate(
                 state,
                 [...new Set(invalidationRoots)],
                 `accepted escalation: ${claim.summary}`,
-            )
+            );
         }
     } else if (decision.reason.toLowerCase().includes("budget")) {
         setOutcome(
@@ -113,7 +113,7 @@ export function applyClaim(
             "policy-blocked",
             `Escalation could not proceed safely: ${decision.reason}`,
             "budget-exhausted",
-        )
+        );
     }
 }
 
@@ -133,15 +133,15 @@ export function applyActualDiffFloor(
     paths: string[],
     config: Pick<SpecOpsConfig, "workflow" | "routing">,
 ): void {
-    if (state.scopeTier === "full" || paths.length === 0) return
+    if (state.scopeTier === "full" || paths.length === 0) return;
     const modules = new Set(
         paths.map(changedPath => {
-            const segments = changedPath.split("/").filter(Boolean)
-            return segments.length > 1 ? segments[0] : "."
+            const segments = changedPath.split("/").filter(Boolean);
+            return segments.length > 1 ? segments[0] : ".";
         }),
-    ).size
-    const target = scopeForActualDiff(state.scopeTier, paths, config.workflow.scopeThresholds)
-    if (target === state.scopeTier) return
+    ).size;
+    const target = scopeForActualDiff(state.scopeTier, paths, config.workflow.scopeThresholds);
+    if (target === state.scopeTier) return;
 
     applyClaim(
         state,
@@ -158,5 +158,5 @@ export function applyActualDiffFloor(
             },
         },
         config,
-    )
+    );
 }

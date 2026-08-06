@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash } from "node:crypto";
 import type {
     AssuranceFinding,
     DismissedReviewFinding,
@@ -7,49 +7,49 @@ import type {
     ReviewSubmission,
     RunState,
     SustainedReviewFinding,
-} from "../types.js"
-import { parseEvidenceRef } from "../worker_output.js"
-import { JUDGMENT_VERDICTS, REPAIR_MODES, SEVERITIES } from "./contracts.js"
+} from "../types.js";
+import { parseEvidenceRef } from "../worker_output.js";
+import { JUDGMENT_VERDICTS, REPAIR_MODES, SEVERITIES } from "./contracts.js";
 
-const FINDING_KEYS = new Set(["severity", "mode", "summary", "evidence", "acceptanceCriteria"])
-const LEDGER_FINDING_KEYS = new Set([...FINDING_KEYS, "sourceFindingIds"])
-const DISMISSED_KEYS = new Set(["sourceFindingIds", "reason"])
+const FINDING_KEYS = new Set(["severity", "mode", "summary", "evidence", "acceptanceCriteria"]);
+const LEDGER_FINDING_KEYS = new Set([...FINDING_KEYS, "sourceFindingIds"]);
+const DISMISSED_KEYS = new Set(["sourceFindingIds", "reason"]);
 
 /** Strict parsed judgment carrying the shared assurance-finding contract. */
 export type Judgment = {
-    verdict: "PASS" | "FAIL"
-    summary: string
-    findings: AssuranceFinding[]
-}
+    verdict: "PASS" | "FAIL";
+    summary: string;
+    findings: AssuranceFinding[];
+};
 
 /** Parse a strict judgment; the engine handles empty-finding failures. */
 export function parseJudgment(output: string): Judgment {
-    const value = parseObject(output, "judgment")
-    assertAllowedKeys(value, new Set(["verdict", "summary", "findings"]), "judgment")
+    const value = parseObject(output, "judgment");
+    assertAllowedKeys(value, new Set(["verdict", "summary", "findings"]), "judgment");
     if (!JUDGMENT_VERDICTS.has(String(value.verdict))) {
         throw new Error(
             `judgment verdict must be "PASS" or "FAIL", got ${JSON.stringify(value.verdict)}`,
-        )
+        );
     }
     if (typeof value.summary !== "string" || !value.summary.trim()) {
-        throw new Error("judgment summary must be a non-empty string")
+        throw new Error("judgment summary must be a non-empty string");
     }
-    const findings = parseFindings(value.findings, "judgment")
-    return { verdict: value.verdict as Judgment["verdict"], summary: value.summary, findings }
+    const findings = parseFindings(value.findings, "judgment");
+    return { verdict: value.verdict as Judgment["verdict"], summary: value.summary, findings };
 }
 
 /** Parse the strict finding response returned by an independent reviewer. */
 export function parseReviewSubmission(output: string): AssuranceFinding[] {
-    const value = parseObject(output, "review submission")
-    assertExactKeys(value, new Set(["findings"]), "review submission")
-    return parseFindings(value.findings, "review submission")
+    const value = parseObject(output, "review submission");
+    assertExactKeys(value, new Set(["findings"]), "review submission");
+    return parseFindings(value.findings, "review submission");
 }
 
 /** Parse a Lean bundled ledger before controller-assigned source ids are available. */
 export function parseLeanReviewLedger(output: string): AssuranceFinding[] {
-    const value = parseObject(output, "review ledger")
-    assertExactKeys(value, new Set(["findings"]), "review ledger")
-    return parseFindings(value.findings, "review ledger")
+    const value = parseObject(output, "review ledger");
+    assertExactKeys(value, new Set(["findings"]), "review ledger");
+    return parseFindings(value.findings, "review ledger");
 }
 
 /** Parse a refuter ledger and require complete, non-overlapping source coverage. */
@@ -57,15 +57,15 @@ export function parseReviewLedger(
     output: string,
     sourceFindingIds: readonly string[],
 ): ReviewLedger {
-    const value = parseObject(output, "review ledger")
-    assertExactKeys(value, new Set(["findings", "dismissed"]), "review ledger")
+    const value = parseObject(output, "review ledger");
+    assertExactKeys(value, new Set(["findings", "dismissed"]), "review ledger");
     if (!Array.isArray(value.findings) || !Array.isArray(value.dismissed)) {
-        throw new Error("review ledger must include findings and dismissed arrays")
+        throw new Error("review ledger must include findings and dismissed arrays");
     }
 
     const findings: SustainedReviewFinding[] = value.findings.map(raw => {
-        const item = parseRecord(raw, "review ledger finding")
-        assertFindingKeys(item, LEDGER_FINDING_KEYS, "review ledger finding", true)
+        const item = parseRecord(raw, "review ledger finding");
+        assertFindingKeys(item, LEDGER_FINDING_KEYS, "review ledger finding", true);
         const [finding] = parseFindings(
             [
                 {
@@ -77,26 +77,26 @@ export function parseReviewLedger(
                 },
             ],
             "review ledger",
-        )
-        const sources = parseSourceIds(item.sourceFindingIds, "review ledger finding")
+        );
+        const sources = parseSourceIds(item.sourceFindingIds, "review ledger finding");
         return {
             ...finding,
             id: stableId("ledger", [...sources].sort(), finding.mode ?? "", finding.summary),
             sourceFindingIds: sources,
-        }
-    })
+        };
+    });
 
     const dismissed: DismissedReviewFinding[] = value.dismissed.map(raw => {
-        const item = parseRecord(raw, "dismissed review finding")
-        assertExactKeys(item, DISMISSED_KEYS, "dismissed review finding")
+        const item = parseRecord(raw, "dismissed review finding");
+        assertExactKeys(item, DISMISSED_KEYS, "dismissed review finding");
         if (typeof item.reason !== "string" || !item.reason.trim() || item.reason.length > 2_000) {
-            throw new Error("dismissed review finding reason must be a bounded non-empty string")
+            throw new Error("dismissed review finding reason must be a bounded non-empty string");
         }
         return {
             sourceFindingIds: parseSourceIds(item.sourceFindingIds, "dismissed review finding"),
             reason: item.reason,
-        }
-    })
+        };
+    });
 
     const semanticFindings = findings.map(finding =>
         stableId(
@@ -106,23 +106,23 @@ export function parseReviewLedger(
             finding.evidence,
             finding.acceptanceCriteria,
         ),
-    )
+    );
     if (semanticFindings.length !== new Set(semanticFindings).size) {
-        throw new Error("review ledger must deduplicate semantically identical findings")
+        throw new Error("review ledger must deduplicate semantically identical findings");
     }
 
     const covered = [
         ...findings.flatMap(item => item.sourceFindingIds),
         ...dismissed.flatMap(item => item.sourceFindingIds),
-    ]
-    const expected = [...sourceFindingIds].sort()
+    ];
+    const expected = [...sourceFindingIds].sort();
     if (
         covered.length !== new Set(covered).size ||
         [...covered].sort().join("|") !== expected.join("|")
     ) {
-        throw new Error("review ledger must cover every current source finding exactly once")
+        throw new Error("review ledger must cover every current source finding exactly once");
     }
-    return { findings, dismissed }
+    return { findings, dismissed };
 }
 
 /** Convert accepted findings into an immutable, dispatch-bound submission. */
@@ -143,7 +143,7 @@ export function createReviewSubmission(
             id: stableId("source", dispatch.id, index, finding.summary),
         })),
         at: new Date().toISOString(),
-    }
+    };
 }
 
 /** Build a final Lean ledger from its controller-normalized source submission. */
@@ -155,7 +155,7 @@ export function leanLedgerFromSubmission(submission: ReviewSubmission): ReviewLe
             sourceFindingIds: [finding.id],
         })),
         dismissed: [],
-    }
+    };
 }
 
 /** Return submissions that were produced for the current implementation and policy. */
@@ -170,36 +170,36 @@ export function currentReviewSubmissions(state: RunState): ReviewSubmission[] {
                     dispatch.status === "completed" &&
                     dispatch.inputHash === submission.inputHash,
             ),
-    )
+    );
 }
 
 /** Map a repair mode to its deterministic owning target. */
 export function repairTargetForMode(mode: RepairMode): "planning" | "design" | "implementation" {
-    if (mode === "spec-mismatch") return "planning"
-    if (mode === "design-revision") return "design"
-    return "implementation"
+    if (mode === "spec-mismatch") return "planning";
+    if (mode === "design-revision") return "design";
+    return "implementation";
 }
 
 /** Return a stable SHA-256 id for controller-owned review records. */
 export function stableId(...parts: unknown[]): string {
-    return createHash("sha256").update(JSON.stringify(parts)).digest("hex")
+    return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
 function parseFindings(value: unknown, label: string): AssuranceFinding[] {
-    if (!Array.isArray(value)) throw new Error(`${label} findings must be an array`)
-    if (value.length > 20) throw new Error(`${label} findings exceed the maximum of 20`)
+    if (!Array.isArray(value)) throw new Error(`${label} findings must be an array`);
+    if (value.length > 20) throw new Error(`${label} findings exceed the maximum of 20`);
     return value.map(raw => {
-        const item = parseRecord(raw, `${label} finding`)
-        assertFindingKeys(item, FINDING_KEYS, `${label} finding`, false)
+        const item = parseRecord(raw, `${label} finding`);
+        assertFindingKeys(item, FINDING_KEYS, `${label} finding`, false);
         if (!SEVERITIES.has(String(item.severity))) {
             throw new Error(
                 `${label} finding severity must be one of BLOCKER, HIGH, MEDIUM, LOW (uppercase)`,
-            )
+            );
         }
         if (item.mode !== undefined && !REPAIR_MODES.has(String(item.mode))) {
             throw new Error(
                 `${label} finding mode must be one of implementation-defect, spec-mismatch, test-deficiency, review-finding, design-revision`,
-            )
+            );
         }
         if (
             typeof item.summary !== "string" ||
@@ -208,10 +208,10 @@ function parseFindings(value: unknown, label: string): AssuranceFinding[] {
         ) {
             throw new Error(
                 `${label} finding summary must be a non-empty string within 2000 characters`,
-            )
+            );
         }
         if (!Array.isArray(item.evidence) || item.evidence.length > 20) {
-            throw new Error(`${label} finding evidence must be a bounded array`)
+            throw new Error(`${label} finding evidence must be a bounded array`);
         }
         if (
             !Array.isArray(item.acceptanceCriteria) ||
@@ -221,7 +221,7 @@ function parseFindings(value: unknown, label: string): AssuranceFinding[] {
                     typeof criterion !== "string" || !criterion.trim() || criterion.length > 500,
             )
         ) {
-            throw new Error(`${label} finding acceptanceCriteria must be a bounded string array`)
+            throw new Error(`${label} finding acceptanceCriteria must be a bounded string array`);
         }
         return {
             severity: item.severity as AssuranceFinding["severity"],
@@ -229,8 +229,8 @@ function parseFindings(value: unknown, label: string): AssuranceFinding[] {
             summary: item.summary,
             evidence: item.evidence.map(parseEvidenceRef),
             acceptanceCriteria: item.acceptanceCriteria as string[],
-        }
-    })
+        };
+    });
 }
 
 function parseSourceIds(value: unknown, label: string): string[] {
@@ -240,26 +240,26 @@ function parseSourceIds(value: unknown, label: string): string[] {
         value.some(item => typeof item !== "string" || !item.trim()) ||
         value.length !== new Set(value).size
     ) {
-        throw new Error(`${label} sourceFindingIds must be a non-empty unique string array`)
+        throw new Error(`${label} sourceFindingIds must be a non-empty unique string array`);
     }
-    return value as string[]
+    return value as string[];
 }
 
 function parseObject(output: string, label: string): Record<string, unknown> {
-    let value: unknown
+    let value: unknown;
     try {
-        value = JSON.parse(output)
+        value = JSON.parse(output);
     } catch {
-        throw new Error(`${label} must be valid JSON`)
+        throw new Error(`${label} must be valid JSON`);
     }
-    return parseRecord(value, label)
+    return parseRecord(value, label);
 }
 
 function parseRecord(value: unknown, label: string): Record<string, unknown> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error(`${label} must be an object`)
+        throw new Error(`${label} must be an object`);
     }
-    return value as Record<string, unknown>
+    return value as Record<string, unknown>;
 }
 
 function assertExactKeys(
@@ -271,7 +271,7 @@ function assertExactKeys(
         Object.keys(value).length !== expected.size ||
         Object.keys(value).some(key => !expected.has(key))
     ) {
-        throw new Error(`${label} contains unknown or missing fields`)
+        throw new Error(`${label} contains unknown or missing fields`);
     }
 }
 
@@ -281,7 +281,7 @@ function assertAllowedKeys(
     label: string,
 ): void {
     if (Object.keys(value).some(key => !allowed.has(key))) {
-        throw new Error(`${label} contains unknown fields`)
+        throw new Error(`${label} contains unknown fields`);
     }
 }
 
@@ -297,11 +297,11 @@ function assertFindingKeys(
         "evidence",
         "acceptanceCriteria",
         ...(ledger ? ["sourceFindingIds"] : []),
-    ]
+    ];
     if (
         Object.keys(value).some(key => !allowed.has(key)) ||
         required.some(key => !(key in value))
     ) {
-        throw new Error(`${label} contains unknown or missing fields`)
+        throw new Error(`${label} contains unknown or missing fields`);
     }
 }

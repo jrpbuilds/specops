@@ -5,12 +5,12 @@
  * Every OpenSpec invocation is shell-free and runs through {@link OpenSpecAdapter}.
  */
 
-import { readFile, readdir, stat } from "node:fs/promises"
-import path from "node:path"
-import { type SpecOpsConfig, resolveConfig } from "./config.js"
-import { OpenSpecAdapter } from "./openspec/adapter.js"
-import { writeTextAtomic } from "./state/store.js"
-import { redactSensitiveText } from "./security/redact.js"
+import { readFile, readdir, stat } from "node:fs/promises";
+import path from "node:path";
+import { type SpecOpsConfig, resolveConfig } from "./config.js";
+import { OpenSpecAdapter } from "./openspec/adapter.js";
+import { writeTextAtomic } from "./state/store.js";
+import { redactSensitiveText } from "./security/redact.js";
 
 /** OpenSpec subcommands that do not create, modify, or archive project state. */
 export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
@@ -21,10 +21,10 @@ export const READ_ONLY_OPENSPEC_COMMANDS = new Set([
     "validate",
     "list",
     "show",
-])
+]);
 
 /** OpenSpec's maximum change-name length. */
-export const MAX_CHANGE_NAME_LENGTH = 200
+export const MAX_CHANGE_NAME_LENGTH = 200;
 
 /**
  * Resolve the final configuration from defaults, the global user file, and the
@@ -39,7 +39,7 @@ export const MAX_CHANGE_NAME_LENGTH = 200
  * @throws If any existing file fails JSON parsing or validation.
  */
 export async function readConfig(directory: string): Promise<SpecOpsConfig> {
-    return resolveConfig(directory)
+    return resolveConfig(directory);
 }
 
 /**
@@ -56,8 +56,8 @@ async function runOpenSpec(
     args: string[],
     signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-    void signal
-    return new OpenSpecAdapter({ directory, command: config.openspec.command }).execute(args)
+    void signal;
+    return new OpenSpecAdapter({ directory, command: config.openspec.command }).execute(args);
 }
 
 /**
@@ -73,11 +73,11 @@ export async function openSpecOrThrow(
     config: SpecOpsConfig,
     args: string[],
 ): Promise<string> {
-    const result = await runOpenSpec(directory, config, args)
+    const result = await runOpenSpec(directory, config, args);
     if (result.code) {
-        throw new Error(`OpenSpec ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
+        throw new Error(`OpenSpec ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
     }
-    return result.stdout
+    return result.stdout;
 }
 
 /**
@@ -87,10 +87,10 @@ export async function openSpecOrThrow(
  * @param directory - Project root directory.
  */
 export async function onboard(directory: string): Promise<void> {
-    await new OpenSpecAdapter({ directory }).initialize()
-    const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8")
+    await new OpenSpecAdapter({ directory }).initialize();
+    const config = await readFile(path.join(directory, "openspec", "config.yaml"), "utf8");
     if (!/^schema:\s*spec-driven\s*$/m.test(config)) {
-        throw new Error("OpenSpec onboarding did not create a spec-driven project")
+        throw new Error("OpenSpec onboarding did not create a spec-driven project");
     }
 }
 
@@ -114,7 +114,7 @@ export async function createChange(
     await new OpenSpecAdapter({ directory, command: config.openspec.command }).createChange(
         change,
         goal,
-    )
+    );
 }
 
 /**
@@ -140,7 +140,7 @@ export async function archiveChange(
     change: string,
     _skipSpecs: boolean,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-    return new OpenSpecAdapter({ directory, command: config.openspec.command }).archive(change)
+    return new OpenSpecAdapter({ directory, command: config.openspec.command }).archive(change);
 }
 
 /**
@@ -161,39 +161,39 @@ export async function archiveChange(
  * @returns The number of unchecked task boxes found in `tasks.md` files.
  */
 export async function countIncompleteTasks(directory: string, change: string): Promise<number> {
-    const root = path.join(directory, "openspec", "changes", change)
-    const canonicalTasks = path.join(root, "tasks.md")
-    let incomplete = 0
+    const root = path.join(directory, "openspec", "changes", change);
+    const canonicalTasks = path.join(root, "tasks.md");
+    let incomplete = 0;
 
     try {
-        await stat(canonicalTasks)
-        incomplete += countIncompleteBoxes(await readFile(canonicalTasks, "utf8"))
-        return incomplete
+        await stat(canonicalTasks);
+        incomplete += countIncompleteBoxes(await readFile(canonicalTasks, "utf8"));
+        return incomplete;
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         // Fall through to recursive descent when no canonical tasks file exists.
     }
 
     async function visit(current: string): Promise<void> {
         for (const entry of await readdir(current, { withFileTypes: true })) {
-            const target = path.join(current, entry.name)
+            const target = path.join(current, entry.name);
             if (entry.isDirectory()) {
-                await visit(target)
-                continue
+                await visit(target);
+                continue;
             }
-            if (entry.name.toLowerCase() !== "tasks.md") continue
-            const content = await readFile(target, "utf8")
-            incomplete += countIncompleteBoxes(content)
+            if (entry.name.toLowerCase() !== "tasks.md") continue;
+            const content = await readFile(target, "utf8");
+            incomplete += countIncompleteBoxes(content);
         }
     }
 
-    await visit(root)
-    return incomplete
+    await visit(root);
+    return incomplete;
 }
 
 /** Match an opening task-list checkbox line: `- [ ]` or `* [ ]` (unchecked). */
-const UNCHECKED_TASK_PATTERN = /^[-*]\s+\[[\sx]\]/i
-const CHECKED_TASK_PATTERN = /^[-*]\s+\[x\]/i
+const UNCHECKED_TASK_PATTERN = /^[-*]\s+\[[\sx]\]/i;
+const CHECKED_TASK_PATTERN = /^[-*]\s+\[x\]/i;
 
 /**
  * Count unchecked task boxes in one Markdown document, skipping fenced code
@@ -203,45 +203,45 @@ const CHECKED_TASK_PATTERN = /^[-*]\s+\[x\]/i
  * @returns The number of unchecked task boxes outside code/HTML-comment spans.
  */
 function countIncompleteBoxes(content: string): number {
-    let count = 0
-    let inFence = false
-    let fenceChar = ""
-    let fenceLength = 0
-    let inComment = false
+    let count = 0;
+    let inFence = false;
+    let fenceChar = "";
+    let fenceLength = 0;
+    let inComment = false;
     for (const line of content.split("\n")) {
         if (inFence) {
             if (isClosingFence(line, fenceChar, fenceLength)) {
-                inFence = false
-                fenceChar = ""
-                fenceLength = 0
+                inFence = false;
+                fenceChar = "";
+                fenceLength = 0;
             }
-            continue
+            continue;
         }
         if (inComment) {
-            if (line.includes("-->")) inComment = false
-            continue
+            if (line.includes("-->")) inComment = false;
+            continue;
         }
-        const open = openingFence(line)
+        const open = openingFence(line);
         if (open) {
-            inFence = true
-            fenceChar = open.char
-            fenceLength = open.length
-            continue
+            inFence = true;
+            fenceChar = open.char;
+            fenceLength = open.length;
+            continue;
         }
-        const commentStart = line.indexOf("<!--")
+        const commentStart = line.indexOf("<!--");
         if (commentStart >= 0) {
-            const visible = line.slice(0, commentStart)
+            const visible = line.slice(0, commentStart);
             if (UNCHECKED_TASK_PATTERN.test(visible) && !CHECKED_TASK_PATTERN.test(visible)) {
-                count += 1
+                count += 1;
             }
-            if (!line.slice(commentStart + 4).includes("-->")) inComment = true
-            continue
+            if (!line.slice(commentStart + 4).includes("-->")) inComment = true;
+            continue;
         }
         if (UNCHECKED_TASK_PATTERN.test(line) && !CHECKED_TASK_PATTERN.test(line)) {
-            count += 1
+            count += 1;
         }
     }
-    return count
+    return count;
 }
 
 /**
@@ -254,9 +254,9 @@ function countIncompleteBoxes(content: string): number {
  * @returns The fence character and run length, or `undefined` when not opening.
  */
 function openingFence(line: string): { char: string; length: number } | undefined {
-    const match = /^\s*([`~])(\1{2,})/.exec(line)
-    if (!match) return undefined
-    return { char: match[1]!, length: 1 + match[2]!.length }
+    const match = /^\s*([`~])(\1{2,})/.exec(line);
+    if (!match) return undefined;
+    return { char: match[1]!, length: 1 + match[2]!.length };
 }
 
 /**
@@ -271,8 +271,8 @@ function openingFence(line: string): { char: string; length: number } | undefine
  * @returns `true` when the line is a matching closing fence.
  */
 function isClosingFence(line: string, char: string, minLength: number): boolean {
-    const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    return new RegExp(`^\\s*${escaped}{${minLength},}\\s*$`).test(line)
+    const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`^\\s*${escaped}{${minLength},}\\s*$`).test(line);
 }
 
 /**
@@ -289,7 +289,7 @@ export async function writeArtifact(
     relative: string,
     content: string,
 ): Promise<void> {
-    await writeTextAtomic(directory, change, relative, redactSensitiveText(content))
+    await writeTextAtomic(directory, change, relative, redactSensitiveText(content));
 }
 
 /**
@@ -304,16 +304,17 @@ export async function uniqueChangeName(directory: string, goal: string): Promise
     const normalized = goal
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-    const base = normalized.slice(0, MAX_CHANGE_NAME_LENGTH).replace(/-+$/g, "") || "specops-change"
+        .replace(/^-+|-+$/g, "");
+    const base =
+        normalized.slice(0, MAX_CHANGE_NAME_LENGTH).replace(/-+$/g, "") || "specops-change";
     try {
-        await stat(path.join(directory, "openspec", "changes", base))
-        const suffix = `-${Date.now().toString(36)}`
-        const availableBaseLength = MAX_CHANGE_NAME_LENGTH - suffix.length
+        await stat(path.join(directory, "openspec", "changes", base));
+        const suffix = `-${Date.now().toString(36)}`;
+        const availableBaseLength = MAX_CHANGE_NAME_LENGTH - suffix.length;
         const uniqueBase =
-            base.slice(0, availableBaseLength).replace(/-+$/g, "") || "specops-change"
-        return `${uniqueBase}${suffix}`
+            base.slice(0, availableBaseLength).replace(/-+$/g, "") || "specops-change";
+        return `${uniqueBase}${suffix}`;
     } catch {
-        return base
+        return base;
     }
 }

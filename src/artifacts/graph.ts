@@ -1,4 +1,4 @@
-import type { ArtifactId } from "../types.js"
+import type { ArtifactId } from "../types.js";
 
 /**
  * Directed dependency graph used to invalidate stale derived artifacts.
@@ -22,7 +22,7 @@ const ARTIFACT_DEPENDENCIES: Record<ArtifactId, ArtifactId[]> = {
     "compliance-judgment": ["implementation", "verification", "specs"],
     "review-ledger": ["implementation", "verification"],
     receipt: ["verification", "correctness-judgment", "review-ledger"],
-}
+};
 
 /**
  * Return the input artifacts and every transitively dependent artifact.
@@ -36,20 +36,20 @@ const ARTIFACT_DEPENDENCIES: Record<ArtifactId, ArtifactId[]> = {
  * depend on any element of `start`.
  */
 export function downstream(start: ArtifactId[]): ArtifactId[] {
-    const affected = new Set(start)
-    let changed = true
+    const affected = new Set(start);
+    let changed = true;
 
     while (changed) {
-        changed = false
+        changed = false;
         for (const [node, dependencies] of Object.entries(ARTIFACT_DEPENDENCIES) as Array<
             [ArtifactId, ArtifactId[]]
         >) {
             if (!affected.has(node) && dependencies.some(dependency => affected.has(dependency))) {
-                affected.add(node)
-                changed = true
+                affected.add(node);
+                changed = true;
             }
         }
     }
 
-    return [...affected]
+    return [...affected];
 }

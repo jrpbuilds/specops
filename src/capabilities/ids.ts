@@ -37,17 +37,17 @@ export const AGENT_IDS = {
         usability: "specops-usability-specialist",
         maintainability: "specops-maintainability-specialist",
     },
-} as const
+} as const;
 
 /** Extract the value types of a record type. */
-type Values<T> = T[keyof T]
+type Values<T> = T[keyof T];
 
 /** Union of all values in {@link AGENT_IDS}. */
 export type AgentId =
     | Values<(typeof AGENT_IDS)["controller"]>
     | Values<(typeof AGENT_IDS)["core"]>
     | Values<(typeof AGENT_IDS)["review"]>
-    | Values<(typeof AGENT_IDS)["specialist"]>
+    | Values<(typeof AGENT_IDS)["specialist"]>;
 
 /**
  * Ordered final catalogue used for exact-set validation and generation.
@@ -61,7 +61,7 @@ export const ALL_AGENT_IDS: readonly AgentId[] = [
     ...Object.values(AGENT_IDS.core),
     ...Object.values(AGENT_IDS.review),
     ...Object.values(AGENT_IDS.specialist),
-]
+];
 
 /**
  * Controller IDs that public commands are allowed to select directly.
@@ -72,4 +72,4 @@ export const ALL_AGENT_IDS: readonly AgentId[] = [
 export const CONTROLLER_AGENT_IDS = [
     AGENT_IDS.controller.interactive,
     AGENT_IDS.controller.automatic,
-] as const
+] as const;

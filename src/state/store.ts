@@ -1,10 +1,10 @@
-import { AsyncLocalStorage } from "node:async_hooks"
-import { createHash } from "node:crypto"
-import { link, mkdir, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
-import { randomUUID } from "node:crypto"
-import path from "node:path"
-import type { RunState } from "../types.js"
-import { writeFileAtomic } from "./atomic.js"
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
+import { link, mkdir, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import type { RunState } from "../types.js";
+import { writeFileAtomic } from "./atomic.js";
 import {
     assertRunState,
     createRunState,
@@ -12,8 +12,8 @@ import {
     parseRunState,
     type CreateRunStateInput,
     type RunState as V1RunState,
-} from "./schema.js"
-import { runStatePath } from "./paths.js"
+} from "./schema.js";
+import { runStatePath } from "./paths.js";
 
 /**
  * Return the controller-owned directory for one OpenSpec change.
@@ -23,7 +23,7 @@ import { runStatePath } from "./paths.js"
  * @returns The path `<directory>/openspec/changes/<change>`.
  */
 export const changeRoot = (directory: string, change: string): string =>
-    path.join(directory, "openspec", "changes", change)
+    path.join(directory, "openspec", "changes", change);
 
 /**
  * Atomically replace one text file after its parent directory exists.
@@ -38,48 +38,48 @@ export const changeRoot = (directory: string, change: string): string =>
  */
 /** Write through the active transaction when a controller mutation is running. */
 async function atomicWrite(destination: string, content: string): Promise<void> {
-    const transaction = transactionStorage.getStore()
+    const transaction = transactionStorage.getStore();
     if (transaction) {
-        await stageTransactionWrite(transaction, destination, content)
-        return
+        await stageTransactionWrite(transaction, destination, content);
+        return;
     }
-    await writeFileAtomic(destination, content)
+    await writeFileAtomic(destination, content);
 }
 
 /** Hash persisted text for transaction integrity checks. */
 function contentHash(content: string): string {
-    return createHash("sha256").update(content).digest("hex")
+    return createHash("sha256").update(content).digest("hex");
 }
 
 /** Metadata persisted while a controller owns a run mutation lock. */
-type RunLock = { token: string; pid: number; operation: string; acquiredAt: string }
+type RunLock = { token: string; pid: number; operation: string; acquiredAt: string };
 
-const LOCK_STALE_MS = 30_000
-const TRANSACTION_DIR = "specops-transaction"
-const RUN_STATE_FILE = "specops-run.json"
-const RUN_LOCK_DIR = ".specops-run-locks"
+const LOCK_STALE_MS = 30_000;
+const TRANSACTION_DIR = "specops-transaction";
+const RUN_STATE_FILE = "specops-run.json";
+const RUN_LOCK_DIR = ".specops-run-locks";
 
 type TransactionEntry = {
-    destination: string
-    staged: string
-    hash: string
-}
+    destination: string;
+    staged: string;
+    hash: string;
+};
 
 type TransactionManifest = {
-    version: 1
-    id: string
-    status: "open" | "prepared"
-    entries: TransactionEntry[]
-}
+    version: 1;
+    id: string;
+    status: "open" | "prepared";
+    entries: TransactionEntry[];
+};
 
 type RunTransaction = {
-    root: string
-    directory: string
-    manifest: TransactionManifest
-    entries: Map<string, TransactionEntry>
-}
+    root: string;
+    directory: string;
+    manifest: TransactionManifest;
+    entries: Map<string, TransactionEntry>;
+};
 
-const transactionStorage = new AsyncLocalStorage<RunTransaction>()
+const transactionStorage = new AsyncLocalStorage<RunTransaction>();
 
 /** Execute a callback under the stable lock shared by run and archive mutations. */
 async function withExternalRunLock<T>(
@@ -88,44 +88,44 @@ async function withExternalRunLock<T>(
     operation: string,
     callback: () => Promise<T>,
 ): Promise<T> {
-    const lockRoot = path.join(directory, "openspec", RUN_LOCK_DIR)
-    const lockPath = path.join(lockRoot, `${change}.lock`)
-    await mkdir(lockRoot, { recursive: true })
+    const lockRoot = path.join(directory, "openspec", RUN_LOCK_DIR);
+    const lockPath = path.join(lockRoot, `${change}.lock`);
+    await mkdir(lockRoot, { recursive: true });
     const lock: RunLock = {
         token: randomUUID(),
         pid: process.pid,
         operation,
         acquiredAt: new Date().toISOString(),
-    }
-    let acquired = false
+    };
+    let acquired = false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-            await mkdir(lockPath)
-            acquired = true
-            await atomicWrite(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`)
-            break
+            await mkdir(lockPath);
+            acquired = true;
+            await atomicWrite(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`);
+            break;
         } catch (error) {
             if (acquired) {
-                await rm(lockPath, { recursive: true, force: true })
-                acquired = false
+                await rm(lockPath, { recursive: true, force: true });
+                acquired = false;
             }
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
             if (attempt === 1 || !(await reclaimDeadLock(lockPath))) {
                 throw new Error(
                     `SpecOps run is busy: ${change} is being mutated; retry after ${operation}`,
-                )
+                );
             }
         }
     }
-    if (!acquired) throw new Error(`SpecOps could not acquire the run lock for ${change}`)
+    if (!acquired) throw new Error(`SpecOps could not acquire the run lock for ${change}`);
     try {
-        return await callback()
+        return await callback();
     } finally {
         try {
             const current = JSON.parse(
                 await readFile(path.join(lockPath, "owner.json"), "utf8"),
-            ) as Partial<RunLock>
-            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true })
+            ) as Partial<RunLock>;
+            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true });
         } catch {
             // A recovered lock has already been removed; the mutation is still complete.
         }
@@ -139,32 +139,32 @@ export async function withRunLock<T>(
     operation: string,
     callback: () => Promise<T>,
 ): Promise<T> {
-    const root = changeRoot(directory, change)
+    const root = changeRoot(directory, change);
     return withExternalRunLock(directory, change, operation, async () => {
         try {
-            const rootStat = await stat(root)
+            const rootStat = await stat(root);
             if (!rootStat.isDirectory())
-                throw new Error(`SpecOps active run is not a directory: ${change}`)
+                throw new Error(`SpecOps active run is not a directory: ${change}`);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-                throw new Error(`SpecOps active run is missing: ${change}`)
+                throw new Error(`SpecOps active run is missing: ${change}`);
             }
-            throw error
+            throw error;
         }
 
-        await recoverTransactions(root)
-        const transaction = await beginTransaction(root)
+        await recoverTransactions(root);
+        const transaction = await beginTransaction(root);
         return transactionStorage.run(transaction, async () => {
             try {
-                const result = await callback()
-                await finishTransaction(transaction)
-                return result
+                const result = await callback();
+                await finishTransaction(transaction);
+                return result;
             } catch (error) {
-                await finishTransaction(transaction)
-                throw error
+                await finishTransaction(transaction);
+                throw error;
             }
-        })
-    })
+        });
+    });
 }
 
 /** Execute an archive mutation while excluding all normal run transactions. */
@@ -174,9 +174,9 @@ export async function withRunMutationLock<T>(
     callback: () => Promise<T>,
 ): Promise<T> {
     return withExternalRunLock(directory, change, "archive mutation", async () => {
-        await recoverTransactions(changeRoot(directory, change))
-        return callback()
-    })
+        await recoverTransactions(changeRoot(directory, change));
+        return callback();
+    });
 }
 
 /**
@@ -196,44 +196,44 @@ export async function withArchiveLock<T>(
     callback: () => Promise<T>,
 ): Promise<T> {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(change)) {
-        throw new Error("invalid OpenSpec change id")
+        throw new Error("invalid OpenSpec change id");
     }
-    const lockRoot = path.join(directory, "openspec", ".specops-archive-locks")
-    const lockPath = path.join(lockRoot, `${change}.lock`)
+    const lockRoot = path.join(directory, "openspec", ".specops-archive-locks");
+    const lockPath = path.join(lockRoot, `${change}.lock`);
     const lock: RunLock = {
         token: randomUUID(),
         pid: process.pid,
         operation: "archive change",
         acquiredAt: new Date().toISOString(),
-    }
-    await mkdir(lockRoot, { recursive: true })
-    let acquired = false
+    };
+    await mkdir(lockRoot, { recursive: true });
+    let acquired = false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-            await mkdir(lockPath)
-            acquired = true
-            await writeFileAtomic(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`)
-            break
+            await mkdir(lockPath);
+            acquired = true;
+            await writeFileAtomic(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`);
+            break;
         } catch (error) {
             if (acquired) {
-                await rm(lockPath, { recursive: true, force: true })
-                acquired = false
+                await rm(lockPath, { recursive: true, force: true });
+                acquired = false;
             }
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
             if (attempt === 1 || !(await reclaimDeadLock(lockPath))) {
-                throw new Error(`SpecOps archive is busy: ${change} is being archived`)
+                throw new Error(`SpecOps archive is busy: ${change} is being archived`);
             }
         }
     }
-    if (!acquired) throw new Error(`SpecOps could not acquire the archive lock for ${change}`)
+    if (!acquired) throw new Error(`SpecOps could not acquire the archive lock for ${change}`);
     try {
-        return await callback()
+        return await callback();
     } finally {
         try {
             const current = JSON.parse(
                 await readFile(path.join(lockPath, "owner.json"), "utf8"),
-            ) as Partial<RunLock>
-            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true })
+            ) as Partial<RunLock>;
+            if (current.token === lock.token) await rm(lockPath, { recursive: true, force: true });
         } catch {
             // A recovered lock has already been removed; the archive remains complete.
         }
@@ -251,21 +251,21 @@ export async function withArchiveLock<T>(
  */
 export type ArchiveAttemptRecord = {
     /** The expected archive entry name (a hint; the CLI does not accept a target). */
-    expectedArchivedAs: string
+    expectedArchivedAs: string;
     /** Run revision expected in the moved state file. */
-    runRevision: number
+    runRevision: number;
     /** Run creation timestamp expected in the moved state file. */
-    runCreatedAt: string
+    runCreatedAt: string;
     /** Run baseline expected in the moved state file. */
-    runBaseline: string
+    runBaseline: string;
     /** When the archive attempt was recorded. */
-    attemptAt: string
-}
+    attemptAt: string;
+};
 
-const ARCHIVE_ATTEMPT_DIR = ".specops-archive-attempt"
+const ARCHIVE_ATTEMPT_DIR = ".specops-archive-attempt";
 
 function archiveAttemptPath(directory: string, change: string): string {
-    return path.join(directory, "openspec", ARCHIVE_ATTEMPT_DIR, `${change}.json`)
+    return path.join(directory, "openspec", ARCHIVE_ATTEMPT_DIR, `${change}.json`);
 }
 
 /**
@@ -280,9 +280,9 @@ export async function writeArchiveAttemptSidecar(
     change: string,
     record: ArchiveAttemptRecord,
 ): Promise<void> {
-    const destination = archiveAttemptPath(directory, change)
-    await mkdir(path.dirname(destination), { recursive: true })
-    await writeFileAtomic(destination, `${JSON.stringify(record, null, 2)}\n`)
+    const destination = archiveAttemptPath(directory, change);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFileAtomic(destination, `${JSON.stringify(record, null, 2)}\n`);
 }
 
 /**
@@ -297,8 +297,8 @@ export async function readArchiveAttemptSidecar(
     change: string,
 ): Promise<ArchiveAttemptRecord | undefined> {
     try {
-        const content = await readFile(archiveAttemptPath(directory, change), "utf8")
-        const value = JSON.parse(content) as Partial<ArchiveAttemptRecord>
+        const content = await readFile(archiveAttemptPath(directory, change), "utf8");
+        const value = JSON.parse(content) as Partial<ArchiveAttemptRecord>;
         if (
             typeof value.expectedArchivedAs !== "string" ||
             typeof value.runRevision !== "number" ||
@@ -306,12 +306,12 @@ export async function readArchiveAttemptSidecar(
             typeof value.runBaseline !== "string" ||
             typeof value.attemptAt !== "string"
         ) {
-            throw new Error("invalid SpecOps archive attempt sidecar")
+            throw new Error("invalid SpecOps archive attempt sidecar");
         }
-        return value as ArchiveAttemptRecord
+        return value as ArchiveAttemptRecord;
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-        return undefined
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        return undefined;
     }
 }
 
@@ -330,28 +330,28 @@ export async function deleteArchiveAttemptSidecar(
     change: string,
 ): Promise<void> {
     try {
-        await unlink(archiveAttemptPath(directory, change))
+        await unlink(archiveAttemptPath(directory, change));
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
 }
 
 /** Start a transaction whose writes remain invisible until the callback ends. */
 async function beginTransaction(root: string): Promise<RunTransaction> {
-    const id = randomUUID()
-    const transactionRoot = path.join(root, TRANSACTION_DIR, id)
-    const manifest: TransactionManifest = { version: 1, id, status: "open", entries: [] }
-    await mkdir(transactionRoot, { recursive: true })
+    const id = randomUUID();
+    const transactionRoot = path.join(root, TRANSACTION_DIR, id);
+    const manifest: TransactionManifest = { version: 1, id, status: "open", entries: [] };
+    await mkdir(transactionRoot, { recursive: true });
     await writeFileAtomic(
         path.join(transactionRoot, "manifest.json"),
         `${JSON.stringify(manifest, null, 2)}\n`,
-    )
+    );
     return {
         root,
         directory: transactionRoot,
         manifest,
         entries: new Map(),
-    }
+    };
 }
 
 /** Stage one destination write and keep the manifest durable as work progresses. */
@@ -360,25 +360,25 @@ async function stageTransactionWrite(
     destination: string,
     content: string,
 ): Promise<void> {
-    const relative = path.relative(transaction.root, destination)
+    const relative = path.relative(transaction.root, destination);
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-        throw new Error("transaction destination escaped change root")
+        throw new Error("transaction destination escaped change root");
     }
-    const staged = path.join(transaction.directory, "files", relative)
-    await writeFileAtomic(staged, content)
+    const staged = path.join(transaction.directory, "files", relative);
+    await writeFileAtomic(staged, content);
     const entry: TransactionEntry = {
         destination: relative,
         staged: path.relative(transaction.directory, staged),
         hash: contentHash(content),
-    }
-    transaction.entries.set(relative, entry)
+    };
+    transaction.entries.set(relative, entry);
     transaction.manifest.entries = [...transaction.entries.values()].sort((left, right) =>
         left.destination.localeCompare(right.destination),
-    )
+    );
     await writeFileAtomic(
         path.join(transaction.directory, "manifest.json"),
         `${JSON.stringify(transaction.manifest, null, 2)}\n`,
-    )
+    );
 }
 
 /** Publish a prepared transaction idempotently, with run state last. */
@@ -388,122 +388,122 @@ async function publishTransaction(
     root: string,
 ): Promise<void> {
     if (manifest.version !== 1 || !Array.isArray(manifest.entries)) {
-        throw new Error("invalid SpecOps transaction manifest")
+        throw new Error("invalid SpecOps transaction manifest");
     }
     const entries = [...manifest.entries].sort(
         (left, right) =>
             Number(left.destination === RUN_STATE_FILE) -
                 Number(right.destination === RUN_STATE_FILE) ||
             left.destination.localeCompare(right.destination),
-    )
+    );
     for (const entry of entries) {
-        const destination = path.join(root, entry.destination)
-        const staged = path.join(transactionRoot, entry.staged)
-        let currentHash: string | undefined
+        const destination = path.join(root, entry.destination);
+        const staged = path.join(transactionRoot, entry.staged);
+        let currentHash: string | undefined;
         try {
-            currentHash = contentHash(await readFile(destination, "utf8"))
+            currentHash = contentHash(await readFile(destination, "utf8"));
         } catch {
             // The destination may not have been published yet.
         }
-        if (currentHash === entry.hash) continue
-        let stagedContent: string
+        if (currentHash === entry.hash) continue;
+        let stagedContent: string;
         try {
-            stagedContent = await readFile(staged, "utf8")
+            stagedContent = await readFile(staged, "utf8");
         } catch {
-            throw new Error(`transaction entry is missing: ${entry.destination}`)
+            throw new Error(`transaction entry is missing: ${entry.destination}`);
         }
         if (contentHash(stagedContent) !== entry.hash) {
-            throw new Error(`transaction entry hash mismatch: ${entry.destination}`)
+            throw new Error(`transaction entry hash mismatch: ${entry.destination}`);
         }
-        await writeFileAtomic(destination, stagedContent)
+        await writeFileAtomic(destination, stagedContent);
     }
 }
 
 /** Complete a transaction or discard an empty/uncommitted transaction. */
 async function finishTransaction(transaction: RunTransaction): Promise<void> {
     if (transaction.entries.size === 0) {
-        await rm(transaction.directory, { recursive: true, force: true })
-        return
+        await rm(transaction.directory, { recursive: true, force: true });
+        return;
     }
-    transaction.manifest.status = "prepared"
+    transaction.manifest.status = "prepared";
     await writeFileAtomic(
         path.join(transaction.directory, "manifest.json"),
         `${JSON.stringify(transaction.manifest, null, 2)}\n`,
-    )
-    await publishTransaction(transaction.manifest, transaction.directory, transaction.root)
-    await rm(transaction.directory, { recursive: true, force: true })
+    );
+    await publishTransaction(transaction.manifest, transaction.directory, transaction.root);
+    await rm(transaction.directory, { recursive: true, force: true });
 }
 
 /** Recover prepared transactions left by a process that died during publication. */
 async function recoverTransactions(root: string): Promise<void> {
-    const transactionsRoot = path.join(root, TRANSACTION_DIR)
-    let names: string[]
+    const transactionsRoot = path.join(root, TRANSACTION_DIR);
+    let names: string[];
     try {
-        names = await readdir(transactionsRoot)
+        names = await readdir(transactionsRoot);
     } catch {
-        return
+        return;
     }
     for (const name of names.sort()) {
-        const transactionRoot = path.join(transactionsRoot, name)
-        const manifestPath = path.join(transactionRoot, "manifest.json")
-        let manifest: TransactionManifest
+        const transactionRoot = path.join(transactionsRoot, name);
+        const manifestPath = path.join(transactionRoot, "manifest.json");
+        let manifest: TransactionManifest;
         try {
-            manifest = JSON.parse(await readFile(manifestPath, "utf8")) as TransactionManifest
+            manifest = JSON.parse(await readFile(manifestPath, "utf8")) as TransactionManifest;
         } catch {
-            const stagedFiles = await readdir(path.join(transactionRoot, "files")).catch(() => [])
+            const stagedFiles = await readdir(path.join(transactionRoot, "files")).catch(() => []);
             if (stagedFiles.length === 0) {
-                await rm(transactionRoot, { recursive: true, force: true })
-                continue
+                await rm(transactionRoot, { recursive: true, force: true });
+                continue;
             }
-            throw new Error(`SpecOps transaction manifest is unreadable: ${name}`)
+            throw new Error(`SpecOps transaction manifest is unreadable: ${name}`);
         }
         if (manifest.status === "open") {
-            await rm(transactionRoot, { recursive: true, force: true })
-            continue
+            await rm(transactionRoot, { recursive: true, force: true });
+            continue;
         }
-        await publishTransaction(manifest, transactionRoot, root)
-        await rm(transactionRoot, { recursive: true, force: true })
+        await publishTransaction(manifest, transactionRoot, root);
+        await rm(transactionRoot, { recursive: true, force: true });
     }
-    await rm(transactionsRoot, { recursive: true, force: true })
+    await rm(transactionsRoot, { recursive: true, force: true });
 }
 
 /** Reclaim only a sufficiently old lock whose owner is gone or malformed. */
 async function reclaimDeadLock(lockPath: string): Promise<boolean> {
-    let lockStat
+    let lockStat;
     try {
-        lockStat = await stat(lockPath)
+        lockStat = await stat(lockPath);
     } catch {
-        return false
+        return false;
     }
 
-    if (Date.now() - lockStat.mtimeMs < LOCK_STALE_MS) return false
+    if (Date.now() - lockStat.mtimeMs < LOCK_STALE_MS) return false;
 
-    let owner: Partial<RunLock> | undefined
+    let owner: Partial<RunLock> | undefined;
     try {
         owner = JSON.parse(
             await readFile(path.join(lockPath, "owner.json"), "utf8"),
-        ) as Partial<RunLock>
+        ) as Partial<RunLock>;
     } catch {
         // An owner file may be absent or malformed if the process died during acquisition.
     }
 
     if (owner?.pid !== undefined) {
         try {
-            process.kill(owner.pid, 0)
-            return false
+            process.kill(owner.pid, 0);
+            return false;
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false;
         }
     }
 
-    const quarantine = `${lockPath}.reclaim-${randomUUID()}`
+    const quarantine = `${lockPath}.reclaim-${randomUUID()}`;
     try {
-        await rename(lockPath, quarantine)
+        await rename(lockPath, quarantine);
     } catch {
-        return false
+        return false;
     }
-    await rm(quarantine, { recursive: true, force: true })
-    return true
+    await rm(quarantine, { recursive: true, force: true });
+    return true;
 }
 
 /**
@@ -519,7 +519,7 @@ async function reclaimDeadLock(lockPath: string): Promise<boolean> {
  * @returns Resolves when the atomic write has completed.
  */
 export async function writeRun(directory: string, change: string, state: RunState): Promise<void> {
-    await writeRunIn(changeRoot(directory, change), state)
+    await writeRunIn(changeRoot(directory, change), state);
 }
 
 /**
@@ -534,24 +534,24 @@ export async function writeRun(directory: string, change: string, state: RunStat
  * @returns Resolves when the atomic write has completed.
  */
 export async function writeRunIn(changeDir: string, state: RunState): Promise<void> {
-    state.schedulerHistory ??= []
-    const destination = path.join(changeDir, "specops-run.json")
-    let currentRevision = -1
+    state.schedulerHistory ??= [];
+    const destination = path.join(changeDir, "specops-run.json");
+    let currentRevision = -1;
     try {
-        const current = JSON.parse(await readFile(destination, "utf8")) as { revision?: unknown }
-        if (typeof current.revision === "number") currentRevision = current.revision
+        const current = JSON.parse(await readFile(destination, "utf8")) as { revision?: unknown };
+        if (typeof current.revision === "number") currentRevision = current.revision;
     } catch {
         // A newly-created run has no persisted revision yet.
     }
     if (currentRevision >= 0 && state.revision !== currentRevision) {
         throw new Error(
             `SpecOps run revision conflict: expected ${state.revision}, found ${currentRevision}`,
-        )
+        );
     }
-    state.revision = currentRevision < 0 ? (state.revision ?? 0) : currentRevision + 1
-    state.updatedAt = new Date().toISOString()
-    validateRunState(state)
-    await atomicWrite(destination, `${JSON.stringify(state, null, 2)}\n`)
+    state.revision = currentRevision < 0 ? (state.revision ?? 0) : currentRevision + 1;
+    state.updatedAt = new Date().toISOString();
+    validateRunState(state);
+    await atomicWrite(destination, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 /**
@@ -569,7 +569,7 @@ export async function writeRunIn(changeDir: string, state: RunState): Promise<vo
  * @throws If the file is missing or contains JSON that fails any invariant.
  */
 export async function readRun(directory: string, change: string): Promise<RunState> {
-    return readRunIn(changeRoot(directory, change))
+    return readRunIn(changeRoot(directory, change));
 }
 
 /**
@@ -585,9 +585,9 @@ export async function readRun(directory: string, change: string): Promise<RunSta
 export async function readRunIn(changeDir: string): Promise<RunState> {
     const raw: unknown = JSON.parse(
         await readFile(path.join(changeDir, "specops-run.json"), "utf8"),
-    )
+    );
 
-    return validateRunState(raw)
+    return validateRunState(raw);
 }
 
 /** Validate the current persisted run-state shape and all status invariants. */
@@ -610,23 +610,23 @@ function validateRunState(raw: unknown): RunState {
             "cancelled",
         ].includes(raw.status)
     ) {
-        const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable"
+        const version = isRecord(raw) ? String(raw.version ?? "missing") : "unreadable";
         throw new Error(
             `invalid SpecOps run state (expected version 7 with a numeric revision; found ${version})`,
-        )
+        );
     }
-    const value = raw as RunState
+    const value = raw as RunState;
 
     if (value.archivedAt !== undefined) {
         if (!isIsoTimestamp(value.archivedAt)) {
-            throw new Error("invalid SpecOps archive timestamp")
+            throw new Error("invalid SpecOps archive timestamp");
         }
         if (value.status !== "completed") {
-            throw new Error("archivedAt may only be set on a completed run")
+            throw new Error("archivedAt may only be set on a completed run");
         }
     }
     if (value.archiveError !== undefined) {
-        const failure = value.archiveError
+        const failure = value.archiveError;
         if (
             !isRecord(failure) ||
             !isPositiveInteger(failure.attempt) ||
@@ -637,73 +637,77 @@ function validateRunState(raw: unknown): RunState {
             typeof failure.kind !== "string" ||
             !ARCHIVE_ERROR_KINDS.has(failure.kind)
         ) {
-            throw new Error("invalid SpecOps archive error state")
+            throw new Error("invalid SpecOps archive error state");
         }
         if (value.status !== "archive_failed") {
-            throw new Error("archive errors may only be recorded for an archive_failed run")
+            throw new Error("archive errors may only be recorded for an archive_failed run");
         }
     }
 
-    const issuedCount = value.dispatches.filter(dispatch => dispatch.status === "issued").length
+    const issuedCount = value.dispatches.filter(dispatch => dispatch.status === "issued").length;
     if (issuedCount > 1) {
         throw new Error(
             `invalid SpecOps run state: ${issuedCount} issued dispatches found; maximum is 1`,
-        )
+        );
     }
     if (value.status !== "running" && value.status !== "paused" && issuedCount > 0) {
-        throw new Error(`invalid SpecOps run state: terminal state ${value.status} has issued work`)
+        throw new Error(
+            `invalid SpecOps run state: terminal state ${value.status} has issued work`,
+        );
     }
 
-    const validPauseReasons = new Set(["pending-question", "question-dismissed", "checkpoint"])
+    const validPauseReasons = new Set(["pending-question", "question-dismissed", "checkpoint"]);
 
     switch (value.status) {
         case "running":
             if (value.pauseReason !== undefined) {
-                throw new Error("running state must not have a pause reason")
+                throw new Error("running state must not have a pause reason");
             }
             if (value.resumable === true) {
-                throw new Error("running state must not be resumable")
+                throw new Error("running state must not be resumable");
             }
             if (value.outcome !== undefined) {
-                throw new Error("running state must not have a terminal outcome")
+                throw new Error("running state must not have a terminal outcome");
             }
             if (value.pendingCheckpoint) {
-                throw new Error("running state must not have a pending checkpoint")
+                throw new Error("running state must not have a pending checkpoint");
             }
             if (value.pendingQuestions) {
-                throw new Error("running state must not have pending questions")
+                throw new Error("running state must not have pending questions");
             }
-            break
+            break;
 
         case "paused":
             if (!value.pauseReason || !validPauseReasons.has(value.pauseReason)) {
                 throw new Error(
                     "paused state requires a valid pause reason: " +
                         "pending-question, question-dismissed, or checkpoint",
-                )
+                );
             }
             if (value.resumable !== true) {
-                throw new Error("paused state must be resumable")
+                throw new Error("paused state must be resumable");
             }
             if (value.outcome !== undefined) {
-                throw new Error("paused state must not have a terminal outcome")
+                throw new Error("paused state must not have a terminal outcome");
             }
             if (value.pauseReason === "checkpoint") {
                 if (!value.pendingCheckpoint) {
-                    throw new Error("checkpoint-paused state requires a pending checkpoint")
+                    throw new Error("checkpoint-paused state requires a pending checkpoint");
                 }
                 if (value.pendingQuestions) {
-                    throw new Error("checkpoint-paused state must not also have pending questions")
+                    throw new Error("checkpoint-paused state must not also have pending questions");
                 }
             } else {
                 if (!value.pendingQuestions || value.pendingQuestions.length === 0) {
-                    throw new Error("question-paused state requires pending questions")
+                    throw new Error("question-paused state requires pending questions");
                 }
                 if (value.pendingCheckpoint) {
-                    throw new Error("question-paused state must not also have a pending checkpoint")
+                    throw new Error(
+                        "question-paused state must not also have a pending checkpoint",
+                    );
                 }
             }
-            break
+            break;
 
         case "passed":
         case "archiving":
@@ -711,45 +715,45 @@ function validateRunState(raw: unknown): RunState {
         case "archive_failed":
         case "cancelled":
             if (value.pendingQuestions) {
-                throw new Error(`terminal state (${value.status}) must not have pending questions`)
+                throw new Error(`terminal state (${value.status}) must not have pending questions`);
             }
             if (value.pendingCheckpoint) {
                 throw new Error(
                     `terminal state (${value.status}) must not have a pending checkpoint`,
-                )
+                );
             }
             if (value.resumable === true) {
-                throw new Error(`terminal state (${value.status}) must not be resumable`)
+                throw new Error(`terminal state (${value.status}) must not be resumable`);
             }
             if (!value.outcome) {
-                throw new Error(`terminal state (${value.status}) requires an outcome`)
+                throw new Error(`terminal state (${value.status}) requires an outcome`);
             }
             if (value.outcome.category !== "completed" && value.status !== "cancelled") {
-                throw new Error(`${value.status} state requires outcome category 'completed'`)
+                throw new Error(`${value.status} state requires outcome category 'completed'`);
             }
             if (value.status === "cancelled" && value.outcome.category !== "cancelled") {
-                throw new Error("cancelled state requires outcome category 'cancelled'")
+                throw new Error("cancelled state requires outcome category 'cancelled'");
             }
             if (value.status === "archiving" && value.archiveError !== undefined) {
-                throw new Error("archiving state must not carry an archive error")
+                throw new Error("archiving state must not carry an archive error");
             }
             if (value.status === "archiving" && value.archivedAt !== undefined) {
-                throw new Error("archiving state must not be marked archived")
+                throw new Error("archiving state must not be marked archived");
             }
             if (value.status === "completed" && value.archiveError !== undefined) {
-                throw new Error("completed state must not carry an archive error")
+                throw new Error("completed state must not carry an archive error");
             }
             if (value.status === "archive_failed" && value.archiveError === undefined) {
-                throw new Error("archive_failed state requires an archive error")
+                throw new Error("archive_failed state requires an archive error");
             }
             if (value.status === "archive_failed" && value.archivedAt !== undefined) {
-                throw new Error("archive_failed state must not be marked archived")
+                throw new Error("archive_failed state must not be marked archived");
             }
             if (value.status === "passed" && value.archiveError !== undefined) {
-                throw new Error("passed state must not carry an archive error")
+                throw new Error("passed state must not carry an archive error");
             }
             if (value.status === "passed" && value.archivedAt !== undefined) {
-                throw new Error("passed state must not be marked archived")
+                throw new Error("passed state must not be marked archived");
             }
             if (
                 value.status === "passed" ||
@@ -758,27 +762,27 @@ function validateRunState(raw: unknown): RunState {
                 value.status === "archive_failed" ||
                 value.status === "cancelled"
             )
-                break
+                break;
         // fall through for blocked/failed:
         // eslint-disable-next-line no-fallthrough
         case "blocked":
         case "failed":
             if (value.pendingQuestions) {
-                throw new Error(`terminal state (${value.status}) must not have pending questions`)
+                throw new Error(`terminal state (${value.status}) must not have pending questions`);
             }
             if (value.pendingCheckpoint) {
                 throw new Error(
                     `terminal state (${value.status}) must not have a pending checkpoint`,
-                )
+                );
             }
             if (value.resumable === true) {
-                throw new Error(`terminal state (${value.status}) must not be resumable`)
+                throw new Error(`terminal state (${value.status}) must not be resumable`);
             }
             if (!value.outcome) {
-                throw new Error(`terminal state (${value.status}) requires an outcome`)
+                throw new Error(`terminal state (${value.status}) requires an outcome`);
             }
             if (value.status === "blocked" && value.outcome.category !== "policy-blocked") {
-                throw new Error("blocked state requires outcome category 'policy-blocked'")
+                throw new Error("blocked state requires outcome category 'policy-blocked'");
             }
             if (
                 value.status === "failed" &&
@@ -789,17 +793,17 @@ function validateRunState(raw: unknown): RunState {
                 throw new Error(
                     "failed state requires outcome category " +
                         "'validation-failed', 'review-failed', or 'internal-error'",
-                )
+                );
             }
-            break
+            break;
     }
 
-    return value
+    return value;
 }
 
 /** Return whether a parsed run record has every required current-format collection and snapshot. */
 function isCurrentRunStateShape(value: unknown): value is Record<string, unknown> {
-    if (!isRecord(value)) return false
+    if (!isRecord(value)) return false;
     if (
         !Array.isArray(value.reviewSubmissions) ||
         !Array.isArray(value.repairTasks) ||
@@ -812,11 +816,11 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         !isRecord(value.frontierPolicy) ||
         !isRecord(value.frontierUsage)
     ) {
-        return false
+        return false;
     }
-    const policy = value.frontierPolicy
-    const usage = value.frontierUsage
-    const budgets = value.budgetUsage
+    const policy = value.frontierPolicy;
+    const usage = value.frontierUsage;
+    const budgets = value.budgetUsage;
     return (
         Object.values(budgets).every(isNonNegativeInteger) &&
         Array.isArray(value.dispatches) &&
@@ -834,25 +838,25 @@ function isCurrentRunStateShape(value: unknown): value is Record<string, unknown
         isNonNegativeInteger(usage.escalations) &&
         isNonNegativeInteger(usage.dispatches) &&
         isNonNegativeInteger(usage.highDispatches)
-    )
+    );
 }
 
 /** Return whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Return whether a persisted run has the complete current confidence profile. */
 function isConfidenceProfile(value: unknown): boolean {
-    if (!isRecord(value)) return false
+    if (!isRecord(value)) return false;
     return ["requirements", "repository", "design", "implementation", "verification"].every(
         key => value[key] === "low" || value[key] === "medium" || value[key] === "high",
-    )
+    );
 }
 
 /** Return whether a value is an integer counter that cannot be negative. */
 function isNonNegativeInteger(value: unknown): value is number {
-    return typeof value === "number" && Number.isInteger(value) && value >= 0
+    return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 /** Allowed structured archive failure categories. */
@@ -865,16 +869,16 @@ const ARCHIVE_ERROR_KINDS = new Set([
     "path_conflict",
     "missing_change",
     "already_archived",
-])
+]);
 
 /** Return whether a value is an ISO-8601 timestamp. */
 function isIsoTimestamp(value: unknown): value is string {
-    return typeof value === "string" && !Number.isNaN(Date.parse(value))
+    return typeof value === "string" && !Number.isNaN(Date.parse(value));
 }
 
 /** Return whether a value is a strictly positive integer. */
 function isPositiveInteger(value: unknown): value is number {
-    return typeof value === "number" && Number.isInteger(value) && value > 0
+    return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 /** Error raised when a pre-V1 scheduler run is found in a V1 run location. */
@@ -882,8 +886,8 @@ export class LegacyRunStateError extends Error {
     constructor() {
         super(
             "Legacy SpecOps run state is incompatible with SpecOps 1.0 and cannot be resumed. Start a new V1 run; existing artifacts and repository changes are preserved.",
-        )
-        this.name = "LegacyRunStateError"
+        );
+        this.name = "LegacyRunStateError";
     }
 }
 
@@ -892,37 +896,37 @@ export async function createV1Run(
     directory: string,
     input: CreateRunStateInput,
 ): Promise<V1RunState> {
-    const destination = runStatePath(directory, input.change)
-    const state = createRunState(input)
-    const temporary = `${destination}.${randomUUID()}.create`
-    await writeFileAtomic(temporary, `${JSON.stringify(state, null, 2)}\n`)
+    const destination = runStatePath(directory, input.change);
+    const state = createRunState(input);
+    const temporary = `${destination}.${randomUUID()}.create`;
+    await writeFileAtomic(temporary, `${JSON.stringify(state, null, 2)}\n`);
     try {
-        await link(temporary, destination)
+        await link(temporary, destination);
     } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-            throw new Error(`SpecOps V1 run already exists for change ${input.change}`)
+            throw new Error(`SpecOps V1 run already exists for change ${input.change}`);
         }
-        throw error
+        throw error;
     } finally {
-        await unlink(temporary).catch(() => undefined)
+        await unlink(temporary).catch(() => undefined);
     }
-    return state
+    return state;
 }
 
 /** Read and validate a coarse V1 run, rejecting all legacy state formats. */
 export async function readV1Run(directory: string, change: string): Promise<V1RunState> {
-    const destination = runStatePath(directory, change)
-    let raw: unknown
+    const destination = runStatePath(directory, change);
+    let raw: unknown;
     try {
-        raw = JSON.parse(await readFile(destination, "utf8"))
+        raw = JSON.parse(await readFile(destination, "utf8"));
     } catch (error) {
         if (error instanceof SyntaxError) {
-            throw new Error(`invalid SpecOps V1 run state JSON for ${change}`)
+            throw new Error(`invalid SpecOps V1 run state JSON for ${change}`);
         }
-        throw error
+        throw error;
     }
-    if (isLegacyRunState(raw)) throw new LegacyRunStateError()
-    return parseRunState(raw)
+    if (isLegacyRunState(raw)) throw new LegacyRunStateError();
+    return parseRunState(raw);
 }
 
 /**
@@ -936,18 +940,18 @@ export async function updateV1Run(
     change: string,
     update: (state: V1RunState) => V1RunState,
 ): Promise<V1RunState> {
-    const current = await readV1Run(directory, change)
+    const current = await readV1Run(directory, change);
     if (isTerminalRunStatus(current.status)) {
-        throw new Error(`cannot continue terminal SpecOps V1 run (${current.status})`)
+        throw new Error(`cannot continue terminal SpecOps V1 run (${current.status})`);
     }
     const next = assertRunState({
         ...update(current),
         change: current.change,
         startedAt: current.startedAt,
         updatedAt: new Date().toISOString(),
-    })
-    await writeFileAtomic(runStatePath(directory, change), `${JSON.stringify(next, null, 2)}\n`)
-    return next
+    });
+    await writeFileAtomic(runStatePath(directory, change), `${JSON.stringify(next, null, 2)}\n`);
+    return next;
 }
 
 /** Cancel an active V1 run while preserving all artifacts, changes, and evidence. */
@@ -956,7 +960,7 @@ export async function cancelV1Run(directory: string, change: string): Promise<V1
         ...state,
         status: "cancelled",
         failure: null,
-    }))
+    }));
 }
 
 /** Return whether a parsed record is recognisably from the pre-V1 scheduler. */
@@ -968,7 +972,7 @@ function isLegacyRunState(value: unknown): boolean {
             "requirements" in value ||
             "schedulerHistory" in value ||
             "capabilities" in value)
-    )
+    );
 }
 
 /**
@@ -992,7 +996,7 @@ export async function writeMachine(
     await atomicWrite(
         path.join(changeRoot(directory, change), file),
         `${JSON.stringify(value, null, 2)}\n`,
-    )
+    );
 }
 
 /**
@@ -1017,9 +1021,9 @@ export async function readMachine<T>(
     try {
         return JSON.parse(
             await readFile(path.join(changeRoot(directory, change), file), "utf8"),
-        ) as T
+        ) as T;
     } catch {
-        return fallback
+        return fallback;
     }
 }
 
@@ -1045,12 +1049,12 @@ export async function writeTextAtomic(
     content: string,
 ): Promise<void> {
     if (path.isAbsolute(relative) || relative.split(/[\\/]/).includes("..")) {
-        throw new Error("unsafe artifact path")
+        throw new Error("unsafe artifact path");
     }
-    const root = changeRoot(directory, change)
-    const target = path.resolve(root, relative)
+    const root = changeRoot(directory, change);
+    const target = path.resolve(root, relative);
     if (!target.startsWith(`${root}${path.sep}`)) {
-        throw new Error("artifact escaped change root")
+        throw new Error("artifact escaped change root");
     }
-    await atomicWrite(target, `${content.trim()}\n`)
+    await atomicWrite(target, `${content.trim()}\n`);
 }
