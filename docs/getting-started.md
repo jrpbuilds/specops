@@ -176,9 +176,6 @@ After clean installation and onboarding, expect:
 - `specops-manifest.json` in the OpenCode config directory;
 - `specops.json` in the OpenCode config directory containing the complete global defaults;
 - repository `openspec/config.yaml`;
-- repository `openspec/schemas/specops-lean/`;
-- repository `openspec/schemas/specops-standard/`;
-- repository `openspec/schemas/specops/`.
 
 No manually copied prompt files or agent definitions are required; prompts are embedded in the
 packaged runtime configuration.

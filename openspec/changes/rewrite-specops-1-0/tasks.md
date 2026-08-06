@@ -15,17 +15,17 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 2. Phase 1 — OpenSpec 1.7 adapter and standard onboarding
 
-- [ ] 2.1 Extract shell-free `runProcess` and atomic-write primitives into dependency-free modules (`src/git.ts` kept; `src/state/atomic.ts` extracted)
-- [ ] 2.2 Create `src/openspec/version.ts`: parse `openspec --version`; enforce `>=1.7.0 <1.8.0`; reject 1.6, 1.8, and malformed output with remediation
-- [ ] 2.3 Create `src/openspec/schema.ts`: `getProjectSchema`/`assertStandardSchema` via `schemas --json` and `status --json schemaName`; reject non-`spec-driven` without mutating schema files
-- [ ] 2.4 Create `src/openspec/status.ts`, `instructions.ts`, `validation.ts`, `archive.ts` typed result modules over `--json` output
-- [ ] 2.5 Create `src/openspec/adapter.ts` aggregating the typed operations behind one `OpenSpecAdapter`; route all OpenSpec calls through it; report operational failures distinct from artifact validation failures
-- [ ] 2.6 Rewrite `scripts/onboard.mjs` to invoke `openspec init --tools opencode`, verify `openspec/config.yaml` + `spec-driven`, and stop copying bundled schemas
-- [ ] 2.7 Rewrite the `/specops-onboard` command template to call the new onboarding path
-- [ ] 2.8 Delete `schemas/specops/`, `schemas/specops-lean/`, `schemas/specops-standard/` and remove their references from `package.json`, build scripts, generated checks, and docs
-- [ ] 2.9 Remove the `validate:openspec` script; add `test:openspec:compat` against the installed 1.7.0 standard schema; update `check`
-- [ ] 2.10 Write `tests/openspec-adapter.test.ts` covering version accept/reject, schema detect/reject-without-mutation, status/instructions/validate/archive JSON parsing, operational failures, malformed JSON, and standard onboarding
-- [ ] 2.11 Verify Phase 1: adapter tests pass against installed `@fission-ai/openspec@1.7.0`; no custom schema files remain in the package; `/specops-onboard` produces a standard `openspec/config.yaml`
+- [x] 2.1 Extract shell-free `runProcess` and atomic-write primitives into dependency-free modules (`src/git.ts` kept; `src/state/atomic.ts` extracted)
+- [x] 2.2 Create `src/openspec/version.ts`: parse `openspec --version`; enforce `>=1.7.0 <1.8.0`; reject 1.6, 1.8, and malformed output with remediation
+- [x] 2.3 Create `src/openspec/schema.ts`: `getProjectSchema`/`assertStandardSchema` via `schemas --json` and `status --json schemaName`; reject non-`spec-driven` without mutating schema files
+- [x] 2.4 Create `src/openspec/status.ts`, `instructions.ts`, `validation.ts`, `archive.ts` typed result modules over `--json` output
+- [x] 2.5 Create `src/openspec/adapter.ts` aggregating the typed operations behind one `OpenSpecAdapter`; route all OpenSpec calls through it; report operational failures distinct from artifact validation failures
+- [x] 2.6 Rewrite `scripts/onboard.mjs` to invoke `openspec init --tools opencode`, verify `openspec/config.yaml` + `spec-driven`, and stop copying bundled schemas
+- [x] 2.7 Rewrite the `/specops-onboard` command template to call the new onboarding path
+- [x] 2.8 Delete `schemas/specops/`, `schemas/specops-lean/`, `schemas/specops-standard/` and remove their references from `package.json`, build scripts, generated checks, and docs
+- [x] 2.9 Remove the `validate:openspec` script; add `test:openspec:compat` against the installed 1.7.0 standard schema; update `check`
+- [x] 2.10 Write `tests/openspec-adapter.test.ts` covering version accept/reject, schema detect/reject-without-mutation, status/instructions/validate/archive JSON parsing, operational failures, malformed JSON, and standard onboarding
+- [x] 2.11 Verify Phase 1: adapter tests pass against installed `@fission-ai/openspec@1.7.0`; no custom schema files remain in the package; `/specops-onboard` produces a standard `openspec/config.yaml`
 
 ## 3. Phase 2 — Agent catalogue, prompts, and model manifest
 
