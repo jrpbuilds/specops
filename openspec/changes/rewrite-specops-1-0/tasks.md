@@ -29,20 +29,20 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 3. Phase 2 — Agent catalogue, prompts, and model manifest
 
-- [ ] 3.1 Create `src/agents/ids.ts` with exactly the seven final agent IDs
-- [ ] 3.2 Create `src/agents/registry.ts` with least-privilege `AgentPolicy` per the spec §20 permission table (coordinator-only dispatch+question; implementer-only source edit; no recursive dispatch)
-- [ ] 3.3 Create `src/agents/permissions.ts` defining per-agent native `edit` permission (`"ask"` for planner/designer/explorer/reviewer, `"allow"` for implementer, `"deny"` for coordinator/frontier) and the owned-path set resolver used by the `permission.ask` hook
-- [ ] 3.4 Register the OpenCode `permission.ask` hook to inspect edit path patterns against the active agent's owned-path set, returning `"allow"` for owned paths and `"deny"` otherwise; document the fallback (deny native edit + `specops_write_artifact` tool) only if the hook cannot expose path patterns in a packed install
-- [ ] 3.4 Create the seven Markdown prompt files under `prompts/` (coordinator, explorer, planner, designer, implementer, reviewer, frontier) defining role, allowed/prohibited actions, required evidence, question rules, output expectations, blocker reporting, frontier behaviour
-- [ ] 3.5 Create `src/prompts/loader.ts` to load packaged Markdown reliably from source and packed installs; fail on missing files
-- [ ] 3.6 Create `src/prompts/renderer.ts` with fail-strict named-placeholder rendering (reject missing required values and unresolved placeholders; no loops/conditionals/inheritance; delimit trusted from untrusted content)
-- [ ] 3.7 Create `src/agents/manifest.ts` with `SpecOpsManifest { version: 3, agents: Record<SevenRoles, {model?, variant?}> }` and `validateManifest` asserting the exact seven roles
-- [ ] 3.8 Update `src/installation.ts` to migrate v2 24-agent manifests to v3 seven-role (preserve obvious mappings, map interactive controller→coordinator, pick one frontier model, discard obsolete roles, report ambiguous mappings); never preserve old permissions or step policy
-- [ ] 3.9 Update `src/model-settings.ts` and `src/tui.ts` to show only the seven roles; preserve provider/model/variant selection
-- [ ] 3.10 Add `prompts/**/*.md` to `package.json files[]`; update `scripts/test-packed-install.mjs` to assert prompt files are present and loadable
-- [ ] 3.11 Delete `src/prompts.generated.ts` and `scripts/generate-contracts.mjs`; migrate every Phase 2-owned consumer to `src/agents/` and ensure no V1 module imports `src/capabilities/`. Leave `src/capabilities/` unchanged and unextended solely for retained legacy scheduler, workflow, orchestrator, manifest, model-settings, and TUI consumers; delete it in Phase 9.
-- [ ] 3.12 Write `tests/agents.test.ts`, `tests/prompts.test.ts`, and `tests/manifest.test.ts` (exact catalogue, permissions, no recursive dispatch, prompt files, packed loading, placeholder rendering, unresolved/missing-value rejection, v3 defaults, v2→v3 migration, stale catalogue rejection, TUI role list, no obsolete IDs in packaged output)
-- [ ] 3.13 Verify Phase 2: exactly seven agents registered; prompts load from a packed install; no obsolete agent IDs appear in packaged output
+- [x] 3.1 Create `src/agents/ids.ts` with exactly the seven final agent IDs
+- [x] 3.2 Create `src/agents/registry.ts` with least-privilege `AgentPolicy` per the spec §20 permission table (coordinator-only dispatch+question; implementer-only source edit; no recursive dispatch)
+- [x] 3.3 Create `src/agents/permissions.ts` defining per-agent native `edit` permission (`"ask"` for planner/designer/explorer/reviewer, `"allow"` for implementer, `"deny"` for coordinator/frontier) and the owned-path set resolver used by the `permission.ask` hook
+- [x] 3.4 Register the OpenCode `permission.ask` hook to inspect edit path patterns against the active agent's owned-path set, returning `"allow"` for owned paths and `"deny"` otherwise; document the fallback (deny native edit + `specops_write_artifact` tool) only if the hook cannot expose path patterns in a packed install
+- [x] 3.4 Create the seven Markdown prompt files under `prompts/` (coordinator, explorer, planner, designer, implementer, reviewer, frontier) defining role, allowed/prohibited actions, required evidence, question rules, output expectations, blocker reporting, frontier behaviour
+- [x] 3.5 Create `src/prompts/loader.ts` to load packaged Markdown reliably from source and packed installs; fail on missing files
+- [x] 3.6 Create `src/prompts/renderer.ts` with fail-strict named-placeholder rendering (reject missing required values and unresolved placeholders; no loops/conditionals/inheritance; delimit trusted from untrusted content)
+- [x] 3.7 Create `src/agents/manifest.ts` with `SpecOpsManifest { version: 3, agents: Record<SevenRoles, {model?, variant?}> }` and `validateManifest` asserting the exact seven roles
+- [x] 3.8 Update `src/installation.ts` to migrate v2 24-agent manifests to v3 seven-role (preserve obvious mappings, map interactive controller→coordinator, pick one frontier model, discard obsolete roles, report ambiguous mappings); never preserve old permissions or step policy
+- [x] 3.9 Update `src/model-settings.ts` and `src/tui.ts` to show only the seven roles; preserve provider/model/variant selection
+- [x] 3.10 Add `prompts/**/*.md` to `package.json files[]`; update `scripts/test-packed-install.mjs` to assert prompt files are present and loadable
+- [x] 3.11 Delete `src/prompts.generated.ts` and `scripts/generate-contracts.mjs`; migrate every Phase 2-owned consumer to `src/agents/` and ensure no V1 module imports `src/capabilities/`. Leave `src/capabilities/` unchanged and unextended solely for retained legacy scheduler, workflow, orchestrator, manifest, model-settings, and TUI consumers; delete it in Phase 9.
+- [x] 3.12 Write `tests/agents.test.ts`, `tests/prompts.test.ts`, and `tests/manifest.test.ts` (exact catalogue, permissions, no recursive dispatch, prompt files, packed loading, placeholder rendering, unresolved/missing-value rejection, v3 defaults, v2→v3 migration, stale catalogue rejection, TUI role list, no obsolete IDs in packaged output)
+- [x] 3.13 Verify Phase 2: exactly seven agents registered; prompts load from a packed install; active V1 catalogues, registered agents, manifest defaults, prompts, TUI, permission policies, command surfaces, and runtime dispatch surfaces contain no obsolete agent IDs. Allow obsolete IDs only in explicit V2-to-V3 migration mapping code/tests, untouched Phase 9 legacy modules, and historical migration documentation.
 
 ## 4. Phase 3 — Run state, repository identity, and validation evidence
 
@@ -123,7 +123,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 ## 10. Phase 9 — Legacy architecture removal
 
 - [ ] 10.1 Delete the old workflow engine modules (`src/workflow/{engine,scheduler,actions,directive,contracts,contracts.generated,archive,completion,interactive,questions,reviews,run-start,run-state,writer-guards,artifacts,previews,checkpoints}.ts`) after confirming no residual imports
-- [ ] 10.2 Delete `src/capabilities/` only after every retained legacy consumer is removed or migrated, then delete `src/protocol.ts` (replaced) and `scripts/evaluate-review-fixer.mjs`
+- [ ] 10.2 Delete `src/capabilities/` only after every retained legacy consumer is removed or migrated, then delete `src/protocol.ts` (replaced) and `scripts/evaluate-review-fixer.mjs`; verify legacy capability modules are absent from packaged output, obsolete IDs remain only where strictly required for one-time V2-to-V3 migration, and no obsolete ID is reachable through the active runtime or public package exports
 - [ ] 10.3 Delete `src/escalation/`, `src/frontier/`, `src/routing/`, `src/artifacts/`, and `src/evidence/registry.ts` (folded into `validation/registry.ts`)
 - [ ] 10.4 Rewrite `src/types.ts` to remove obsolete concepts (tiers, risk facets, capability IDs, dispatch purposes, frontier tiers, judgments, refutation, escalation claims, old repair modes, artifact invalidation graphs, checkpoint provenance)
 - [ ] 10.5 Rewrite `src/config.ts` as `src/config/{defaults,loader,schema,migration}.ts` exposing only the minimal V1 fields (seven-role model mappings and variants, OpenSpec command override, required validation commands, validation timeouts, bounded output capture, MCP integration toggle); keep correction/repair/transient-retry/frontier limits as internal constants in `src/workflow/limits.ts`; delete `src/config/fields.ts` and `src/config/sections.ts` after porting retained fields

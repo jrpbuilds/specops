@@ -15,8 +15,10 @@ SpecOps SHALL register exactly the agents `specops-coordinator`, `specops-explor
 
 #### Scenario: No obsolete agents remain
 
-- **WHEN** the packaged output is searched for obsolete agent ids
+- **WHEN** active V1 catalogues, registered agents, manifest defaults, prompts, TUI, permission policies, command surfaces, and runtime dispatch surfaces are inspected
 - **THEN** none of `specops-auto-controller`, `specops-assessor`, `specops-verifier`, `specops-repairer`, `specops-risk-reviewer`, `specops-correctness-judge`, `specops-compliance-judge`, `specops-review-refuter`, `specops-frontier-low`, `specops-frontier-high`, or any `specops-*-specialist` id are present
+
+Legacy identifiers MAY remain only in explicit V2-to-V3 migration mapping code and tests, untouched Phase 9 legacy modules, and historical migration documentation. They SHALL NOT be imported, registered, exposed, or executed through the V1 runtime.
 
 ### Requirement: Least-privilege permissions
 
