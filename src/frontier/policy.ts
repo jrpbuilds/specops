@@ -15,8 +15,7 @@ import type {
     RunState,
 } from "../types.js"
 import { parseEvidenceRef } from "../worker_output.js"
-// The canonical repair-mode set lives in the shared contracts module so the
-// generate-contracts script and frontier parser share the single source of truth.
+// The legacy frontier parser uses the canonical repair-mode set from contracts.
 import { REPAIR_MODES } from "../workflow/contracts.js"
 
 /** Result of applying frontier admission policy to a worker request. */

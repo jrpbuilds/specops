@@ -9,7 +9,6 @@ import { DEFAULT_CONFIG, type SpecOpsConfig } from "../src/config.js"
 import { applyEscalation, decideEscalation } from "../src/escalation/policy.js"
 import { readEvidenceRegistry } from "../src/evidence/registry.js"
 import { onboard } from "../src/openspec.js"
-import { promptText } from "../src/prompts.generated.js"
 import { requirementsFor, scopeForActualDiff } from "../src/routing/policy.js"
 import { changeRoot, readRun, writeRun } from "../src/state/store.js"
 import type { ArtifactId, Assessment, DispatchRecord, RunState } from "../src/types.js"
@@ -89,11 +88,6 @@ describe("compact Lean workflow", () => {
         "uses the same four-call path in %s mode",
         mode => {
             const state = leanState(mode)
-            const controller =
-                mode === "interactive"
-                    ? AGENT_IDS.controller.interactive
-                    : AGENT_IDS.controller.automatic
-            expect(promptText(controller)).toContain(AGENT_IDS.core.assessor)
             state.artifacts.routing = validArtifact(state, "routing")
             state.artifacts.exploration = validArtifact(state, "exploration")
 

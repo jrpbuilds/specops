@@ -2,8 +2,8 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { AGENT_IDS, ALL_AGENT_IDS } from "../src/capabilities/ids.js"
-import { AGENT_REGISTRY } from "../src/capabilities/registry.js"
+import { AGENT_IDS, ALL_AGENT_IDS } from "../src/agents/ids.js"
+import { AGENT_REGISTRY } from "../src/agents/registry.js"
 import {
     inspectAgentManifest,
     ManifestConflictError,
@@ -18,9 +18,9 @@ import {
     selectConfiguredModel,
     validateManifestSelections,
 } from "../src/model-settings.js"
-import { DEFAULT_MANIFEST, manifestAgentConfig, validateManifest } from "../src/manifest.js"
+import { DEFAULT_MANIFEST, manifestAgentConfig, validateManifest } from "../src/agents/manifest.js"
 
-describe("agent model manifest v2", () => {
+describe("agent model manifest v3", () => {
     it("accepts optional model and optional variant for every agent", () => {
         const valid = structuredClone(DEFAULT_MANIFEST)
         const first = ALL_AGENT_IDS[0]
@@ -34,7 +34,7 @@ describe("agent model manifest v2", () => {
 
         for (const invalid of [
             { ...valid, extra: true },
-            { ...valid, version: 1 },
+            { ...valid, version: 2 },
             {
                 ...valid,
                 agents: { ...valid.agents, [first]: { model: "x/y", steps: 10 } },
@@ -63,7 +63,7 @@ describe("agent model manifest v2", () => {
         const config = manifestAgentConfig(id, { model: "configured/model", variant: "high" })
         expect(config.model).toBe("configured/model")
         expect(config.variant).toBe("high")
-        expect(config.maxSteps).toBe(AGENT_REGISTRY[id].steps)
+        expect(config.maxSteps).toBe(AGENT_REGISTRY[id].maxSteps)
         expect(config.prompt).toBeTruthy()
         expect(config.mode).toBe(AGENT_REGISTRY[id].mode)
     })
@@ -76,7 +76,7 @@ describe("agent model manifest v2", () => {
         expect("variant" in config).toBe(false)
     })
 
-    it("replaces a legacy v1 manifest with current defaults (no upgrade prompt)", async () => {
+    it("replaces an unrecognised legacy manifest with current defaults", async () => {
         const directory = await mkdtemp(path.join(os.tmpdir(), "specops-v1-"))
         const destination = path.join(directory, "specops-manifest.json")
         const legacy = {
@@ -106,7 +106,7 @@ describe("agent model manifest v2", () => {
         expect(inspection.status).toBe("ready")
     })
 
-    it("creates missing v2 defaults and replaces non-legacy invalid data", async () => {
+    it("creates missing v3 defaults and replaces non-legacy invalid data", async () => {
         const directory = await mkdtemp(path.join(os.tmpdir(), "specops-v2-"))
         const destination = path.join(directory, "specops-manifest.json")
 
@@ -117,7 +117,7 @@ describe("agent model manifest v2", () => {
             DEFAULT_MANIFEST,
         )
 
-        await writeFile(destination, '{"version":2,"agents":{}}\n')
+        await writeFile(destination, '{"version":3,"agents":{}}\n')
         const repaired = await materializeAgentManifest(destination)
         expect(repaired.status).toBe("ready")
         expect(repaired.replacedInvalidFile).toBe(true)
@@ -189,13 +189,13 @@ describe("configured OpenCode model catalogue", () => {
     })
 
     it("groups mappings by functional agent family", () => {
-        expect(agentSettingsCategory(AGENT_IDS.controller.automatic)).toBe("Controllers")
-        expect(agentSettingsCategory(AGENT_IDS.core.planner)).toBe("Core workflow")
-        expect(agentSettingsCategory(AGENT_IDS.core.repairer)).toBe("Review, judgment and repair")
-        expect(agentSettingsCategory(AGENT_IDS.review.frontierLow)).toBe("Frontier escalation")
-        expect(agentSettingsCategory(AGENT_IDS.specialist.security)).toBe("Specialists")
+        expect(agentSettingsCategory(AGENT_IDS.coordinator)).toBe("Coordination")
+        expect(agentSettingsCategory(AGENT_IDS.planner)).toBe("Planning")
+        expect(agentSettingsCategory(AGENT_IDS.implementer)).toBe("Implementation")
+        expect(agentSettingsCategory(AGENT_IDS.reviewer)).toBe("Review")
+        expect(agentSettingsCategory(AGENT_IDS.frontier)).toBe("Frontier")
         // Packaged defaults are intentionally blank so the agent inherits OpenCode's global model.
-        expect(DEFAULT_MANIFEST.agents[AGENT_IDS.core.repairer].model).toBeUndefined()
+        expect(DEFAULT_MANIFEST.agents[AGENT_IDS.implementer].model).toBeUndefined()
     })
 
     it("retains available models and flags unavailable ones as unresolved", () => {
@@ -233,7 +233,7 @@ describe("configured OpenCode model catalogue", () => {
         expect(cleared.variant).toBe("high")
     })
 
-    it("preserves unavailable v2 selections so the user must resolve them", () => {
+    it("preserves unavailable v3 selections so the user must resolve them", () => {
         const current = structuredClone(DEFAULT_MANIFEST)
         current.agents[ALL_AGENT_IDS[0]] = {
             model: "temporarily/unavailable",

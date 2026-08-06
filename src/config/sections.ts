@@ -1,8 +1,7 @@
 import { asObject, assertKeys, isOneOf, positiveInteger } from "./fields.js"
 import type { RiskFacet } from "../types.js"
 import type { SpecOpsConfig } from "../config.js"
-// The canonical severity set lives in the shared contracts module so the
-// generate-contracts script and parser share the single source of truth.
+// The legacy parser uses the canonical severity set from contracts.
 import { SEVERITIES } from "../workflow/contracts.js"
 
 /** Set of valid {@link RiskFacet} values, used to validate routing overrides. */

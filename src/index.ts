@@ -1,11 +1,13 @@
 import type { Config, Plugin } from "@opencode-ai/plugin"
+import { ActiveAgentSessions, createPermissionAskHook } from "./agents/permission-hook.js"
+import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js"
+import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./agents/manifest.js"
 import {
     materializeAgentManifest,
     registerManifestAgents,
     resolveManifestPath,
 } from "./installation.js"
 import { materializeGlobalConfig } from "./config.js"
-import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./manifest.js"
 import { readConfig } from "./openspec.js"
 import { SpecOpsPlugin } from "./orchestrator.js"
 
@@ -45,6 +47,10 @@ export const SpecOpsPluginWithManifest: Plugin = async input => {
     const inner = await SpecOpsPlugin(input)
     const materialisation = await materializeAgentManifest()
     await materializeGlobalConfig()
+    const sessions = new ActiveAgentSessions()
+    const innerChatMessage = inner["chat.message"]
+    const innerPermissionAsk = inner["permission.ask"]
+    const permissionAsk = createPermissionAskHook(sessions)
 
     return {
         ...inner,
@@ -53,7 +59,21 @@ export const SpecOpsPluginWithManifest: Plugin = async input => {
             await inner.config?.(config)
             registerManifestAgents(config, materialisation.manifest, specOpsConfig.integrations.mcp)
         },
+        "chat.message": async (message, output) => {
+            if (message.agent && isAgentId(message.agent))
+                sessions.set(message.sessionID, message.agent)
+            await innerChatMessage?.(message, output)
+        },
+        "permission.ask": async (request, output) => {
+            await innerPermissionAsk?.(request, output)
+            await permissionAsk(request, output)
+        },
     }
+}
+
+/** Narrow a host-provided agent identifier to the V1 SpecOps catalogue. */
+function isAgentId(value: string): value is AgentId {
+    return ALL_AGENT_IDS.includes(value as AgentId)
 }
 
 /**

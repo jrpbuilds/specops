@@ -3,15 +3,15 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import type { Config } from "@opencode-ai/plugin"
-import { ALL_AGENT_IDS } from "./capabilities/ids.js"
-import { AGENT_REGISTRY } from "./capabilities/registry.js"
+import { ALL_AGENT_IDS, AGENT_IDS, type AgentId } from "./agents/ids.js"
+import { AGENT_REGISTRY } from "./agents/registry.js"
 import type { SpecOpsConfig } from "./config.js"
 import {
     DEFAULT_MANIFEST,
     manifestAgentConfig,
     validateManifest,
     type SpecOpsManifest,
-} from "./manifest.js"
+} from "./agents/manifest.js"
 
 type AgentConfig = NonNullable<NonNullable<Config["agent"]>[string]>
 type AgentPermissionConfig = NonNullable<AgentConfig["permission"]>
@@ -22,6 +22,8 @@ export type ManifestMaterialisation = {
     manifest: SpecOpsManifest
     path: string
     replacedInvalidFile: boolean
+    migratedFromV2: boolean
+    migrationWarnings: readonly string[]
 }
 
 /** Read-only manifest state used by diagnostics and the TUI editor. */
@@ -81,22 +83,83 @@ export async function materializeAgentManifest(
     destination: string = resolveManifestPath(),
 ): Promise<ManifestMaterialisation> {
     try {
+        const parsed = JSON.parse(await readFile(destination, "utf8"))
         return {
             status: "ready",
-            manifest: validateManifest(JSON.parse(await readFile(destination, "utf8"))),
+            manifest: validateManifest(parsed),
             path: destination,
             replacedInvalidFile: false,
+            migratedFromV2: false,
+            migrationWarnings: [],
         }
     } catch (error) {
         const missing = (error as NodeJS.ErrnoException).code === "ENOENT"
+        if (!missing) {
+            try {
+                const legacy = JSON.parse(await readFile(destination, "utf8"))
+                const migration = migrateV2Manifest(legacy)
+                if (migration) {
+                    await writeManifestAtomically(destination, migration.manifest)
+                    return {
+                        status: "ready",
+                        manifest: migration.manifest,
+                        path: destination,
+                        replacedInvalidFile: true,
+                        migratedFromV2: true,
+                        migrationWarnings: migration.warnings,
+                    }
+                }
+            } catch {
+                // Invalid JSON or a non-V2 shape is replaced with V3 defaults below.
+            }
+        }
         await writeManifestAtomically(destination, DEFAULT_MANIFEST)
         return {
             status: "ready",
             manifest: structuredClone(DEFAULT_MANIFEST),
             path: destination,
             replacedInvalidFile: !missing,
+            migratedFromV2: false,
+            migrationWarnings: [],
         }
     }
+}
+
+/** Result of migrating the former 24-agent model manifest to V3. */
+export type ManifestMigration = { manifest: SpecOpsManifest; warnings: readonly string[] }
+
+/**
+ * Migrate unambiguous V2 model selections without carrying permissions or
+ * step policy into V3. A conflicting legacy frontier selection is deliberately
+ * left at the OpenCode default and reported to the caller.
+ */
+export function migrateV2Manifest(value: unknown): ManifestMigration | undefined {
+    if (!isRecord(value) || value.version !== 2 || !isRecord(value.agents)) return undefined
+    const legacy = value.agents
+    const agents = structuredClone(DEFAULT_MANIFEST.agents)
+    const warnings: string[] = []
+    const mappings: Record<AgentId, readonly string[]> = {
+        [AGENT_IDS.coordinator]: ["specops-interactive-controller"],
+        [AGENT_IDS.explorer]: ["specops-explorer"],
+        [AGENT_IDS.planner]: ["specops-planner"],
+        [AGENT_IDS.designer]: ["specops-designer"],
+        [AGENT_IDS.implementer]: ["specops-implementer"],
+        [AGENT_IDS.reviewer]: ["specops-risk-reviewer"],
+        [AGENT_IDS.frontier]: ["specops-frontier-low", "specops-frontier-high"],
+    }
+
+    for (const id of ALL_AGENT_IDS) {
+        const selections = mappings[id]
+            .map(legacyID => manifestEntry(legacy[legacyID]))
+            .filter((entry): entry is SpecOpsManifest["agents"][AgentId] => entry !== undefined)
+        const distinct = new Map(selections.map(entry => [JSON.stringify(entry), entry]))
+        if (distinct.size === 1) {
+            agents[id] = distinct.values().next().value as SpecOpsManifest["agents"][AgentId]
+        } else if (distinct.size > 1) {
+            warnings.push(`${id}: legacy mappings conflict; using the OpenCode default model`)
+        }
+    }
+    return { manifest: { version: 3, agents }, warnings }
 }
 
 /** Inspect the persisted manifest without repairing or rewriting it. */
@@ -201,7 +264,7 @@ export function registerManifestAgents(
     config.agent ??= {}
     const mcpRules = mcpPermissionRules(config, mcpPolicy)
     for (const id of ALL_AGENT_IDS) {
-        const agent = config.agent[id] ?? manifestAgentConfig(id, manifest.agents[id])
+        const agent = manifestAgentConfig(id, manifest.agents[id])
         if (AGENT_REGISTRY[id].mode !== "subagent" || Object.keys(mcpRules).length === 0) {
             config.agent[id] = agent
             continue
@@ -215,6 +278,22 @@ export function registerManifestAgents(
                     ? ({ ...existingPermission, ...mcpRules } as AgentPermissionConfig)
                     : ({ ...mcpRules, ...existingPermission } as AgentPermissionConfig),
         }
+    }
+}
+
+/** Narrow unknown JSON to a plain object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/** Retain only model and variant fields supported by the V3 manifest. */
+function manifestEntry(value: unknown): SpecOpsManifest["agents"][AgentId] | undefined {
+    if (!isRecord(value) || typeof value.model !== "string" || !value.model.trim()) return undefined
+    return {
+        model: value.model,
+        ...(typeof value.variant === "string" && value.variant.trim()
+            ? { variant: value.variant }
+            : {}),
     }
 }
 

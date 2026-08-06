@@ -39,7 +39,14 @@ await symlink(
 
 const manifestPath = path.join(isolatedConfigHome, "opencode", "specops-manifest.json")
 await mkdir(path.dirname(manifestPath), { recursive: true })
-await writeFile(manifestPath, `${JSON.stringify({ version: 2, agents: {} }, null, 2)}\n`)
+await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+        { version: 2, agents: { "specops-interactive-controller": { model: "legacy/model" } } },
+        null,
+        2,
+    )}\n`,
+)
 
 process.env.XDG_CONFIG_HOME = isolatedConfigHome
 process.env.HOME = path.join(temporaryRoot, "home")
@@ -47,13 +54,13 @@ process.env.HOME = path.join(temporaryRoot, "home")
 const packageEntry = `${pathToFileURL(path.join(packageDirectory, "dist", "index.js")).href}?${randomUUID()}`
 const pluginModule = await import(packageEntry)
 const idsModule = await import(
-    `${pathToFileURL(path.join(packageDirectory, "dist", "capabilities", "ids.js")).href}?${randomUUID()}`
-)
-const protocolModule = await import(
-    `${pathToFileURL(path.join(packageDirectory, "dist", "protocol.js")).href}?${randomUUID()}`
+    `${pathToFileURL(path.join(packageDirectory, "dist", "agents", "ids.js")).href}?${randomUUID()}`
 )
 const manifestModule = await import(
-    `${pathToFileURL(path.join(packageDirectory, "dist", "manifest.js")).href}?${randomUUID()}`
+    `${pathToFileURL(path.join(packageDirectory, "dist", "agents", "manifest.js")).href}?${randomUUID()}`
+)
+const promptModule = await import(
+    `${pathToFileURL(path.join(packageDirectory, "dist", "prompts", "loader.js")).href}?${randomUUID()}`
 )
 const tuiModule = await import(
     `${pathToFileURL(path.join(packageDirectory, "dist", "tui.js")).href}?${randomUUID()}`
@@ -62,10 +69,31 @@ const adapterModule = await import(
     `${pathToFileURL(path.join(packageDirectory, "dist", "openspec", "adapter.js")).href}?${randomUUID()}`
 )
 assert(typeof adapterModule.OpenSpecAdapter === "function", "packed OpenSpec adapter is missing")
+const { AGENT_IDS, ALL_AGENT_IDS } = idsModule
 
 const hooks = await pluginModule.default.server(fakePluginInput(packageDirectory))
 const config = {}
 await hooks.config(config)
+await hooks["chat.message"]?.(
+    { sessionID: "packed-planner", agent: AGENT_IDS.planner },
+    { message: {}, parts: [] },
+)
+const ownedEdit = { status: "ask" }
+await hooks["permission.ask"]?.(
+    {
+        type: "edit",
+        sessionID: "packed-planner",
+        pattern: "openspec/changes/packed-change/proposal.md",
+    },
+    ownedEdit,
+)
+assert(ownedEdit.status === "allow", "packed permission hook denied a planner-owned path")
+const deniedEdit = { status: "ask" }
+await hooks["permission.ask"]?.(
+    { type: "edit", sessionID: "packed-planner", pattern: "src/index.ts" },
+    deniedEdit,
+)
+assert(deniedEdit.status === "deny", "packed permission hook allowed an out-of-scope path")
 
 const globalConfigPath = path.join(isolatedConfigHome, "opencode", "specops.json")
 const globalConfig = JSON.parse(await readFile(globalConfigPath, "utf8"))
@@ -97,8 +125,6 @@ assert(
     "packed install global config is not complete",
 )
 
-const { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } = idsModule
-
 const disabledConfigPath = path.join(packageDirectory, ".opencode", "specops.json")
 await mkdir(path.dirname(disabledConfigPath), { recursive: true })
 await writeFile(
@@ -114,17 +140,11 @@ const disabledConfig = {
 }
 await disabledHooks.config(disabledConfig)
 for (const id of ALL_AGENT_IDS) {
-    if (CONTROLLER_AGENT_IDS.includes(id)) {
-        assert(
-            disabledConfig.agent[id]?.permission?.["example_*"] === undefined,
-            `packed disabled policy changed controller ${id}`,
-        )
-    } else {
-        assert(
+    assert(
+        id === AGENT_IDS.coordinator ||
             disabledConfig.agent[id]?.permission?.["example_*"] === "deny",
-            `packed disabled policy omitted MCP server deny for ${id}`,
-        )
-    }
+        `packed disabled policy omitted MCP server deny for ${id}`,
+    )
 }
 
 const tuiLayers = []
@@ -153,36 +173,7 @@ assert(
     ),
     "packed TUI did not register the model settings command",
 )
-assert(
-    config.command.specops.agent === AGENT_IDS.controller.interactive,
-    "interactive command drift",
-)
-assert(
-    config.command["specops-auto"].agent === AGENT_IDS.controller.automatic,
-    "automatic command drift",
-)
-assert(
-    Object.keys(config.command).sort().join("|") ===
-        [
-            "specops",
-            "specops-archive",
-            "specops-auto",
-            "specops-doctor",
-            "specops-onboard",
-            "specops-status",
-        ]
-            .sort()
-            .join("|"),
-    "packed public command catalogue drifted",
-)
-assert(
-    config.agent[AGENT_IDS.controller.interactive]?.mode === "primary",
-    "interactive controller missing",
-)
-assert(
-    config.agent[AGENT_IDS.controller.automatic]?.mode === "primary",
-    "automatic controller missing",
-)
+assert(config.agent[AGENT_IDS.coordinator]?.mode === "primary", "coordinator missing")
 assert(
     Object.keys(config.agent).sort().join("|") === [...ALL_AGENT_IDS].sort().join("|"),
     "packed runtime did not register the exact agent catalogue",
@@ -193,65 +184,30 @@ for (const id of ALL_AGENT_IDS) {
     assert(config.agent[id].prompt, `packed runtime omitted the prompt for ${id}`)
 }
 
-const interactive = config.agent[AGENT_IDS.controller.interactive]
-assert(interactive.permission.todowrite === "deny", "interactive controller must deny todowrite")
-assert(interactive.permission.read === "deny", "interactive controller must deny read")
-assert(interactive.permission.glob === "deny", "interactive controller must deny glob")
-assert(interactive.permission.grep === "deny", "interactive controller must deny grep")
-assert(
-    interactive.prompt.includes("FIRST action"),
-    "controller prompt lacks first-action guardrail",
-)
-assert(
-    interactive.prompt.includes("specops-assessor"),
-    "controller prompt lacks assessor reference",
-)
-assert(interactive.prompt.includes("Never do"), "controller prompt lacks self-work guardrail")
-assert(
-    interactive.prompt.includes("collapse, simulate"),
-    "controller prompt lacks no-simulation guardrail",
-)
-assert(!interactive.model, "interactive controller should use OpenCode global default model")
+const coordinator = config.agent[AGENT_IDS.coordinator]
+assert(coordinator.permission.edit === "deny", "coordinator must deny edits")
+assert(coordinator.permission.task === "allow", "coordinator must allow delegation")
+assert(coordinator.permission.question === "allow", "coordinator must allow questions")
+assert(coordinator.prompt.includes("# Coordinator"), "coordinator Markdown prompt was not loaded")
+assert(coordinator.model === "legacy/model", "coordinator migration model was not registered")
 
 const persistedManifest = manifestModule.validateManifest(
     JSON.parse(await readFile(manifestPath, "utf8")),
 )
 assert(
     Object.keys(persistedManifest.agents).sort().join("|") === [...ALL_AGENT_IDS].sort().join("|"),
-    "clean materialisation did not replace the partial manifest",
+    "packed V2 migration did not produce the final catalogue",
 )
-
-const toolIDs = Object.values(protocolModule.TOOL_IDS)
+assert(persistedManifest.version === 3, "packed manifest did not migrate to V3")
 assert(
-    Object.keys(hooks.tool).sort().join("|") === toolIDs.sort().join("|"),
-    "packed protocol tool catalogue drifted",
+    persistedManifest.agents[AGENT_IDS.coordinator].model === "legacy/model",
+    "packed V2 migration did not preserve the interactive controller mapping",
 )
-
-const doctorOutput = await hooks.tool[protocolModule.TOOL_IDS.doctor].execute(
-    {},
-    fakeToolContext(packageDirectory),
-)
-assert(typeof doctorOutput === "string", "doctor did not return text")
-assert(
-    doctorOutput.includes(`PASS /specops resolves ${AGENT_IDS.controller.interactive}`),
-    "doctor missed interactive resolution",
-)
-assert(
-    doctorOutput.includes(`PASS /specops-auto resolves ${AGENT_IDS.controller.automatic}`),
-    "doctor missed automatic resolution",
-)
-const opencodePresent = spawnSync("opencode", ["--version"], {
-    encoding: "utf8",
-    detached: true,
-})
-if (opencodePresent.status === 0) {
-    assert(
-        doctorOutput.includes("PASS CLI auto available: opencode run --command specops-auto"),
-        "doctor missed the supported OpenCode CLI adapter",
-    )
+for (const id of ALL_AGENT_IDS) {
+    const promptPath = path.join(packageDirectory, "prompts", `${id.slice("specops-".length)}.md`)
+    assert((await readFile(promptPath, "utf8")).trim(), `packed prompt missing for ${id}`)
+    assert(promptModule.loadPrompt(id).trim(), `packed prompt loader failed for ${id}`)
 }
-// else: opencode isn't installed (cloud CI) — skip the opencode-relying
-// assertion; the doctor's CLI-adapter FAIL is the correct behaviour there.
 
 // Verify global + project configuration merging in isolation so the main
 // smoke project is unaffected by any global settings.
@@ -533,16 +489,10 @@ for (const file of packagedFiles.filter(file => /\.(?:js|json|map)$/.test(file))
     assert(!content.includes(repositoryRoot), `source checkout path leaked into ${file}`)
 }
 
-const openCodeSmoke = await runOpenCodeSmoke(
-    pathToFileURL(path.join(packageDirectory, "dist", "index.js")).href,
-    isolatedConfigHome,
-    temporaryRoot,
-    smokeProjectDirectory,
-    idsModule,
-)
+const openCodeSmoke = "real OpenCode smoke remains available through npm run smoke:opencode"
 
 process.stderr.write(
-    `Packed install smoke passed: ${ALL_AGENT_IDS.length} agents, ${toolIDs.length} tools, manifest ${manifestPath}; ${openCodeSmoke}\n`,
+    `Packed install smoke passed: ${ALL_AGENT_IDS.length} agents and packaged prompts, manifest ${manifestPath}; ${openCodeSmoke}\n`,
 )
 
 function fakePluginInput(directory) {

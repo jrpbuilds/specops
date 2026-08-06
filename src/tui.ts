@@ -2,7 +2,7 @@
  * Native OpenCode TUI editor for SpecOps agent model and variant mappings.
  */
 import type { TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
+import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js"
 import { inspectAgentManifest, ManifestConflictError, saveAgentManifest } from "./installation.js"
 import {
     agentSettingsCategory,
@@ -13,7 +13,7 @@ import {
     validateManifestSelections,
     type ConfiguredModel,
 } from "./model-settings.js"
-import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./manifest.js"
+import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./agents/manifest.js"
 
 const COMMAND_NAME = "specops.models.configure"
 const BACK = Symbol("specops-back")
@@ -147,7 +147,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
             api.ui.DialogConfirm({
                 title: "Save SpecOps model mappings?",
                 message: [
-                    `Schema v2 will contain all ${ALL_AGENT_IDS.length} agents.`,
+                    `Schema v3 will contain all ${ALL_AGENT_IDS.length} roles.`,
                     `${changed} agent selection${changed === 1 ? "" : "s"} changed.`,
                     "Workflow steps, prompts, tools, and permissions remain managed by SpecOps.",
                 ].join("\n"),
@@ -262,7 +262,7 @@ async function showModelEditor(api: TuiPluginApi, onClose: () => void): Promise<
                             title: "Review and save",
                             value: "__save__",
                             category: "Actions",
-                            description: "Validate all mappings and write schema v2 once",
+                            description: "Validate all mappings and write schema v3 once",
                             footer: `${changed.size} changed`,
                         },
                         {

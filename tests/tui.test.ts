@@ -3,9 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 import { afterEach, describe, expect, it } from "vitest"
-import { AGENT_IDS, ALL_AGENT_IDS } from "../src/capabilities/ids.js"
+import { AGENT_IDS, ALL_AGENT_IDS } from "../src/agents/ids.js"
 import { resolveManifestPath } from "../src/installation.js"
-import { DEFAULT_MANIFEST, validateManifest } from "../src/manifest.js"
+import { DEFAULT_MANIFEST, validateManifest } from "../src/agents/manifest.js"
 import { registerModelSettings } from "../src/tui.js"
 
 type SelectOption = {
@@ -44,7 +44,7 @@ afterEach(() => {
 })
 
 describe.sequential("SpecOps model settings TUI", () => {
-    it("registers a native command and saves a complete v2 mapping", async () => {
+    it("registers a native command and saves a complete v3 mapping", async () => {
         const harness = await createHarness(DEFAULT_MANIFEST)
         registerModelSettings(harness.api)
 
@@ -64,12 +64,12 @@ describe.sequential("SpecOps model settings TUI", () => {
         expect(harness.dialogSize).toBe("xlarge")
         expect(agents.options[0]).toMatchObject({
             title: ALL_AGENT_IDS[0],
-            category: "Controllers",
+            category: "Coordination",
             footer: expect.stringContaining("default"),
         })
-        expect(
-            agents.options.find(option => option.value === AGENT_IDS.review.frontierLow),
-        ).toMatchObject({ category: "Frontier escalation" })
+        expect(agents.options.find(option => option.value === AGENT_IDS.frontier)).toMatchObject({
+            category: "Frontier",
+        })
         agents.onSelect?.(agents.options[0])
 
         const model = harness.rendered as SelectDialog
@@ -85,7 +85,7 @@ describe.sequential("SpecOps model settings TUI", () => {
         const updatedAgents = harness.rendered as SelectDialog
         expect(updatedAgents.options[0]).toMatchObject({
             title: `✓ ${ALL_AGENT_IDS[0]}`,
-            category: "Controllers",
+            category: "Coordination",
             footer: "custom · high",
         })
         const review = updatedAgents.options.find(option => option.value === "__save__")
@@ -95,7 +95,7 @@ describe.sequential("SpecOps model settings TUI", () => {
         await (harness.rendered as ConfirmDialog).onConfirm?.()
 
         const persisted = validateManifest(JSON.parse(await readFile(harness.manifestPath, "utf8")))
-        expect(persisted.version).toBe(2)
+        expect(persisted.version).toBe(3)
         expect(Object.keys(persisted.agents)).toHaveLength(ALL_AGENT_IDS.length)
         expect(persisted.agents[ALL_AGENT_IDS[0]]).toEqual({
             model: "configured/custom",

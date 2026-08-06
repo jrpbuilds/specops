@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
+import { ALL_AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js"
+import { agentPrompt } from "./agents/registry.js"
 import { AGENT_IDS, ALL_AGENT_IDS, CONTROLLER_AGENT_IDS } from "./capabilities/ids.js"
 import {
     AGENT_REGISTRY,
@@ -16,7 +18,6 @@ import {
     resolveGlobalConfigPath,
     resolveManifestPath,
 } from "./installation.js"
-import { promptText } from "./prompts.generated.js"
 
 /**
  * Outcome of a single diagnostic check: `status` plus a human-readable
@@ -400,41 +401,23 @@ function checkCapabilityMappings(diagnostics: Diagnostic[]): void {
     })
 }
 
-/** Mandatory guardrail phrases that must be present in controller prompts. */
-const CONTROLLER_GUARDRAIL_PHRASES = [
-    "specops-assessor",
-    "FIRST action",
-    "Never do",
-    "collapse, simulate",
-    "specops_next_action",
-    "specops_complete_action",
-]
-
 /**
- * Verify every final agent has a non-empty generated prompt via
- * {@link promptText} and that controller prompts carry the mandatory
- * guardrail phrases.
+ * Verify every V1 agent has a non-empty packaged Markdown prompt.
  *
  * Pushes a single `PASS` or `FAIL` diagnostic.
  *
  * @param diagnostics - Shared diagnostic accumulator.
  */
 function checkPrompts(diagnostics: Diagnostic[]): void {
-    const missing = ALL_AGENT_IDS.filter(id => !promptText(id).trim())
-    const controllerDrift = CONTROLLER_AGENT_IDS.filter(id => {
-        const text = promptText(id)
-        return CONTROLLER_GUARDRAIL_PHRASES.some(phrase => !text.includes(phrase))
-    })
-    const status = missing.length || controllerDrift.length ? "FAIL" : "PASS"
+    const missing = V1_AGENT_IDS.filter(id => !agentPrompt(id).trim())
+    const status = missing.length ? "FAIL" : "PASS"
     const message = missing.length
-        ? `generated prompts are missing for: ${missing.join(", ")}`
-        : controllerDrift.length
-          ? `controller prompt guardrails are missing for: ${controllerDrift.join(", ")}`
-          : `embedded prompts resolve for all ${ALL_AGENT_IDS.length} final agents with controller guardrails`
+        ? `packaged prompts are missing for: ${missing.join(", ")}`
+        : `packaged Markdown prompts resolve for all ${V1_AGENT_IDS.length} final agents`
     diagnostics.push({
         status,
         message,
-        repair: "Run npm run generate and reinstall the rebuilt package.",
+        repair: "Reinstall the package so all prompts/ assets are present.",
     })
 }
 

@@ -93,8 +93,9 @@ function patternMatches(owned: string, requested: string): boolean {
     if (requested.includes("*")) return false
     const expression = owned
         .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
-        .replaceAll("**", ".*")
+        .replaceAll("**", "\u0000")
         .replaceAll("*", "[^/]+")
+        .replaceAll("\u0000", ".+")
     return new RegExp(`^${expression}$`).test(requested)
 }
 

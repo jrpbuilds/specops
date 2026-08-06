@@ -2,8 +2,8 @@
  * Canonical constants and validators for SpecOps artifact wire-format contracts.
  *
  * This module is the single source of truth for enum value sets and content
- * validation patterns consumed by parsers, the generated prompt-contracts
- * module, and the generate-contracts script. It intentionally avoids importing
+ * validation patterns consumed by parsers and the retained generated
+ * prompt-contract module. It intentionally avoids importing
  * from config, engine, or frontier modules to keep the dependency tree acyclic
  * and let the generator import compiled dist output without circular refs.
  */
@@ -42,7 +42,7 @@ const SPEC_DELTA_SECTIONS = ["ADDED", "MODIFIED", "REMOVED"] as const
 
 /**
  * Fully-qualified delta-section heading strings derived from
- * {@link SPEC_DELTA_SECTIONS}. Consumed by the generate-contracts script.
+ * {@link SPEC_DELTA_SECTIONS}. Retained by the legacy generated contract.
  */
 export const SPEC_DELTA_SECTION_HEADERS: readonly string[] = SPEC_DELTA_SECTIONS.map(
     section => `## ${section} Requirements`,

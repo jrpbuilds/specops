@@ -1,20 +1,10 @@
-import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./capabilities/ids.js"
-import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./manifest.js"
+import { AGENT_IDS, ALL_AGENT_IDS, type AgentId } from "./agents/ids.js"
+import { DEFAULT_MANIFEST, type SpecOpsManifest } from "./agents/manifest.js"
 
-const CONTROLLER_SETTINGS_IDS = new Set<AgentId>(Object.values(AGENT_IDS.controller))
-const CORE_SETTINGS_IDS = new Set<AgentId>(
-    Object.values(AGENT_IDS.core).filter(id => id !== AGENT_IDS.core.repairer),
-)
-const FRONTIER_SETTINGS_IDS = new Set<AgentId>([
-    AGENT_IDS.review.frontierLow,
-    AGENT_IDS.review.frontierHigh,
-])
-const REVIEW_SETTINGS_IDS = new Set<AgentId>([
-    AGENT_IDS.core.repairer,
-    AGENT_IDS.review.risk,
-    AGENT_IDS.review.correctnessJudge,
-    AGENT_IDS.review.complianceJudge,
-    AGENT_IDS.review.refuter,
+const PLANNING_SETTINGS_IDS = new Set<AgentId>([
+    AGENT_IDS.explorer,
+    AGENT_IDS.planner,
+    AGENT_IDS.designer,
 ])
 
 /** Resolved OpenCode model choice shown by the settings UI. */
@@ -105,7 +95,7 @@ export function createManifestDraft(
         }
     }
 
-    return { manifest: { version: 2, agents }, unresolved }
+    return { manifest: { version: 3, agents }, unresolved }
 }
 
 /**
@@ -138,11 +128,11 @@ export function clearConfiguredModel(
 
 /** Return the functional section used by the agent mapping screen. */
 export function agentSettingsCategory(id: AgentId): string {
-    if (CONTROLLER_SETTINGS_IDS.has(id)) return "Controllers"
-    if (CORE_SETTINGS_IDS.has(id)) return "Core workflow"
-    if (REVIEW_SETTINGS_IDS.has(id)) return "Review, judgment and repair"
-    if (FRONTIER_SETTINGS_IDS.has(id)) return "Frontier escalation"
-    return "Specialists"
+    if (id === AGENT_IDS.coordinator) return "Coordination"
+    if (PLANNING_SETTINGS_IDS.has(id)) return "Planning"
+    if (id === AGENT_IDS.implementer) return "Implementation"
+    if (id === AGENT_IDS.reviewer) return "Review"
+    return "Frontier"
 }
 
 /** Validate a complete staged mapping against the current OpenCode catalogue. */
