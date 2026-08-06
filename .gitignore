@@ -6,10 +6,3 @@ dist/
 .DS_Store
 __pycache__/
 *.py[cod]
-
-# OpenSpec live artifacts for this repo's own workflow runs. Bundled schema
-# templates ship from `schemas/`; the entire `openspec/` tree (schemas, changes,
-# specs, config.yaml) is installed via `npm run onboard` (or `/specops-onboard`)
-# and is fully reproducible.
-openspec/
-

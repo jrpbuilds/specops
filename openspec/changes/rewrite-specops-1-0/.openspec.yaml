@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-08-06
+goal: "Rewrite SpecOps to the 1.0 architecture: seven-agent catalogue, OpenSpec
+  1.7 standard spec-driven workflow adapter, coarse run state, repository
+  identity, bounded validation/review, two checkpoints, archive on approval, and
+  removal of all legacy workflow machinery."
