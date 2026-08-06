@@ -40,7 +40,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 - [ ] 3.8 Update `src/installation.ts` to migrate v2 24-agent manifests to v3 seven-role (preserve obvious mappings, map interactive controller→coordinator, pick one frontier model, discard obsolete roles, report ambiguous mappings); never preserve old permissions or step policy
 - [ ] 3.9 Update `src/model-settings.ts` and `src/tui.ts` to show only the seven roles; preserve provider/model/variant selection
 - [ ] 3.10 Add `prompts/**/*.md` to `package.json files[]`; update `scripts/test-packed-install.mjs` to assert prompt files are present and loadable
-- [ ] 3.11 Delete `src/capabilities/`, `src/prompts.generated.ts`, and `scripts/generate-contracts.mjs` (confirm no other consumer first)
+- [ ] 3.11 Delete `src/prompts.generated.ts` and `scripts/generate-contracts.mjs`; migrate every Phase 2-owned consumer to `src/agents/` and ensure no V1 module imports `src/capabilities/`. Leave `src/capabilities/` unchanged and unextended solely for retained legacy scheduler, workflow, orchestrator, manifest, model-settings, and TUI consumers; delete it in Phase 9.
 - [ ] 3.12 Write `tests/agents.test.ts`, `tests/prompts.test.ts`, and `tests/manifest.test.ts` (exact catalogue, permissions, no recursive dispatch, prompt files, packed loading, placeholder rendering, unresolved/missing-value rejection, v3 defaults, v2→v3 migration, stale catalogue rejection, TUI role list, no obsolete IDs in packaged output)
 - [ ] 3.13 Verify Phase 2: exactly seven agents registered; prompts load from a packed install; no obsolete agent IDs appear in packaged output
 
@@ -123,7 +123,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 ## 10. Phase 9 — Legacy architecture removal
 
 - [ ] 10.1 Delete the old workflow engine modules (`src/workflow/{engine,scheduler,actions,directive,contracts,contracts.generated,archive,completion,interactive,questions,reviews,run-start,run-state,writer-guards,artifacts,previews,checkpoints}.ts`) after confirming no residual imports
-- [ ] 10.2 Delete `src/capabilities/`, `src/protocol.ts` (replaced), `src/prompts.generated.ts`, `scripts/generate-contracts.mjs`, and `scripts/evaluate-review-fixer.mjs`
+- [ ] 10.2 Delete `src/capabilities/` only after every retained legacy consumer is removed or migrated, then delete `src/protocol.ts` (replaced) and `scripts/evaluate-review-fixer.mjs`
 - [ ] 10.3 Delete `src/escalation/`, `src/frontier/`, `src/routing/`, `src/artifacts/`, and `src/evidence/registry.ts` (folded into `validation/registry.ts`)
 - [ ] 10.4 Rewrite `src/types.ts` to remove obsolete concepts (tiers, risk facets, capability IDs, dispatch purposes, frontier tiers, judgments, refutation, escalation claims, old repair modes, artifact invalidation graphs, checkpoint provenance)
 - [ ] 10.5 Rewrite `src/config.ts` as `src/config/{defaults,loader,schema,migration}.ts` exposing only the minimal V1 fields (seven-role model mappings and variants, OpenSpec command override, required validation commands, validation timeouts, bounded output capture, MCP integration toggle); keep correction/repair/transient-retry/frontier limits as internal constants in `src/workflow/limits.ts`; delete `src/config/fields.ts` and `src/config/sections.ts` after porting retained fields

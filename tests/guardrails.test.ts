@@ -25,6 +25,16 @@ describe("SpecOps 1.0 architecture guardrails", () => {
         ).not.toThrow()
     })
 
+    it("keeps V1 modules independent of legacy capabilities", async () => {
+        const agentsRoot = path.join(repositoryRoot, "src", "agents")
+        if (!existsSync(agentsRoot)) return
+        const sources = await Promise.all(
+            (await readdir(agentsRoot)).map(file => readFile(path.join(agentsRoot, file), "utf8")),
+        )
+
+        expect(sources.join("\n")).not.toContain("capabilities/")
+    })
+
     // Phase 2 replaces the 24-agent capability registry.
     it.skip("registers exactly the seven V1 agents", async () => {
         const agentIdsModule = "../src/agents/ids.js"

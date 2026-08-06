@@ -118,6 +118,7 @@ Repository inspection of the installed `@opencode-ai/plugin` API confirms the `p
 3. Initialise the fresh standard `openspec/` and author the `rewrite-specops-1-0` change (this document and its siblings).
 4. Land phases incrementally; each phase ends with formatting, typecheck, relevant tests, and a reviewable commit.
 5. Temporary adapters inside the branch are allowed to keep tests compiling, but the final product exposes only the V1 workflow.
+   Deletion sequencing is not a compatibility architecture: `src/agents/` is the sole V1 agent architecture. `src/capabilities/` remains temporarily unchanged only for legacy modules scheduled for replacement, no V1 module may import or extend it, and Phase 9 deletes it after its old consumers are gone.
 6. After Phase 9, the repository contains only SpecOps 1.0.
 7. Configuration migration runs once on plugin load (or explicit migration): supported values preserved, known obsolete SpecOps fields removed, all removed fields reported through doctor or migration output, the migrated V1 configuration atomically persisted, and strict V1 validation applied after migration. Legacy custom schemas on disk are not deleted automatically. Stale multi-agent manifests are replaced with the seven-role manifest. Old runs are not resumable.
 8. Users upgrade by running `/specops-doctor`; release notes document that old runs cannot resume, old custom schemas are not deleted automatically, model mappings are migrated where unambiguous, `/specops-auto` is removed, and automatic mode is deferred.
