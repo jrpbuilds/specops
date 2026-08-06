@@ -1,5 +1,6 @@
 import type { Config } from "@opencode-ai/plugin"
 import { AGENT_IDS } from "./capabilities/ids.js"
+import { AGENT_IDS as V1_AGENT_IDS } from "./agents/ids.js"
 import { TOOL_IDS } from "./protocol.js"
 
 /**
@@ -26,10 +27,10 @@ export const COMMANDS: NonNullable<Config["command"]> = {
      * checkpoint for confirmation.
      */
     specops: {
-        agent: AGENT_IDS.controller.interactive,
+        agent: V1_AGENT_IDS.coordinator,
         subtask: false,
-        description: "Run deterministic SpecOps workflow with checkpoints",
-        template: "Start the interactive deterministic SpecOps workflow for: $ARGUMENTS",
+        description: "Start or resume the interactive SpecOps coordinator run",
+        template: "Start or resume the SpecOps coordinator run for: $ARGUMENTS",
     },
     /** Install final SpecOps OpenSpec assets in the current directory. */
     "specops-onboard": {
