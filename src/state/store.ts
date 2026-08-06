@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { createHash } from "node:crypto"
-import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
+import { mkdir, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import type { RunState } from "../types.js"
+import { writeFileAtomic } from "./atomic.js"
 
 /**
  * Return the controller-owned directory for one OpenSpec change.
@@ -26,23 +27,6 @@ export const changeRoot = (directory: string, change: string): string =>
  * @param content - UTF-8 text to write.
  * @returns Resolves when the rename has completed.
  */
-async function atomicWritePhysical(destination: string, content: string): Promise<void> {
-    await mkdir(path.dirname(destination), { recursive: true })
-    const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
-    const handle = await open(temporary, "wx")
-    try {
-        await handle.writeFile(content, "utf8")
-        await handle.sync()
-    } finally {
-        await handle.close()
-    }
-    try {
-        await rename(temporary, destination)
-    } finally {
-        await unlink(temporary).catch(() => undefined)
-    }
-}
-
 /** Write through the active transaction when a controller mutation is running. */
 async function atomicWrite(destination: string, content: string): Promise<void> {
     const transaction = transactionStorage.getStore()
@@ -50,7 +34,7 @@ async function atomicWrite(destination: string, content: string): Promise<void> 
         await stageTransactionWrite(transaction, destination, content)
         return
     }
-    await atomicWritePhysical(destination, content)
+    await writeFileAtomic(destination, content)
 }
 
 /** Hash persisted text for transaction integrity checks. */
@@ -219,10 +203,7 @@ export async function withArchiveLock<T>(
         try {
             await mkdir(lockPath)
             acquired = true
-            await atomicWritePhysical(
-                path.join(lockPath, "owner.json"),
-                `${JSON.stringify(lock)}\n`,
-            )
+            await writeFileAtomic(path.join(lockPath, "owner.json"), `${JSON.stringify(lock)}\n`)
             break
         } catch (error) {
             if (acquired) {
@@ -292,7 +273,7 @@ export async function writeArchiveAttemptSidecar(
 ): Promise<void> {
     const destination = archiveAttemptPath(directory, change)
     await mkdir(path.dirname(destination), { recursive: true })
-    await atomicWritePhysical(destination, `${JSON.stringify(record, null, 2)}\n`)
+    await writeFileAtomic(destination, `${JSON.stringify(record, null, 2)}\n`)
 }
 
 /**
@@ -352,7 +333,7 @@ async function beginTransaction(root: string): Promise<RunTransaction> {
     const transactionRoot = path.join(root, TRANSACTION_DIR, id)
     const manifest: TransactionManifest = { version: 1, id, status: "open", entries: [] }
     await mkdir(transactionRoot, { recursive: true })
-    await atomicWritePhysical(
+    await writeFileAtomic(
         path.join(transactionRoot, "manifest.json"),
         `${JSON.stringify(manifest, null, 2)}\n`,
     )
@@ -375,7 +356,7 @@ async function stageTransactionWrite(
         throw new Error("transaction destination escaped change root")
     }
     const staged = path.join(transaction.directory, "files", relative)
-    await atomicWritePhysical(staged, content)
+    await writeFileAtomic(staged, content)
     const entry: TransactionEntry = {
         destination: relative,
         staged: path.relative(transaction.directory, staged),
@@ -385,7 +366,7 @@ async function stageTransactionWrite(
     transaction.manifest.entries = [...transaction.entries.values()].sort((left, right) =>
         left.destination.localeCompare(right.destination),
     )
-    await atomicWritePhysical(
+    await writeFileAtomic(
         path.join(transaction.directory, "manifest.json"),
         `${JSON.stringify(transaction.manifest, null, 2)}\n`,
     )
@@ -425,7 +406,7 @@ async function publishTransaction(
         if (contentHash(stagedContent) !== entry.hash) {
             throw new Error(`transaction entry hash mismatch: ${entry.destination}`)
         }
-        await atomicWritePhysical(destination, stagedContent)
+        await writeFileAtomic(destination, stagedContent)
     }
 }
 
@@ -436,7 +417,7 @@ async function finishTransaction(transaction: RunTransaction): Promise<void> {
         return
     }
     transaction.manifest.status = "prepared"
-    await atomicWritePhysical(
+    await writeFileAtomic(
         path.join(transaction.directory, "manifest.json"),
         `${JSON.stringify(transaction.manifest, null, 2)}\n`,
     )

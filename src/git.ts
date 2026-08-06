@@ -5,89 +5,12 @@
  * `NO_COLOR` and a narrow `PATH` to minimise environment leakage.
  */
 
-import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
+import { runProcess } from "./process.js"
 
-/** Result from a direct executable invocation; no shell is ever involved. */
-export type ProcessResult = {
-    stdout: string
-    stderr: string
-    code: number
-    outputTruncated: boolean
-    stdoutTruncated: boolean
-    stderrTruncated: boolean
-}
-
-/**
- * Run an executable with an argument array. Supplying an environment replaces
- * inherited variables, allowing callers to use a deliberately narrow runtime.
- *
- * @param command - Path or name of the executable to spawn.
- * @param args - Arguments passed to the child process.
- * @param cwd - Working directory for the child process.
- * @param signal - Optional `AbortSignal` to cancel the running process.
- * @param environment - Optional env vars (replaces, not merges, `process.env`).
- * @param maxOutputBytes - Optional cap on combined stdout/stderr buffering;
- * exceeding this kills the child with `SIGTERM`.
- * @returns A {@link ProcessResult} with captured output streams and exit code.
- */
-export async function runProcess(
-    command: string,
-    args: string[],
-    cwd: string,
-    signal?: AbortSignal,
-    environment?: Record<string, string>,
-    maxOutputBytes?: number,
-): Promise<ProcessResult> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {
-            cwd,
-            shell: false,
-            env: environment ?? process.env,
-            stdio: ["ignore", "pipe", "pipe"],
-        })
-        const stdout: Buffer[] = []
-        const stderr: Buffer[] = []
-        let outputBytes = 0
-        let stdoutTruncated = false
-        let stderrTruncated = false
-
-        /** Accumulate a chunk of output, truncating at `maxOutputBytes` if set. */
-        const collect =
-            (target: Buffer[], stream: "stdout" | "stderr") =>
-            (chunk: Buffer): void => {
-                const remaining =
-                    maxOutputBytes === undefined ? chunk.length : maxOutputBytes - outputBytes
-                if (remaining > 0) {
-                    target.push(chunk.subarray(0, remaining))
-                    outputBytes += Math.min(chunk.length, remaining)
-                }
-                if (maxOutputBytes !== undefined && chunk.length > remaining) {
-                    if (stream === "stdout") stdoutTruncated = true
-                    else stderrTruncated = true
-                }
-            }
-
-        child.stdout.on("data", collect(stdout, "stdout"))
-        child.stderr.on("data", collect(stderr, "stderr"))
-        child.on("error", reject)
-        /** Kill the child process on abort signal. */
-        const abort = (): boolean => child.kill("SIGTERM")
-        signal?.addEventListener("abort", abort, { once: true })
-        child.on("close", code => {
-            signal?.removeEventListener("abort", abort)
-            resolve({
-                stdout: Buffer.concat(stdout).toString("utf8"),
-                stderr: Buffer.concat(stderr).toString("utf8"),
-                code: code ?? 1,
-                outputTruncated: stdoutTruncated || stderrTruncated,
-                stdoutTruncated,
-                stderrTruncated,
-            })
-        })
-    })
-}
+export { runProcess } from "./process.js"
+export type { ProcessResult } from "./process.js"
 
 /**
  * Read the current implementation baseline commit.
