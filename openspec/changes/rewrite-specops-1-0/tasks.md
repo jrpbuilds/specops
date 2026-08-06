@@ -88,15 +88,15 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 7. Phase 6 — Independent review and bounded repair
 
-- [ ] 7.1 Create `src/review/format.ts` with the required review.md format (Verdict, Reviewed state, Validation, Blocking findings, Non-blocking observations, Conclusion)
-- [ ] 7.2 Create `src/review/parser.ts` parsing only verdict, reviewed repository identity, blocking finding identifiers, and required-section presence
-- [ ] 7.3 Create `src/workflow/review.ts` to invoke the read-only reviewer with full context (goal, artifacts, diff, changed-file summary, identity, validation evidence, prompt)
-- [ ] 7.4 Implement review freshness validation (reject on identity mismatch, stale validation, malformed verdict, missing sections)
-- [ ] 7.5 Implement pass behaviour (persist reviewed identity; advance to completion checkpoint)
-- [ ] 7.6 Implement repair behaviour (pass all blocking findings to implementer, increment repair count, recalc identity, rerun all required validation, rerun independent review) with default max 2 from `src/workflow/limits.ts`
-- [ ] 7.7 Implement repair exhaustion (preserve code/review/evidence, set `blocked`, show remediation options)
-- [ ] 7.8 Write `tests/review-workflow.test.ts` (valid pass, valid changes-required, malformed verdict, stale identity, missing sections, blocking parsing, non-blocking observations, repair success/exhaustion, validation failure during repair, mutation after review, reviewer cannot edit, no tribunal roles invoked)
-- [ ] 7.9 Verify Phase 6: one reviewer independently assesses the current implementation; pass advances; blocking findings trigger bounded repair; exhaustion yields a clear blocked state; no tribunal remains
+- [x] 7.1 Create `src/review/format.ts` with the required review.md format (Verdict, Reviewed state, Validation, Blocking findings, Non-blocking observations, Conclusion)
+- [x] 7.2 Create `src/review/parser.ts` parsing only verdict, reviewed repository identity, blocking finding identifiers, and required-section presence
+- [x] 7.3 Create `src/workflow/review.ts` to invoke the read-only reviewer with full context (goal, artifacts, diff, changed-file summary, identity, validation evidence, prompt)
+- [x] 7.4 Implement review freshness validation (reject on identity mismatch, stale validation, malformed verdict, missing sections)
+- [x] 7.5 Implement pass behaviour (persist reviewed identity; advance to completion checkpoint)
+- [x] 7.6 Implement repair behaviour (pass all blocking findings to implementer, increment repair count, recalc identity, rerun all required validation, rerun independent review) with default max 2 from `src/workflow/limits.ts`
+- [x] 7.7 Implement repair exhaustion (preserve code/review/evidence, set `blocked`, show remediation options)
+- [x] 7.8 Write `tests/review-workflow.test.ts` (valid pass, valid changes-required, malformed verdict, stale identity, missing sections, blocking parsing, non-blocking observations, repair success/exhaustion, validation failure during repair, mutation after review, reviewer cannot edit, no tribunal roles invoked)
+- [x] 7.9 Verify Phase 6: one reviewer independently assesses the current implementation; pass advances; blocking findings trigger bounded repair; exhaustion yields a clear blocked state; no tribunal remains
 
 ## 8. Phase 7 — Completion checkpoint, verified state, and archive
 
