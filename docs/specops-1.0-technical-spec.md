@@ -7,6 +7,12 @@
 **OpenSpec compatibility:** `>=1.7.0 <1.8.0`
 **Workflow mode:** Interactive only
 
+> **Validated planning amendment:** Configuration policy was refined during
+> validated OpenSpec planning. Retry, repair, and frontier limits are internal
+> bounded constants; archive behaviour is selected only at the completion
+> checkpoint. The obsolete configurable fields are not retained as compatibility
+> options.
+
 ---
 
 ## 1. Purpose
@@ -35,12 +41,12 @@ SpecOps MUST use the standard OpenSpec 1.7 `spec-driven` workflow and standard u
 
 SpecOps MUST NOT create or require:
 
-* custom OpenSpec schemas;
-* replacement artifact formats;
-* parallel artifact dependency graphs;
-* duplicated OpenSpec validation;
-* SpecOps-specific fields inside standard OpenSpec artifacts;
-* an alternative interpretation of OpenSpec artifact readiness.
+- custom OpenSpec schemas;
+- replacement artifact formats;
+- parallel artifact dependency graphs;
+- duplicated OpenSpec validation;
+- SpecOps-specific fields inside standard OpenSpec artifacts;
+- an alternative interpretation of OpenSpec artifact readiness.
 
 A change created by SpecOps MUST remain a valid standard OpenSpec change.
 
@@ -54,14 +60,14 @@ SpecOps MUST integrate with OpenSpec through a small adapter around supported pu
 
 The OpenSpec adapter is responsible for:
 
-* detecting the installed version;
-* confirming compatibility;
-* querying change status;
-* retrieving artifact instructions;
-* invoking validation;
-* invoking archival;
-* normalising supported machine-readable output;
-* reporting unsupported or malformed responses clearly.
+- detecting the installed version;
+- confirming compatibility;
+- querying change status;
+- retrieving artifact instructions;
+- invoking validation;
+- invoking archival;
+- normalising supported machine-readable output;
+- reporting unsupported or malformed responses clearly.
 
 OpenSpec-specific command formats and result parsing MUST NOT be spread throughout the plugin.
 
@@ -79,14 +85,14 @@ The amount of detail within an artifact may vary according to the change, but th
 
 Language models own:
 
-* repository interpretation;
-* requirement discovery;
-* planning depth;
-* design decisions;
-* implementation decisions;
-* risk identification;
-* review reasoning;
-* repair decisions.
+- repository interpretation;
+- requirement discovery;
+- planning depth;
+- design decisions;
+- implementation decisions;
+- risk identification;
+- review reasoning;
+- repair decisions.
 
 TypeScript MUST NOT attempt to encode every reasoning decision as scheduler policy.
 
@@ -94,20 +100,20 @@ TypeScript MUST NOT attempt to encode every reasoning decision as scheduler poli
 
 TypeScript owns:
 
-* plugin and agent registration;
-* model routing;
-* permissions;
-* run persistence;
-* path safety;
-* OpenSpec invocation;
-* OpenSpec validation enforcement;
-* project validation execution;
-* repository-state identity;
-* retry and repair limits;
-* cancellation;
-* completion checks;
-* archival initiation;
-* terminal outcomes.
+- plugin and agent registration;
+- model routing;
+- permissions;
+- run persistence;
+- path safety;
+- OpenSpec invocation;
+- OpenSpec validation enforcement;
+- project validation execution;
+- repository-state identity;
+- retry and repair limits;
+- cancellation;
+- completion checks;
+- archival initiation;
+- terminal outcomes.
 
 ### 2.6 Validation gates are corrective
 
@@ -127,13 +133,13 @@ All automated loops MUST be bounded.
 
 SpecOps MUST NOT enter an unbounded:
 
-* artifact correction loop;
-* implementation loop;
-* validation loop;
-* review loop;
-* repair loop;
-* provider retry loop;
-* frontier consultation loop.
+- artifact correction loop;
+- implementation loop;
+- validation loop;
+- review loop;
+- repair loop;
+- provider retry loop;
+- frontier consultation loop.
 
 ### 2.8 Evidence over ceremony
 
@@ -141,13 +147,13 @@ Completion is determined by current evidence, not workflow pageantry.
 
 A run may complete only when:
 
-* required OpenSpec artifacts are valid;
-* implementation tasks are complete;
-* required project validation passes;
-* the current repository state has been independently reviewed;
-* no blocking findings remain;
-* the user approves completion;
-* OpenSpec archival succeeds.
+- required OpenSpec artifacts are valid;
+- implementation tasks are complete;
+- required project validation passes;
+- the current repository state has been independently reviewed;
+- no blocking findings remain;
+- the user approves completion;
+- OpenSpec archival succeeds.
 
 Additional reviewers, judges, refuters, or consultations do not inherently improve this guarantee and are not part of V1.
 
@@ -200,11 +206,11 @@ SpecOps MUST NOT override a project’s custom schema merely to make the run wor
 
 OpenSpec 1.7’s standard `spec-driven` schema defines:
 
-* `proposal` with no artifact dependencies;
-* `specs` requiring `proposal`;
-* `design` requiring `proposal`;
-* `tasks` requiring both `specs` and `design`;
-* implementation requiring `tasks`.
+- `proposal` with no artifact dependencies;
+- `specs` requiring `proposal`;
+- `design` requiring `proposal`;
+- `tasks` requiring both `specs` and `design`;
+- implementation requiring `tasks`.
 
 This means `specs` and `design` become available as sibling artifacts after the proposal.
 
@@ -239,39 +245,39 @@ SpecOps 1.0 MUST NOT create `specs` and `design` concurrently.
 
 SpecOps 1.0 includes:
 
-* interactive OpenCode execution;
-* repository exploration;
-* standard OpenSpec proposal creation;
-* standard OpenSpec specification creation;
-* standard OpenSpec design creation;
-* standard OpenSpec task creation;
-* OpenSpec validation and bounded artifact correction;
-* implementation;
-* project validation;
-* independent review;
-* bounded repair;
-* material user questions;
-* two user checkpoints;
-* coarse run persistence and recovery;
-* model configuration by agent role;
-* OpenSpec archival after user approval;
-* diagnostics and compatibility checks.
+- interactive OpenCode execution;
+- repository exploration;
+- standard OpenSpec proposal creation;
+- standard OpenSpec specification creation;
+- standard OpenSpec design creation;
+- standard OpenSpec task creation;
+- OpenSpec validation and bounded artifact correction;
+- implementation;
+- project validation;
+- independent review;
+- bounded repair;
+- material user questions;
+- two user checkpoints;
+- coarse run persistence and recovery;
+- model configuration by agent role;
+- OpenSpec archival after user approval;
+- diagnostics and compatibility checks.
 
 ### 4.2 Deferred beyond SpecOps 1.0
 
 The following are deferred:
 
-* automatic or unattended execution;
-* non-interactive CLI execution;
-* CI execution;
-* custom OpenSpec schema support;
-* specialist review skills;
-* optional agent skills;
-* parallel planning agents;
-* adaptive model routing;
-* multi-reviewer voting;
-* advanced partial artifact invalidation;
-* automatic adoption of unknown OpenSpec versions.
+- automatic or unattended execution;
+- non-interactive CLI execution;
+- CI execution;
+- custom OpenSpec schema support;
+- specialist review skills;
+- optional agent skills;
+- parallel planning agents;
+- adaptive model routing;
+- multi-reviewer voting;
+- advanced partial artifact invalidation;
+- automatic adoption of unknown OpenSpec versions.
 
 Automatic mode may be considered for SpecOps 1.1 after the interactive workflow is proven reliable.
 
@@ -341,30 +347,30 @@ The coordinator owns high-level orchestration.
 
 Responsibilities:
 
-* receive the user goal;
-* create or resume a run;
-* coordinate the standard OpenSpec workflow;
-* query OpenSpec readiness;
-* delegate work to the correct agent;
-* provide required context and artifact paths;
-* present material questions;
-* present the two checkpoints;
-* invoke validation capabilities;
-* initiate repair;
-* enforce retry limits;
-* invoke frontier consultation when justified;
-* request finalisation and archival.
+- receive the user goal;
+- create or resume a run;
+- coordinate the standard OpenSpec workflow;
+- query OpenSpec readiness;
+- delegate work to the correct agent;
+- provide required context and artifact paths;
+- present material questions;
+- present the two checkpoints;
+- invoke validation capabilities;
+- initiate repair;
+- enforce retry limits;
+- invoke frontier consultation when justified;
+- request finalisation and archival.
 
 The coordinator MUST NOT:
 
-* edit source code;
-* author OpenSpec artifacts itself;
-* perform deep repository exploration;
-* approve implementation;
-* override failed validation;
-* bypass review;
-* mark a run completed directly;
-* create new workflow stages.
+- edit source code;
+- author OpenSpec artifacts itself;
+- perform deep repository exploration;
+- approve implementation;
+- override failed validation;
+- bypass review;
+- mark a run completed directly;
+- create new workflow stages.
 
 ### 6.2 SpecOps explorer
 
@@ -372,36 +378,36 @@ The explorer investigates the repository.
 
 Responsibilities:
 
-* inspect repository structure;
-* locate relevant source files;
-* identify architectural conventions;
-* locate relevant tests;
-* inspect project configuration;
-* identify likely validation commands;
-* identify affected modules;
-* identify material risks and constraints;
-* identify questions that cannot be resolved from repository evidence;
-* produce an exploration report.
+- inspect repository structure;
+- locate relevant source files;
+- identify architectural conventions;
+- locate relevant tests;
+- inspect project configuration;
+- identify likely validation commands;
+- identify affected modules;
+- identify material risks and constraints;
+- identify questions that cannot be resolved from repository evidence;
+- produce an exploration report.
 
 The explorer is read-only.
 
 It MUST NOT:
 
-* edit repository files;
-* produce the final OpenSpec proposal;
-* produce implementation tasks;
-* ask questions answerable through repository inspection;
-* invent architecture unsupported by evidence.
+- edit repository files;
+- produce the final OpenSpec proposal;
+- produce implementation tasks;
+- ask questions answerable through repository inspection;
+- invent architecture unsupported by evidence.
 
 ### 6.3 SpecOps planner
 
 The planner owns:
 
-* `proposal.md`;
-* delta specifications under `specs/`;
-* `tasks.md`;
-* correction of those artifacts when OpenSpec validation fails;
-* revision of those artifacts after checkpoint feedback.
+- `proposal.md`;
+- delta specifications under `specs/`;
+- `tasks.md`;
+- correction of those artifacts when OpenSpec validation fails;
+- revision of those artifacts after checkpoint feedback.
 
 The planner MUST use the artifact instructions returned by OpenSpec for the active change and artifact.
 
@@ -409,30 +415,30 @@ It MUST NOT rely solely on hard-coded SpecOps copies of upstream templates.
 
 The planner MUST NOT:
 
-* edit source code;
-* produce `design.md`;
-* bypass OpenSpec validation;
-* invent unrelated requirements;
-* treat implementation details as behavioural specifications;
-* silently expand scope.
+- edit source code;
+- produce `design.md`;
+- bypass OpenSpec validation;
+- invent unrelated requirements;
+- treat implementation details as behavioural specifications;
+- silently expand scope.
 
 ### 6.4 SpecOps designer
 
 The designer owns:
 
-* `design.md`;
-* correction of `design.md` after OpenSpec validation failures;
-* design revisions requested through checkpoint feedback;
-* design revisions required by implementation discoveries.
+- `design.md`;
+- correction of `design.md` after OpenSpec validation failures;
+- design revisions requested through checkpoint feedback;
+- design revisions required by implementation discoveries.
 
 The designer MUST consume the validated proposal and specifications.
 
 It MUST NOT:
 
-* edit source code;
-* edit proposal, specifications, or tasks directly;
-* redesign unrelated repository areas;
-* introduce speculative future architecture.
+- edit source code;
+- edit proposal, specifications, or tasks directly;
+- redesign unrelated repository areas;
+- introduce speculative future architecture.
 
 If the change is simple, the design may be concise, but it MUST remain a valid standard OpenSpec design artifact.
 
@@ -442,22 +448,22 @@ The implementer owns all source-code and test mutation.
 
 Responsibilities:
 
-* consume the validated OpenSpec artifacts;
-* implement pending tasks;
-* update task checkboxes as work completes;
-* add or update tests;
-* follow repository conventions;
-* run useful development checks;
-* report material conflicts between implementation reality and the planning artifacts;
-* perform review-driven repairs.
+- consume the validated OpenSpec artifacts;
+- implement pending tasks;
+- update task checkboxes as work completes;
+- add or update tests;
+- follow repository conventions;
+- run useful development checks;
+- report material conflicts between implementation reality and the planning artifacts;
+- perform review-driven repairs.
 
 The implementer MUST NOT:
 
-* silently rewrite requirements;
-* weaken tests merely to obtain a pass;
-* mark review findings resolved;
-* approve completion;
-* archive the change.
+- silently rewrite requirements;
+- weaken tests merely to obtain a pass;
+- mark review findings resolved;
+- approve completion;
+- archive the change.
 
 There is no separate repairer agent.
 
@@ -465,41 +471,41 @@ There is no separate repairer agent.
 
 The reviewer independently examines:
 
-* the original user goal;
-* current OpenSpec artifacts;
-* completed task state;
-* the current implementation diff;
-* current project validation evidence;
-* relevant repository context.
+- the original user goal;
+- current OpenSpec artifacts;
+- completed task state;
+- the current implementation diff;
+- current project validation evidence;
+- relevant repository context.
 
 The reviewer MUST assess:
 
-* correctness;
-* requirement compliance;
-* regression risk;
-* test adequacy;
-* maintainability.
+- correctness;
+- requirement compliance;
+- regression risk;
+- test adequacy;
+- maintainability.
 
 It MUST additionally assess relevant concerns where the change makes them material, including:
 
-* security;
-* data integrity;
-* migration safety;
-* concurrency;
-* resilience;
-* performance;
-* public contracts;
-* infrastructure;
-* usability.
+- security;
+- data integrity;
+- migration safety;
+- concurrency;
+- resilience;
+- performance;
+- public contracts;
+- infrastructure;
+- usability.
 
 The reviewer MUST NOT:
 
-* edit source code;
-* invent findings to populate categories;
-* block completion solely over stylistic preference;
-* review an outdated repository state;
-* treat successful commands as proof of semantic correctness;
-* approve without inspecting the implementation.
+- edit source code;
+- invent findings to populate categories;
+- block completion solely over stylistic preference;
+- review an outdated repository state;
+- treat successful commands as proof of semantic correctness;
+- approve without inspecting the implementation.
 
 ### 6.7 SpecOps frontier
 
@@ -507,22 +513,23 @@ The frontier agent provides high-capability advice for genuine blockers.
 
 The coordinator may invoke it only when:
 
-* the originating agent inspected relevant evidence;
-* a concrete attempt was made;
-* a substantial blocker remains;
-* ordinary retrying is unlikely to help.
+- the originating agent inspected relevant evidence;
+- a concrete attempt was made;
+- a substantial blocker remains;
+- ordinary retrying is unlikely to help.
 
 The frontier agent:
 
-* is read-only;
-* provides advice to the originating agent;
-* does not modify artifacts;
-* does not modify source code;
-* does not approve completion;
-* does not replace review;
-* cannot recursively invoke itself.
+- is read-only;
+- provides advice to the originating agent;
+- does not modify artifacts;
+- does not modify source code;
+- does not approve completion;
+- does not replace review;
+- cannot recursively invoke itself.
 
-Only one frontier consultation is allowed for a single stage attempt.
+Only one frontier consultation is allowed for a single stage attempt. This is an
+internal bounded constant and MUST NOT be configurable.
 
 If the blocker remains after frontier-assisted retry, the run MUST either ask a material user question or become blocked.
 
@@ -553,12 +560,12 @@ TypeScript may inject explicit named values into prompt templates.
 
 The renderer MUST:
 
-* support simple named placeholders;
-* reject missing required values;
-* reject unresolved placeholders;
-* avoid executable template logic;
-* avoid loops, conditionals, macros, and inheritance;
-* delimit trusted instructions from untrusted goal and repository content.
+- support simple named placeholders;
+- reject missing required values;
+- reject unresolved placeholders;
+- avoid executable template logic;
+- avoid loops, conditionals, macros, and inheritance;
+- delimit trusted instructions from untrusted goal and repository content.
 
 Prompt construction SHOULD remain deliberately boring.
 
@@ -635,11 +642,11 @@ Where OpenCode can enforce path-scoped editing, native edit tools SHOULD be used
 
 If OpenCode cannot safely enforce path-scoped edits, SpecOps MAY expose a minimal guarded write tool that:
 
-* accepts a known artifact identifier;
-* resolves the output path from OpenSpec or SpecOps state;
-* prevents path traversal;
-* performs atomic writes;
-* does not require the model to return a large structured workflow payload.
+- accepts a known artifact identifier;
+- resolves the output path from OpenSpec or SpecOps state;
+- prevents path traversal;
+- performs atomic writes;
+- does not require the model to return a large structured workflow payload.
 
 This guarded writer is a safety boundary, not a replacement artifact protocol.
 
@@ -660,10 +667,11 @@ When validation fails:
 1. TypeScript captures the exact OpenSpec validation output.
 2. The owning agent receives:
 
-   * the artifact path;
-   * the current artifact;
-   * the validation errors;
-   * the correction attempt number.
+    - the artifact path;
+    - the current artifact;
+    - the validation errors;
+    - the correction attempt number.
+
 3. The owning agent corrects the artifact in place.
 4. TypeScript reruns validation.
 5. The workflow continues only when validation succeeds.
@@ -672,10 +680,11 @@ When validation fails:
 
 Each artifact receives:
 
-* one initial creation attempt;
-* up to two automatic correction attempts.
+- one initial creation attempt;
+- up to two automatic correction attempts.
 
-The default correction budget is therefore two corrections after the initial write.
+The correction budget is therefore two corrections after the initial write. It
+is an internal bounded constant and MUST NOT be configurable.
 
 ### 9.4 Exhausted correction
 
@@ -683,17 +692,17 @@ If the artifact remains invalid, the run enters an interactive pause.
 
 The user MUST be shown:
 
-* the artifact that failed;
-* the OpenSpec validation errors;
-* the correction attempts made;
-* the current model assignment.
+- the artifact that failed;
+- the OpenSpec validation errors;
+- the correction attempts made;
+- the current model assignment.
 
 The user may:
 
-* retry the same agent;
-* switch the agent model and retry;
-* edit the artifact manually and revalidate;
-* cancel the run.
+- retry the same agent;
+- switch the agent model and retry;
+- edit the artifact manually and revalidate;
+- cancel the run.
 
 SpecOps MUST NOT reduce or bypass OpenSpec validation to continue.
 
@@ -703,11 +712,11 @@ OpenSpec execution failures are not artifact reasoning failures.
 
 Examples include:
 
-* OpenSpec not installed;
-* unsupported version;
-* process launch failure;
-* filesystem permission failure;
-* malformed machine-readable output.
+- OpenSpec not installed;
+- unsupported version;
+- process launch failure;
+- filesystem permission failure;
+- malformed machine-readable output.
 
 These MUST produce a clear operational failure rather than being sent to an agent for correction.
 
@@ -719,25 +728,25 @@ SpecOps 1.0 has one checkpoint before implementation.
 
 It occurs only after:
 
-* proposal is valid;
-* specifications are valid;
-* design is valid;
-* tasks are valid;
-* OpenSpec reports the required planning artifacts complete.
+- proposal is valid;
+- specifications are valid;
+- design is valid;
+- tasks are valid;
+- OpenSpec reports the required planning artifacts complete.
 
 ### 10.1 Planning overview
 
 The coordinator presents a concise overview containing:
 
-* user goal;
-* proposal summary;
-* behavioural requirements;
-* technical approach;
-* task summary;
-* relevant risks;
-* assumptions;
-* proposed required validation commands;
-* unresolved non-blocking considerations.
+- user goal;
+- proposal summary;
+- behavioural requirements;
+- technical approach;
+- task summary;
+- relevant risks;
+- assumptions;
+- proposed required validation commands;
+- unresolved non-blocking considerations.
 
 The overview is presentation-only.
 
@@ -747,9 +756,9 @@ The standard OpenSpec artifacts remain authoritative.
 
 The user may choose:
 
-* **Continue to implementation**
-* **Request planning changes**
-* **Cancel**
+- **Continue to implementation**
+- **Request planning changes**
+- **Cancel**
 
 Continuing implicitly approves the displayed plan, design, and required validation command set for the run.
 
@@ -759,24 +768,27 @@ When changes are requested, the coordinator determines the affected planning art
 
 Typical revision scope:
 
-* proposal intent or scope changed:
+- proposal intent or scope changed:
 
-  * proposal;
-  * specs;
-  * design;
-  * tasks;
-* behavioural requirements changed:
+    - proposal;
+    - specs;
+    - design;
+    - tasks;
 
-  * specs;
-  * design where affected;
-  * tasks;
-* technical approach changed:
+- behavioural requirements changed:
 
-  * design;
-  * tasks;
-* task breakdown changed:
+    - specs;
+    - design where affected;
+    - tasks;
 
-  * tasks.
+- technical approach changed:
+
+    - design;
+    - tasks;
+
+- task breakdown changed:
+
+    - tasks.
 
 OpenSpec validation MUST rerun for every changed artifact.
 
@@ -792,22 +804,22 @@ SpecOps 1.0 MUST NOT implement a generic transitive artifact invalidation engine
 
 A user question is permitted only when:
 
-* repository inspection cannot resolve it;
-* at least two materially different outcomes remain;
-* choosing incorrectly would affect behaviour, compatibility, safety, data, architecture, or task scope;
-* a reversible low-risk assumption is insufficient.
+- repository inspection cannot resolve it;
+- at least two materially different outcomes remain;
+- choosing incorrectly would affect behaviour, compatibility, safety, data, architecture, or task scope;
+- a reversible low-risk assumption is insufficient.
 
 ### 11.2 Prohibited questions
 
 Agents MUST NOT ask the user for:
 
-* routine naming choices covered by repository conventions;
-* formatting preferences;
-* minor implementation details;
-* permission to continue;
-* progress confirmation;
-* answers available from repository inspection;
-* low-risk reversible choices.
+- routine naming choices covered by repository conventions;
+- formatting preferences;
+- minor implementation details;
+- permission to continue;
+- progress confirmation;
+- answers available from repository inspection;
+- low-risk reversible choices.
 
 ### 11.3 Question presentation
 
@@ -845,23 +857,23 @@ Explorer-discovered commands are recommendations until accepted at the planning 
 
 Required validation commands MUST:
 
-* use an explicit executable and arguments;
-* use a known repository working directory;
-* avoid unrestricted shell interpolation where practical;
-* have a timeout;
-* capture exit code;
-* capture bounded stdout and stderr;
-* record start and completion timestamps;
-* associate results with the current repository-state identity.
+- use an explicit executable and arguments;
+- use a known repository working directory;
+- avoid unrestricted shell interpolation where practical;
+- have a timeout;
+- capture exit code;
+- capture bounded stdout and stderr;
+- record start and completion timestamps;
+- associate results with the current repository-state identity.
 
 ### 12.4 Validation outcomes
 
 A required command that:
 
-* fails;
-* times out;
-* cannot execute;
-* produces an invalid result;
+- fails;
+- times out;
+- cannot execute;
+- produces an invalid result;
 
 prevents review and completion.
 
@@ -881,17 +893,17 @@ SpecOps MUST calculate a deterministic identity for the implementation state.
 
 The identity MUST include relevant:
 
-* tracked modifications;
-* staged changes;
-* newly created non-ignored files;
-* deleted files.
+- tracked modifications;
+- staged changes;
+- newly created non-ignored files;
+- deleted files.
 
 The identity MUST exclude:
 
-* `.git/`;
-* SpecOps run metadata;
-* OpenSpec planning metadata when calculating the implementation-only identity;
-* ignored build artifacts unless explicitly relevant.
+- `.git/`;
+- SpecOps run metadata;
+- OpenSpec planning metadata when calculating the implementation-only identity;
+- ignored build artifacts unless explicitly relevant.
 
 The exact hashing algorithm is an implementation-plan concern, but it MUST be deterministic and independently testable.
 
@@ -917,19 +929,19 @@ SpecOps 1.0 permits a dirty working tree.
 
 At run start, SpecOps MUST:
 
-* capture a baseline repository-state identity;
-* record existing changed and untracked files;
-* warn the user that pre-existing changes are present;
-* avoid claiming all current changes were created by SpecOps.
+- capture a baseline repository-state identity;
+- record existing changed and untracked files;
+- warn the user that pre-existing changes are present;
+- avoid claiming all current changes were created by SpecOps.
 
 SpecOps MUST NOT automatically reset or discard repository changes.
 
 If files change externally during the run, SpecOps MUST:
 
-* detect the state change at the next boundary;
-* invalidate stale validation and review evidence;
-* notify the user;
-* reevaluate the affected stage.
+- detect the state change at the next boundary;
+- invalidate stale validation and review evidence;
+- notify the user;
+- reevaluate the affected stage.
 
 Automatic rollback is out of scope for V1.
 
@@ -979,13 +991,13 @@ pass | changes-required
 
 Each blocking finding MUST include:
 
-* stable identifier;
-* severity;
-* affected file or component;
-* concrete evidence;
-* expected behaviour;
-* observed problem;
-* required correction.
+- stable identifier;
+- severity;
+- affected file or component;
+- concrete evidence;
+- expected behaviour;
+- observed problem;
+- required correction.
 
 A finding MUST NOT be blocking merely because another valid design might be preferred.
 
@@ -1022,21 +1034,20 @@ When review returns `changes-required`:
 
 ### 16.2 Repair budget
 
-The default maximum repair attempts is two.
+The maximum repair attempts is two. It is an internal bounded constant and MUST
+NOT be configurable.
 
 A repair attempt is counted when the implementer is invoked against blocking review findings.
-
-The allowed configuration range SHOULD remain small.
 
 ### 16.3 Repair exhaustion
 
 The run becomes blocked when:
 
-* repair attempts are exhausted;
-* the implementer cannot safely resolve the findings;
-* requirements conflict with repository constraints;
-* a material user decision is required;
-* the same blocking problem remains unresolved after frontier assistance.
+- repair attempts are exhausted;
+- the implementer cannot safely resolve the findings;
+- requirements conflict with repository constraints;
+- a material user decision is required;
+- the same blocking problem remains unresolved after frontier assistance.
 
 The latest artifacts, source changes, validation evidence, and review MUST be preserved.
 
@@ -1044,13 +1055,13 @@ The latest artifacts, source changes, validation evidence, and review MUST be pr
 
 SpecOps 1.0 MUST NOT implement:
 
-* a separate repairer agent;
-* review refutation;
-* finding voting;
-* semantic finding fingerprints;
-* finding supersession graphs;
-* grouped repair tribunals;
-* correctness or compliance judges.
+- a separate repairer agent;
+- review refutation;
+- finding voting;
+- semantic finding fingerprints;
+- finding supersession graphs;
+- grouped repair tribunals;
+- correctness or compliance judges.
 
 ---
 
@@ -1058,33 +1069,33 @@ SpecOps 1.0 MUST NOT implement:
 
 The second and final normal checkpoint occurs after:
 
-* implementation tasks are complete;
-* required validation passes;
-* review passes;
-* no blocking findings remain;
-* the current repository identity matches both validation and review evidence.
+- implementation tasks are complete;
+- required validation passes;
+- review passes;
+- no blocking findings remain;
+- the current repository identity matches both validation and review evidence.
 
 ### 17.1 Implementation overview
 
 The coordinator presents:
 
-* implementation summary;
-* changed areas;
-* completed task summary;
-* validation results;
-* review verdict;
-* non-blocking observations;
-* OpenSpec change status;
-* archive readiness.
+- implementation summary;
+- changed areas;
+- completed task summary;
+- validation results;
+- review verdict;
+- non-blocking observations;
+- OpenSpec change status;
+- archive readiness.
 
 ### 17.2 User actions
 
 The user may choose:
 
-* **Complete and archive**
-* **Request implementation changes**
-* **Leave change open**
-* **Cancel**
+- **Complete and archive**
+- **Request implementation changes**
+- **Leave change open**
+- **Cancel**
 
 ### 17.3 Request implementation changes
 
@@ -1092,9 +1103,9 @@ User feedback returns to the implementer.
 
 After mutation:
 
-* required validation reruns;
-* review reruns;
-* the completion checkpoint is presented again.
+- required validation reruns;
+- review reruns;
+- the completion checkpoint is presented again.
 
 ### 17.4 Leave change open
 
@@ -1122,16 +1133,20 @@ When selected, TypeScript MUST:
 6. persist the archive result;
 7. mark the run completed only after archive success.
 
+Archive behaviour is selected only through this completion-checkpoint action.
+SpecOps MUST NOT expose automatic archival or archive preferences as
+configuration.
+
 ### 17.6 Archive failure
 
 Archive failure MUST preserve the verified implementation and all evidence.
 
 The run enters a retryable failed state with:
 
-* the OpenSpec error;
-* the attempted change;
-* the current repository identity;
-* the archive attempt timestamp.
+- the OpenSpec error;
+- the attempted change;
+- the current repository identity;
+- the archive attempt timestamp.
 
 Retrying archive MUST NOT rerun implementation when repository state remains unchanged.
 
@@ -1180,20 +1195,20 @@ Representative fields:
 
 ```json
 {
-  "version": 1,
-  "change": "change-name",
-  "goal": "user goal",
-  "status": "active",
-  "stage": "implementation",
-  "startedAt": "timestamp",
-  "updatedAt": "timestamp",
-  "baselineRepositoryState": "hash",
-  "currentRepositoryState": "hash",
-  "validatedRepositoryState": null,
-  "reviewedRepositoryState": null,
-  "artifactCorrectionAttempts": {},
-  "repairAttempts": 0,
-  "failure": null
+    "version": 1,
+    "change": "change-name",
+    "goal": "user goal",
+    "status": "active",
+    "stage": "implementation",
+    "startedAt": "timestamp",
+    "updatedAt": "timestamp",
+    "baselineRepositoryState": "hash",
+    "currentRepositoryState": "hash",
+    "validatedRepositoryState": null,
+    "reviewedRepositoryState": null,
+    "artifactCorrectionAttempts": {},
+    "repairAttempts": 0,
+    "failure": null
 }
 ```
 
@@ -1217,36 +1232,42 @@ SpecOps recovers at coarse persisted boundaries.
 
 Examples:
 
-* interrupted exploration:
+- interrupted exploration:
 
-  * retry exploration;
-* invalid proposal:
+    - retry exploration;
 
-  * resume proposal correction;
-* interrupted implementation:
+- invalid proposal:
 
-  * inspect current repository state and resume implementation;
-* failed validation:
+    - resume proposal correction;
 
-  * resume implementation with validation evidence;
-* failed reviewer invocation:
+- interrupted implementation:
 
-  * retry review;
-* failed archive:
+    - inspect current repository state and resume implementation;
 
-  * retry archive when state remains unchanged.
+- failed validation:
+
+    - resume implementation with validation evidence;
+
+- failed reviewer invocation:
+
+    - retry review;
+
+- failed archive:
+
+    - retry archive when state remains unchanged.
 
 SpecOps MUST NOT attempt to reconstruct every interrupted model action.
 
 ### 19.2 Provider retries
 
-Transient provider failures may receive one automatic retry.
+Transient provider failures may receive one automatic retry. This is an internal
+bounded constant and MUST NOT be configurable.
 
 Examples:
 
-* temporary rate limit;
-* transient connection failure;
-* provider service error.
+- temporary rate limit;
+- transient connection failure;
+- provider service error.
 
 Malformed or semantically incorrect output MUST NOT be blindly retried as a transient error.
 
@@ -1256,11 +1277,11 @@ The user may manually retry a stage or switch the configured model.
 
 Cancellation MUST:
 
-* stop further orchestration;
-* mark the run cancelled;
-* preserve artifacts;
-* preserve repository changes;
-* preserve diagnostics.
+- stop further orchestration;
+- mark the run cancelled;
+- preserve artifacts;
+- preserve repository changes;
+- preserve diagnostics.
 
 Cancellation MUST NOT delete or reset user work.
 
@@ -1294,22 +1315,22 @@ The final workflow-specific tool count SHOULD NOT exceed six without a specifica
 
 The tool surface must provide only the capabilities required for:
 
-* starting or resuming a run;
-* reading status;
-* updating coarse run state;
-* invoking OpenSpec validation;
-* executing project validation;
-* finalising or cancelling a run.
+- starting or resuming a run;
+- reading status;
+- updating coarse run state;
+- invoking OpenSpec validation;
+- executing project validation;
+- finalising or cancelling a run.
 
 SpecOps MUST NOT expose tools requiring models to manually manage:
 
-* dispatch IDs;
-* capability graphs;
-* artifact dependency graphs;
-* provenance tuples;
-* review tribunals;
-* escalation episodes;
-* scheduler internals.
+- dispatch IDs;
+- capability graphs;
+- artifact dependency graphs;
+- provenance tuples;
+- review tribunals;
+- escalation episodes;
+- scheduler internals.
 
 Native OpenCode subagent and question mechanisms SHOULD be used where appropriate.
 
@@ -1335,15 +1356,15 @@ Starts a new interactive run or resumes the active run for the current change.
 
 Shows:
 
-* goal;
-* status;
-* current stage;
-* OpenSpec artifact status;
-* correction attempts;
-* validation results;
-* review verdict;
-* repair attempts;
-* blocked or failed reason.
+- goal;
+- status;
+- current stage;
+- OpenSpec artifact status;
+- correction attempts;
+- validation results;
+- review verdict;
+- repair attempts;
+- blocked or failed reason.
 
 ### `/specops-cancel`
 
@@ -1375,28 +1396,34 @@ or non-interactive CLI adapters.
 
 ## 23. Configuration
 
-Configuration may include:
+Configuration exposes only genuine project or user choices:
 
-* model mapping for each agent;
-* supported model variants;
-* required validation commands;
-* command timeouts;
-* artifact correction limit;
-* repair limit;
-* bounded output capture settings;
-* optional archive preferences that do not bypass final approval.
+- model mapping for each of the seven agents;
+- supported model variants;
+- an OpenSpec command override;
+- required validation commands;
+- command timeouts;
+- bounded output capture settings;
+- an optional MCP integration toggle.
 
 Configuration MUST NOT expose:
 
-* workflow tiers;
-* scope thresholds;
-* specialist mappings;
-* dispatch budgets;
-* refutation behaviour;
-* capability graphs;
-* frontier levels;
-* artifact dependency overrides;
-* custom OpenSpec schema installation.
+- workflow tiers;
+- scope thresholds;
+- routing or automation policy;
+- specialist mappings;
+- escalation or frontier dispatch budgets;
+- reviewer policy knobs;
+- refutation behaviour;
+- capability graphs;
+- frontier levels;
+- artifact dependency overrides;
+- custom OpenSpec schema installation;
+- artifact correction limits;
+- review repair limits;
+- transient provider retry limits;
+- frontier consultation limits;
+- automatic archival or archive preferences.
 
 Defaults MUST allow the plugin to run with minimal setup once OpenSpec is available.
 
@@ -1420,11 +1447,11 @@ TypeScript owns the mapping from role to configured model.
 
 Model configuration MUST NOT alter:
 
-* agent permissions;
-* agent ownership;
-* OpenSpec workflow;
-* completion conditions;
-* retry limits.
+- agent permissions;
+- agent ownership;
+- OpenSpec workflow;
+- completion conditions;
+- retry limits.
 
 V1 does not implement automatic model escalation.
 
@@ -1436,26 +1463,26 @@ The frontier model is invoked only through the explicit frontier policy.
 
 `/specops-doctor` MUST validate:
 
-* compatible OpenCode version;
-* compatible OpenSpec version;
-* standard `spec-driven` schema availability;
-* absence of required custom SpecOps schemas;
-* prompt-file presence;
-* prompt placeholder validity;
-* agent registration;
-* model mappings;
-* permission configuration;
-* configuration validity;
-* writable SpecOps state paths;
-* writable OpenSpec change paths;
-* validation command configuration;
-* supported OpenSpec JSON interfaces.
+- compatible OpenCode version;
+- compatible OpenSpec version;
+- standard `spec-driven` schema availability;
+- absence of required custom SpecOps schemas;
+- prompt-file presence;
+- prompt placeholder validity;
+- agent registration;
+- model mappings;
+- permission configuration;
+- configuration validity;
+- writable SpecOps state paths;
+- writable OpenSpec change paths;
+- validation command configuration;
+- supported OpenSpec JSON interfaces.
 
 Doctor output MUST distinguish:
 
-* errors;
-* warnings;
-* informational findings.
+- errors;
+- warnings;
+- informational findings.
 
 Each error SHOULD provide concrete remediation.
 
@@ -1465,18 +1492,18 @@ Each error SHOULD provide concrete remediation.
 
 SpecOps MUST:
 
-* validate change names;
-* prevent path traversal;
-* canonicalise managed paths;
-* prevent artifact writes outside approved locations;
-* avoid destructive shell interpolation;
-* treat user and repository content as untrusted;
-* preserve user files;
-* preserve existing repository changes;
-* prevent read-only agents from editing source code;
-* prevent the coordinator and reviewer from mutating implementation code;
-* associate validation and review evidence with repository identity;
-* reject stale completion evidence.
+- validate change names;
+- prevent path traversal;
+- canonicalise managed paths;
+- prevent artifact writes outside approved locations;
+- avoid destructive shell interpolation;
+- treat user and repository content as untrusted;
+- preserve user files;
+- preserve existing repository changes;
+- prevent read-only agents from editing source code;
+- prevent the coordinator and reviewer from mutating implementation code;
+- associate validation and review evidence with repository identity;
+- reject stale completion evidence.
 
 Existing proven filesystem-safety and atomic-write utilities may be reused after review.
 
@@ -1516,37 +1543,37 @@ SpecOps 1.0 may operate on an existing compatible active change only when its st
 
 SpecOps 1.0 does not include:
 
-* automatic mode;
-* unattended execution;
-* CI orchestration;
-* workflow tiers;
-* deterministic scope classification;
-* a separate assessor;
-* a separate repairer;
-* correctness judges;
-* compliance judges;
-* general-risk reviewers;
-* specialist reviewer agents;
-* review refuters;
-* low and high frontier levels;
-* specialist skills;
-* required skills;
-* custom OpenSpec schemas;
-* replacement OpenSpec workflows;
-* duplicated OpenSpec validation;
-* a parallel artifact dependency graph;
-* typed escalation protocols;
-* dynamic workflow stages;
-* consultation provenance;
-* dispatch completion protocols;
-* event-sourced model activity;
-* partial transitive invalidation;
-* finding adjudication;
-* finding voting;
-* unbounded retries;
-* automatic rollback;
-* backward-compatible resumption of old workflow runs;
-* a generic workflow engine for products other than SpecOps.
+- automatic mode;
+- unattended execution;
+- CI orchestration;
+- workflow tiers;
+- deterministic scope classification;
+- a separate assessor;
+- a separate repairer;
+- correctness judges;
+- compliance judges;
+- general-risk reviewers;
+- specialist reviewer agents;
+- review refuters;
+- low and high frontier levels;
+- specialist skills;
+- required skills;
+- custom OpenSpec schemas;
+- replacement OpenSpec workflows;
+- duplicated OpenSpec validation;
+- a parallel artifact dependency graph;
+- typed escalation protocols;
+- dynamic workflow stages;
+- consultation provenance;
+- dispatch completion protocols;
+- event-sourced model activity;
+- partial transitive invalidation;
+- finding adjudication;
+- finding voting;
+- unbounded retries;
+- automatic rollback;
+- backward-compatible resumption of old workflow runs;
+- a generic workflow engine for products other than SpecOps.
 
 These features MUST NOT be added during implementation without revising this specification.
 
@@ -1560,27 +1587,27 @@ Core TypeScript behaviour MUST be testable without invoking real language models
 
 Tests MUST cover:
 
-* OpenSpec version detection;
-* unsupported-version rejection;
-* standard-schema enforcement;
-* OpenSpec status parsing;
-* OpenSpec instruction retrieval;
-* artifact validation;
-* artifact correction budgets;
-* atomic state persistence;
-* prompt rendering;
-* prompt placeholder rejection;
-* path safety;
-* agent permissions;
-* baseline capture;
-* repository-state hashing;
-* validation freshness;
-* review freshness;
-* repair limits;
-* cancellation;
-* verified-but-unarchived state;
-* archive retry;
-* legacy-state rejection.
+- OpenSpec version detection;
+- unsupported-version rejection;
+- standard-schema enforcement;
+- OpenSpec status parsing;
+- OpenSpec instruction retrieval;
+- artifact validation;
+- artifact correction budgets;
+- atomic state persistence;
+- prompt rendering;
+- prompt placeholder rejection;
+- path safety;
+- agent permissions;
+- baseline capture;
+- repository-state hashing;
+- validation freshness;
+- review freshness;
+- repair limits;
+- cancellation;
+- verified-but-unarchived state;
+- archive retry;
+- legacy-state rejection.
 
 ### 29.2 End-to-end scenarios
 
@@ -1615,26 +1642,26 @@ SpecOps 1.0 is ready for release when all the following are true.
 
 ### 30.1 OpenSpec-native behaviour
 
-* Uses OpenSpec 1.7 standard `spec-driven` artifacts.
-* Uses OpenSpec for readiness, instructions, validation, and archival.
-* Creates no custom schema.
-* Produces changes usable through ordinary OpenSpec tooling.
+- Uses OpenSpec 1.7 standard `spec-driven` artifacts.
+- Uses OpenSpec for readiness, instructions, validation, and archival.
+- Creates no custom schema.
+- Produces changes usable through ordinary OpenSpec tooling.
 
 ### 30.2 Functional workflow
 
 Given a supported repository and clear goal, SpecOps can:
 
-* explore;
-* plan;
-* design;
-* obtain user approval;
-* implement;
-* validate;
-* review;
-* repair;
-* obtain final approval;
-* archive;
-* complete.
+- explore;
+- plan;
+- design;
+- obtain user approval;
+- implement;
+- validate;
+- review;
+- repair;
+- obtain final approval;
+- archive;
+- complete.
 
 ### 30.3 Corrective validation
 
@@ -1656,12 +1683,12 @@ Stale validation or review evidence cannot satisfy completion.
 
 A developer unfamiliar with the implementation can understand normal execution by reading:
 
-* this specification;
-* one orchestration module;
-* the OpenSpec adapter;
-* the run-state schema;
-* the seven prompt files;
-* the small tool surface.
+- this specification;
+- one orchestration module;
+- the OpenSpec adapter;
+- the run-state schema;
+- the seven prompt files;
+- the small tool surface.
 
 Understanding the workflow must not require tracing capability registries, reviewer tribunals, or generated wire-contract machinery.
 
@@ -1680,8 +1707,8 @@ Before implementation:
 
 During implementation, proposed work outside this specification must be:
 
-* rejected;
-* deferred;
-* or added through an explicit specification amendment.
+- rejected;
+- deferred;
+- or added through an explicit specification amendment.
 
 “No, that is not part of SpecOps 1.0” is a successful application of the project process.
