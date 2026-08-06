@@ -4,14 +4,14 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 1. Phase 0 — Baseline and rewrite guardrails
 
-- [ ] 1.1 Verify the current branch is `master` and the working tree is clean; create the immutable `pre-specops-1.0-rewrite` tag at the commit immediately before rewrite implementation unless it already exists at that commit; do not push the tag or any commits
-- [ ] 1.2 In a separate temporary clone or temporary Git worktree created from `pre-specops-1.0-rewrite`, capture `npm install && npm run check && npm run smoke:opencode` output to `docs/internal/specops-1.0-baseline.txt` (do not run the legacy check pipeline in the active `master` workspace)
-- [ ] 1.3 Commit the current approved `SpecOps 1.0 Technical Specification` at `docs/specops-1.0-technical-spec.md`
-- [ ] 1.4 Write the legacy architecture inventory at `docs/internal/specops-1.0-legacy-inventory.md` (commands, tools, agents, schemas, workflow modules, generated files, scripts, state files, config fields, tests, reusable utils, deletion candidates)
+- [x] 1.1 Verify the current branch is `master` and the working tree is clean; create the immutable `pre-specops-1.0-rewrite` tag at the commit immediately before rewrite implementation unless it already exists at that commit; do not push the tag or any commits
+- [x] 1.2 In a separate temporary clone or temporary Git worktree created from `pre-specops-1.0-rewrite`, capture `npm install && npm run check && npm run smoke:opencode` output to `docs/internal/specops-1.0-baseline.txt` (do not run the legacy check pipeline in the active `master` workspace)
+- [x] 1.3 Commit the current approved `SpecOps 1.0 Technical Specification` at `docs/specops-1.0-technical-spec.md`
+- [x] 1.4 Write the legacy architecture inventory at `docs/internal/specops-1.0-legacy-inventory.md` (commands, tools, agents, schemas, workflow modules, generated files, scripts, state files, config fields, tests, reusable utils, deletion candidates)
 - [x] 1.5 Initialise the fresh standard `openspec/` project via `openspec init --tools opencode`; confirm `openspec/config.yaml` uses `spec-driven`; commit the tracked project
 - [x] 1.6 Create the standard change `rewrite-specops-1-0` via `openspec new change rewrite-specops-1-0 --schema spec-driven` (done during this planning pass)
-- [ ] 1.7 Add `tests/guardrails.test.ts` with boundary assertions initially skipped where dependent on later phases: exactly seven agents, no `/specops-auto`, no bundled `specops*` schemas, exact five-command set, no old protocol tool IDs, OpenSpec range `>=1.7.0 <1.8.0`, seven prompt files, `openspec/` tracked, exact six-tool catalogue
-- [ ] 1.8 Verify Phase 0: `openspec validate rewrite-specops-1-0 --strict` passes; guardrail tests load; baseline file exists in the separate clone
+- [x] 1.7 Add `tests/guardrails.test.ts` with boundary assertions initially skipped where dependent on later phases: exactly seven agents, no `/specops-auto`, no bundled `specops*` schemas, exact five-command set, no old protocol tool IDs, OpenSpec range `>=1.7.0 <1.8.0`, seven prompt files, `openspec/` tracked, exact six-tool catalogue
+- [x] 1.8 Verify Phase 0: `openspec validate rewrite-specops-1-0 --strict` passes; guardrail tests load; baseline file exists at `docs/internal/specops-1.0-baseline.txt`
 
 ## 2. Phase 1 — OpenSpec 1.7 adapter and standard onboarding
 
