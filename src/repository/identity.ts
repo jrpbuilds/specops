@@ -48,12 +48,12 @@ export async function calculateRepositoryIdentity(
     const records = await Promise.all(
         entries.map(async entry => {
             const content = await readTrackedContent(directory, entry.path)
-            return [
+            return JSON.stringify([
                 entry.indexStatus,
                 entry.worktreeStatus,
                 entry.path,
                 content === undefined ? "deleted" : hash(content),
-            ].join("\t")
+            ])
         }),
     )
     const canonical = [`head\t${head.trim()}`, ...records.sort()].join("\n") + "\n"

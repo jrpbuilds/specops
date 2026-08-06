@@ -27,7 +27,11 @@ export function createValidationRegistry(
     acceptedRecommendationIds: string[] = [],
 ): ValidationRegistry {
     const accepted = new Set(acceptedRecommendationIds)
-    const required = [...configured, ...recommendations.filter(item => accepted.has(item.id))]
+    const configuredIds = new Set(configured.map(command => command.id))
+    const required = [
+        ...configured,
+        ...recommendations.filter(item => accepted.has(item.id) && !configuredIds.has(item.id)),
+    ]
     validateValidationCommands(required)
     validateValidationCommands(recommendations)
     return {

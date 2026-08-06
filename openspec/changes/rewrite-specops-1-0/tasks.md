@@ -46,18 +46,18 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 4. Phase 3 — Run state, repository identity, and validation evidence
 
-- [ ] 4.1 Create `src/state/schema.ts` with the coarse `RunState` (status, stage, identities, correction counters, repair counter, failure); no dispatches/capability IDs/provenance/facets
-- [ ] 4.2 Create `src/state/paths.ts` for canonical `.specops/runs/<change>/{exploration.md, review.md, run.json, validation/}` with traversal safety
-- [ ] 4.3 Create `src/state/store.ts` with atomic create/read/update, schema validation, legacy-state detection (clear incompatibility, no translation), cancellation persistence, and terminal-state protection
-- [ ] 4.4 Create `src/state/recovery.ts` for coarse recovery: on resume, inspect current repository state, OpenSpec change status, and existing artifacts, then resume from the last persisted stage; no reconstruction or replay of individual model actions
-- [ ] 4.5 Create `src/repository/identity.ts` with the deterministic SHA-256 repository-state identity (tracked mods, staged, deletions, untracked non-ignored; exclude `.git/`, `.specops/`, validation evidence, OpenSpec planning artifacts for the implementation-only identity)
-- [ ] 4.6 Create `src/repository/baseline.ts` for dirty-tree baseline capture with user warning and no auto-reset
-- [ ] 4.7 Create `src/repository/changes.ts` for changed-file summary and external-mutation detection at boundaries
-- [ ] 4.8 Create `src/validation/registry.ts` for required command configuration (explicit authoritative; explorer recommendations separate until accepted)
-- [ ] 4.9 Create `src/validation/executor.ts` shell-free over `runProcess`; record command id, executable, args, cwd, start/end, duration, exit code, timeout status, bounded stdout/stderr, repository identity, output hash
-- [ ] 4.10 Create `src/validation/evidence.ts` for evidence persistence and invalidation on repository mutation
-- [ ] 4.11 Write `tests/state.test.ts`, `tests/repository-identity.test.ts`, and `tests/validation-evidence.test.ts` (schema, atomic writes, interrupted-write safety, legacy rejection, transitions, dirty-tree baseline, deterministic hashing, untracked/deletion inclusion, metadata exclusion, external mutation, evidence persistence/invalidation, timeout, bounded output, shell-free execution, command config)
-- [ ] 4.12 Verify Phase 3: run state is createable, readable, and resumable; identity is deterministic; evidence is bound to identity; no new code depends on old dispatch/scheduler state
+- [x] 4.1 Create `src/state/schema.ts` with the coarse `RunState` (status, stage, identities, correction counters, repair counter, failure); no dispatches/capability IDs/provenance/facets
+- [x] 4.2 Create `src/state/paths.ts` for canonical `.specops/runs/<change>/{exploration.md, review.md, run.json, validation/}` with traversal safety
+- [x] 4.3 Create `src/state/store.ts` with atomic create/read/update, schema validation, legacy-state detection (clear incompatibility, no translation), cancellation persistence, and terminal-state protection
+- [x] 4.4 Create `src/state/recovery.ts` for coarse recovery: on resume, inspect current repository state, OpenSpec change status, and existing artifacts, then resume from the last persisted stage; no reconstruction or replay of individual model actions
+- [x] 4.5 Create `src/repository/identity.ts` with the deterministic SHA-256 repository-state identity (tracked mods, staged, deletions, untracked non-ignored; exclude `.git/`, `.specops/`, validation evidence, OpenSpec planning artifacts for the implementation-only identity)
+- [x] 4.6 Create `src/repository/baseline.ts` for dirty-tree baseline capture with user warning and no auto-reset
+- [x] 4.7 Create `src/repository/changes.ts` for changed-file summary and external-mutation detection at boundaries
+- [x] 4.8 Create `src/validation/registry.ts` for required command configuration (explicit authoritative; explorer recommendations separate until accepted)
+- [x] 4.9 Create `src/validation/executor.ts` shell-free over `runProcess`; record command id, executable, args, cwd, start/end, duration, exit code, timeout status, bounded stdout/stderr, repository identity, output hash
+- [x] 4.10 Create `src/validation/evidence.ts` for evidence persistence and invalidation on repository mutation
+- [x] 4.11 Write `tests/state.test.ts`, `tests/repository-identity.test.ts`, and `tests/validation-evidence.test.ts` (schema, atomic writes, interrupted-write safety, legacy rejection, transitions, dirty-tree baseline, deterministic hashing, untracked/deletion inclusion, metadata exclusion, external mutation, evidence persistence/invalidation, timeout, bounded output, shell-free execution, command config)
+- [x] 4.12 Verify Phase 3: run state is createable, readable, and resumable; identity is deterministic; evidence is bound to identity; no new code depends on old dispatch/scheduler state
 
 ## 5. Phase 4 — Planning workflow vertical slice
 
