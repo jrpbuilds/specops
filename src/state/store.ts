@@ -1,10 +1,19 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { createHash } from "node:crypto"
-import { mkdir, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
+import { link, mkdir, readFile, readdir, rename, rm, stat, unlink } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import type { RunState } from "../types.js"
 import { writeFileAtomic } from "./atomic.js"
+import {
+    assertRunState,
+    createRunState,
+    isTerminalRunStatus,
+    parseRunState,
+    type CreateRunStateInput,
+    type RunState as V1RunState,
+} from "./schema.js"
+import { runStatePath } from "./paths.js"
 
 /**
  * Return the controller-owned directory for one OpenSpec change.
@@ -866,6 +875,100 @@ function isIsoTimestamp(value: unknown): value is string {
 /** Return whether a value is a strictly positive integer. */
 function isPositiveInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value > 0
+}
+
+/** Error raised when a pre-V1 scheduler run is found in a V1 run location. */
+export class LegacyRunStateError extends Error {
+    constructor() {
+        super(
+            "Legacy SpecOps run state is incompatible with SpecOps 1.0 and cannot be resumed. Start a new V1 run; existing artifacts and repository changes are preserved.",
+        )
+        this.name = "LegacyRunStateError"
+    }
+}
+
+/** Create a new coarse V1 run record without replacing an existing record. */
+export async function createV1Run(
+    directory: string,
+    input: CreateRunStateInput,
+): Promise<V1RunState> {
+    const destination = runStatePath(directory, input.change)
+    const state = createRunState(input)
+    const temporary = `${destination}.${randomUUID()}.create`
+    await writeFileAtomic(temporary, `${JSON.stringify(state, null, 2)}\n`)
+    try {
+        await link(temporary, destination)
+    } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+            throw new Error(`SpecOps V1 run already exists for change ${input.change}`)
+        }
+        throw error
+    } finally {
+        await unlink(temporary).catch(() => undefined)
+    }
+    return state
+}
+
+/** Read and validate a coarse V1 run, rejecting all legacy state formats. */
+export async function readV1Run(directory: string, change: string): Promise<V1RunState> {
+    const destination = runStatePath(directory, change)
+    let raw: unknown
+    try {
+        raw = JSON.parse(await readFile(destination, "utf8"))
+    } catch (error) {
+        if (error instanceof SyntaxError) {
+            throw new Error(`invalid SpecOps V1 run state JSON for ${change}`)
+        }
+        throw error
+    }
+    if (isLegacyRunState(raw)) throw new LegacyRunStateError()
+    return parseRunState(raw)
+}
+
+/**
+ * Atomically update a non-terminal V1 run state.
+ *
+ * The updater receives the last complete persisted record and must return the
+ * next complete coarse state. Terminal runs deliberately cannot be continued.
+ */
+export async function updateV1Run(
+    directory: string,
+    change: string,
+    update: (state: V1RunState) => V1RunState,
+): Promise<V1RunState> {
+    const current = await readV1Run(directory, change)
+    if (isTerminalRunStatus(current.status)) {
+        throw new Error(`cannot continue terminal SpecOps V1 run (${current.status})`)
+    }
+    const next = assertRunState({
+        ...update(current),
+        change: current.change,
+        startedAt: current.startedAt,
+        updatedAt: new Date().toISOString(),
+    })
+    await writeFileAtomic(runStatePath(directory, change), `${JSON.stringify(next, null, 2)}\n`)
+    return next
+}
+
+/** Cancel an active V1 run while preserving all artifacts, changes, and evidence. */
+export async function cancelV1Run(directory: string, change: string): Promise<V1RunState> {
+    return updateV1Run(directory, change, state => ({
+        ...state,
+        status: "cancelled",
+        failure: null,
+    }))
+}
+
+/** Return whether a parsed record is recognisably from the pre-V1 scheduler. */
+function isLegacyRunState(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        (value.version !== 1 ||
+            "dispatches" in value ||
+            "requirements" in value ||
+            "schedulerHistory" in value ||
+            "capabilities" in value)
+    )
 }
 
 /**
