@@ -14,9 +14,9 @@ import {
     type ValidationProcessRunner,
 } from "../validation/executor.js"
 import type { ValidationCommand } from "../validation/registry.js"
+import { MAX_VALIDATION_FIXES } from "./limits.js"
 
-/** The independent validation-fix attempts allowed after an initial failed run. */
-export const MAX_VALIDATION_FIXES = 2
+export { MAX_VALIDATION_FIXES } from "./limits.js"
 
 /** Complete approved artifacts supplied to every implementer invocation. */
 export type ImplementationArtifacts = {
@@ -67,9 +67,10 @@ export type ImplementationAgentRequest = {
     acceptedValidationCommands: readonly ValidationCommand[]
     prompt: string
     state: RunState
-    kind: "initial" | "retry" | "validation-fix" | "frontier-advice"
+    kind: "initial" | "retry" | "validation-fix" | "frontier-advice" | "review-repair"
     validationEvidence?: readonly ValidationEvidence[]
     frontierAdvice?: string
+    reviewBlockingFindingIds?: readonly string[]
 }
 
 /** Injectable native task boundary for the implementer. */
@@ -494,7 +495,7 @@ function isFrontierEligible(
 }
 
 /** Read all approved artifacts from OpenSpec's current status paths. */
-async function loadImplementationArtifacts(
+export async function loadImplementationArtifacts(
     directory: string,
     change: string,
     adapter?: ImplementationOpenSpecAdapter,

@@ -18,6 +18,7 @@ import {
     type ImplementationResult,
     type ImplementationWorkflowOptions,
 } from "./implementation.js"
+import { runReview, type ReviewResult, type ReviewWorkflowOptions } from "./review.js"
 
 /** Adapter contract consumed by the coordinator and intentionally fake-friendly. */
 export type CoordinatorOpenSpecAdapter = PlanningOpenSpecAdapter & {
@@ -43,6 +44,7 @@ export type CoordinatorOptions = {
     explorer: ExplorerRunner
     planners: PlanningAgentRunner
     implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">
+    review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">
     captureBaseline?: (directory: string) => Promise<RepositoryBaseline>
     recover?: (
         directory: string,
@@ -52,7 +54,9 @@ export type CoordinatorOptions = {
 }
 
 /** Result returned at the next coordinator-owned planning boundary. */
-export type CoordinatorResult = (PlanningResult | ImplementationResult) & { resumed: boolean }
+export type CoordinatorResult = (PlanningResult | ImplementationResult | ReviewResult) & {
+    resumed: boolean
+}
 
 /** Start a standard OpenSpec change or resume its persisted coarse V1 planning boundary. */
 export async function startOrResumePlanning(
@@ -85,7 +89,7 @@ export async function startOrResumePlanning(
 async function runWithOperationalFailure(
     options: CoordinatorOptions,
     state: RunState,
-): Promise<PlanningResult | ImplementationResult> {
+): Promise<PlanningResult | ImplementationResult | ReviewResult> {
     try {
         return await resumePlanning(options, state)
     } catch (error) {
@@ -108,7 +112,7 @@ async function runWithOperationalFailure(
 async function resumePlanning(
     options: CoordinatorOptions,
     state: Awaited<ReturnType<typeof readV1Run>>,
-): Promise<PlanningResult | ImplementationResult> {
+): Promise<PlanningResult | ImplementationResult | ReviewResult> {
     if (state.stage === "exploration") {
         await options.explorer.run({
             agent: AGENT_IDS.explorer,
@@ -131,6 +135,20 @@ async function resumePlanning(
         return runImplementation(
             {
                 ...options.implementation,
+                directory: options.directory,
+                adapter: options.adapter,
+            },
+            state,
+        )
+    }
+    if (
+        options.review &&
+        state.status === "active" &&
+        (state.stage === "review" || state.stage === "repair")
+    ) {
+        return runReview(
+            {
+                ...options.review,
                 directory: options.directory,
                 adapter: options.adapter,
             },
