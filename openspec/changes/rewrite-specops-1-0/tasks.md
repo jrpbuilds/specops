@@ -75,16 +75,16 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 6. Phase 5 — Implementation and project validation
 
-- [ ] 6.1 Create `src/workflow/implementation.ts` for implementer invocation with full context (goal, exploration, proposal, specs, design, tasks, baseline, accepted validation commands, prompt)
-- [ ] 6.2 Implement task-completion tracking through standard OpenSpec `tasks.md`; require required checkboxes complete before review; no second task state
-- [ ] 6.3 Implement implementation blocker routing (artifact conflict → planner/designer; material decision → user; genuine blocker → frontier; ordinary failure → retry/blocked)
-- [ ] 6.4 Implement frontier consultation: one call per stage attempt, read-only, advice to implementer, no recursion, exhaustion to material question or blocked
-- [ ] 6.5 Create `src/validation/commands.ts` for the accepted command set (explicit authoritative; explorer recommendations accepted at the planning checkpoint)
-- [ ] 6.6 Implement required validation execution: recalc identity, run all accepted required commands, persist evidence, bind to identity
-- [ ] 6.7 Implement the bounded validation-fix loop: on failure return exact evidence to the implementer, bounded correction, recalc identity, rerun stale validation (separate from review repair; no unbounded loop)
-- [ ] 6.8 Implement external-mutation detection before/after validation with evidence invalidation and user notification
-- [ ] 6.9 Write `tests/implementation-workflow.test.ts` (complete context, checkbox updates, incomplete-task rejection, command selection, all pass, one fails, timeout, mutation after validation, untracked mutation, blocker routing, frontier permitted/rejected/exhausted, resume after interruption and failed validation)
-- [ ] 6.10 Verify Phase 5: implementation works from approved artifacts; required tasks must be complete; validation is deterministic and state-bound; failed commands return actionable evidence; success leaves the run ready for review
+- [x] 6.1 Create `src/workflow/implementation.ts` for implementer invocation with full context (goal, exploration, proposal, specs, design, tasks, baseline, accepted validation commands, prompt)
+- [x] 6.2 Implement task-completion tracking through standard OpenSpec `tasks.md`; require required checkboxes complete before review; no second task state
+- [x] 6.3 Implement implementation blocker routing (artifact conflict → planner/designer; material decision → user; genuine blocker → frontier; ordinary failure → retry/blocked)
+- [x] 6.4 Implement frontier consultation: one call per stage attempt, read-only, advice to implementer, no recursion, exhaustion to material question or blocked
+- [x] 6.5 Create `src/validation/commands.ts` for the accepted command set (explicit authoritative; explorer recommendations accepted at the planning checkpoint)
+- [x] 6.6 Implement required validation execution: recalc identity, run all accepted required commands, persist evidence, bind to identity
+- [x] 6.7 Implement the bounded validation-fix loop: on failure return exact evidence to the implementer, bounded correction, recalc identity, rerun stale validation (separate from review repair; no unbounded loop)
+- [x] 6.8 Implement external-mutation detection before/after validation with evidence invalidation and user notification
+- [x] 6.9 Write `tests/implementation-workflow.test.ts` (complete context, checkbox updates, incomplete-task rejection, command selection, all pass, one fails, timeout, mutation after validation, untracked mutation, blocker routing, frontier permitted/rejected/exhausted, resume after interruption and failed validation)
+- [x] 6.10 Verify Phase 5: implementation works from approved artifacts; required tasks must be complete; validation is deterministic and state-bound; failed commands return actionable evidence; success leaves the run ready for review
 
 ## 7. Phase 6 — Independent review and bounded repair
 
