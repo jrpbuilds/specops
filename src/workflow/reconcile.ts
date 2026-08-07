@@ -34,6 +34,11 @@ export type ReconcileStageOptions = {
     adapter: ReconcileOpenSpecAdapter;
     calculateIdentity?: (directory: string) => Promise<string>;
     /**
+     * Resolve the current planning-artifact identity (B-02). Required at the
+     * review boundary so the reconciler binds both identities.
+     */
+    calculatePlanningIdentity?: (directory: string, change: string) => Promise<string>;
+    /**
      * Resolve the canonical accepted validation command definitions for the
      * active run. Invoked once at the planning checkpoint (tasks -> implementation)
      * so the accepted set is persisted and frozen before any validation runs.
@@ -230,20 +235,28 @@ async function reconcileReview(
     const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
         options.directory,
     );
+    const planningIdentity = options.calculatePlanningIdentity
+        ? await options.calculatePlanningIdentity(options.directory, state.change)
+        : undefined;
     const parsed = parseReview(
         await readFile(reviewPath(options.directory, state.change), "utf8").catch(() => ""),
     );
+    const planningStale =
+        planningIdentity !== undefined &&
+        parsed.reviewedPlanningArtifactIdentity !== planningIdentity;
     if (
         parsed.sections.length !== 6 ||
         !parsed.verdict ||
         parsed.reviewedRepositoryState !== identity ||
+        planningStale ||
         (parsed.verdict === "pass" && parsed.blockingFindingIds.length > 0) ||
         (parsed.verdict === "changes-required" && parsed.blockingFindingIds.length === 0)
     ) {
         return {
             kind: "correction-required",
             state,
-            message: "review output is missing required sections, verdict, or current identity",
+            message:
+                "review output is missing required sections, verdict, current identity, or current planning artifacts",
             issues: [],
         };
     }
@@ -262,6 +275,7 @@ async function reconcileReview(
             stage: "repair",
             repairAttempts: run.repairAttempts + 1,
             reviewedRepositoryState: identity,
+            reviewedPlanningArtifactIdentity: planningIdentity ?? null,
             failure: null,
         }));
         return { kind: "success", state: next, message: "review requires bounded repair" };
@@ -272,6 +286,7 @@ async function reconcileReview(
         stage: "archive",
         currentRepositoryState: identity,
         reviewedRepositoryState: identity,
+        reviewedPlanningArtifactIdentity: planningIdentity ?? null,
         failure: null,
     }));
     return {

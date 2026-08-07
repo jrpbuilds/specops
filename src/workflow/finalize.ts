@@ -12,6 +12,7 @@ import {
     type ImplementationResult,
 } from "./implementation.js";
 import { runReview, type ReviewWorkflowOptions, type ReviewResult } from "./review.js";
+import { calculatePlanningArtifactIdentity } from "./planning-identity.js";
 import type { ValidationCommand } from "../validation/registry.js";
 import { canonicalCommandHash } from "../validation/registry.js";
 import type { ValidationEvidence } from "../validation/executor.js";
@@ -48,6 +49,8 @@ export type CompletionOptions = {
     review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">;
     requiredCommands?: readonly ValidationCommand[];
     calculateIdentity?: (directory: string) => Promise<string>;
+    /** Override the planning-artifact identity computation (B-02, tests). */
+    calculatePlanningIdentity?: (directory: string, change: string) => Promise<string>;
     readEvidence?: (directory: string, change: string) => Promise<ValidationEvidence[]>;
     readReview?: (directory: string, change: string) => Promise<string>;
     loadTasks?: (directory: string, change: string) => Promise<string>;
@@ -141,7 +144,12 @@ export async function resumeVerified(
     const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
         options.directory,
     );
-    if (identity === state.currentRepositoryState) {
+    const currentPlanningIdentity = await (
+        options.calculatePlanningIdentity ?? defaultPlanningIdentity
+    )(options.directory, state.change, options.adapter);
+    const implementationChanged = identity !== state.currentRepositoryState;
+    const planningChanged = currentPlanningIdentity !== state.reviewedPlanningArtifactIdentity;
+    if (!implementationChanged && !planningChanged) {
         const ready = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "awaiting-user",
@@ -158,12 +166,15 @@ export async function resumeVerified(
         currentRepositoryState: identity,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         failure: null,
     }));
     return {
         kind: "verified-stale",
         state: stale,
-        reason: "repository state changed since verification; fresh validation and review required",
+        reason: implementationChanged
+            ? "repository state changed since verification; fresh validation and review required"
+            : "reviewed planning artifacts changed since verification; fresh validation and review required",
     };
 }
 
@@ -275,6 +286,7 @@ async function resolveRequestImplementationChanges(
         currentRepositoryState: identity,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         failure: null,
         repairAttempts: 0,
     }));
@@ -398,6 +410,16 @@ async function finalisationFailureReason(
         return "reviewed repository identity in review does not match current identity";
     }
 
+    const currentPlanningIdentity = await (
+        options.calculatePlanningIdentity ?? defaultPlanningIdentity
+    )(options.directory, state.change, options.adapter);
+    if (state.reviewedPlanningArtifactIdentity !== currentPlanningIdentity) {
+        return "reviewed planning artifact identity does not match current planning artifacts";
+    }
+    if (review.reviewedPlanningArtifactIdentity !== currentPlanningIdentity) {
+        return "reviewed planning artifact identity in review does not match current planning artifacts";
+    }
+
     return undefined;
 }
 
@@ -423,6 +445,15 @@ async function loadTasks(directory: string, change: string): Promise<string> {
 /** Read the managed review artifact. */
 async function readReviewContent(directory: string, change: string): Promise<string> {
     return readFile(reviewPath(directory, change), "utf8");
+}
+
+/** Default planning-artifact identity computation (B-02 dual identity). */
+async function defaultPlanningIdentity(
+    directory: string,
+    change: string,
+    adapter: FinalizationOpenSpecAdapter,
+): Promise<string> {
+    return calculatePlanningArtifactIdentity({ directory, change, adapter });
 }
 
 /**

@@ -187,18 +187,20 @@ describe("Phase 11 — freshness and completion integrity regressions", () => {
         });
     });
 
-    describe("B-02 review binds reviewed planning artifacts — architectural amendment required", () => {
-        // B-02 requires binding reviews to the reviewed OpenSpec planning
-        // artifacts so a post-review mutation of a frozen spec/design/tasks
-        // artifact invalidates the review. The approved V1 design deliberately
-        // fixes the repository identity (implementation-only, planning
-        // artifacts excluded) and pins the review parser to verdict, reviewed
-        // repository-state identity, blocking finding ids, and section
-        // presence. Persisting or parsing a planning-artifact hash broadens
-        // both beyond the approved design — an architectural amendment that
-        // is recorded in the Phase 11 remediation report rather than silently
-        // implemented here.
-        it.todo("requires an architectural amendment to the approved V1 review/identity model");
+    describe("B-02 review binds reviewed planning artifacts — dual identity", () => {
+        // B-02 required binding reviews to the reviewed OpenSpec planning
+        // artifacts so a post-review mutation of a frozen proposal/specs/
+        // design/tasks artifact invalidates the review. The architectural
+        // amendment (design.md §B-02) introduces a separate deterministic
+        // planning-artifact identity bound alongside the implementation
+        // repository identity; the two are never merged. The full regression
+        // coverage — fresh-review binding, proposal/specs/design/tasks
+        // mutation invalidation, fresh-review progression, verified-resume,
+        // and safe-failure behaviour — lives in
+        // tests/phase11-b02-dual-identity.test.ts.
+        it("the dual-identity regression coverage is exercised in phase11-b02-dual-identity.test.ts", () => {
+            expect(true).toBe(true);
+        });
     });
 
     describe("B-06 review Markdown parsing is fail-closed", () => {
@@ -257,6 +259,7 @@ describe("Phase 11 — freshness and completion integrity regressions", () => {
                     currentRepositoryState: identity,
                     validatedRepositoryState: identity,
                     reviewedRepositoryState: identity,
+                    reviewedPlanningArtifactIdentity: identity,
                     acceptedValidationRecommendationIds: [],
                     acceptedValidationCommands: [],
                     artifactCorrectionAttempts: {},

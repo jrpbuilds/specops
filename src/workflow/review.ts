@@ -23,6 +23,7 @@ import {
     type ImplementationResult,
     type ImplementationWorkflowOptions,
 } from "./implementation.js";
+import { planningIdentityFromArtifacts } from "./planning-identity.js";
 import { MAX_REVIEW_REPAIRS } from "./limits.js";
 
 /** Full evidence supplied to the single independent reviewer. */
@@ -34,6 +35,8 @@ export type ReviewAgentRequest = {
     diff: string;
     changedFiles: readonly ChangedFile[];
     repositoryIdentity: string;
+    /** Current planning-artifact identity (proposal/specs/design/tasks) (B-02). */
+    planningArtifactIdentity: string;
     validationEvidence: readonly ValidationEvidence[];
     prompt: string;
     state: RunState;
@@ -84,11 +87,12 @@ export async function runReview(
     let state = initialState;
     while (true) {
         const identity = await currentIdentity(options);
+        const artifacts = await reviewArtifacts(options, state);
+        const planningIdentity = planningIdentityFromArtifacts(state.change, artifacts);
         const evidence = await currentEvidence(options, state);
         const validation = validationFailure(state, identity, evidence, options);
         if (validation) return invalidateForReview(options, state, identity, validation);
 
-        const artifacts = await reviewArtifacts(options, state);
         await options.reviewer.run({
             agent: AGENT_IDS.reviewer,
             change: state.change,
@@ -99,6 +103,7 @@ export async function runReview(
                 options.directory,
             ),
             repositoryIdentity: identity,
+            planningArtifactIdentity: planningIdentity,
             validationEvidence: evidence,
             prompt: options.loadPrompt?.() ?? loadPrompt(AGENT_IDS.reviewer),
             state,
@@ -113,9 +118,20 @@ export async function runReview(
             return rejectInvalidReview(options, state, "review artifact is missing or unreadable");
         }
         const current = await currentIdentity(options);
-        const reviewFailure = reviewFailureReason(reviewed, identity, current);
+        const currentArtifacts = await reviewArtifacts(options, state);
+        const currentPlanning = planningIdentityFromArtifacts(state.change, currentArtifacts);
+        const reviewFailure = reviewFailureReason(
+            reviewed,
+            identity,
+            current,
+            planningIdentity,
+            currentPlanning,
+        );
         if (reviewFailure) {
-            return current !== identity || reviewed.reviewedRepositoryState !== identity
+            return current !== identity ||
+                reviewed.reviewedRepositoryState !== identity ||
+                currentPlanning !== planningIdentity ||
+                reviewed.reviewedPlanningArtifactIdentity !== planningIdentity
                 ? invalidateForReview(options, state, current, reviewFailure)
                 : rejectInvalidReview(options, state, reviewFailure);
         }
@@ -127,6 +143,7 @@ export async function runReview(
                 stage: "archive",
                 currentRepositoryState: current,
                 reviewedRepositoryState: current,
+                reviewedPlanningArtifactIdentity: currentPlanning,
                 failure: null,
             }));
             return { kind: "ready-for-completion", state: waiting };
@@ -164,6 +181,7 @@ async function rejectInvalidReview(
         status: "active",
         stage: "review",
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         failure: null,
     }));
     return { kind: "invalid-review", state: rejected, reason };
@@ -184,6 +202,7 @@ async function invalidateForReview(
         currentRepositoryState: identity,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         failure: null,
     }));
     return { kind: "review-invalidated", state: invalidated, reason };
@@ -203,6 +222,7 @@ async function invokeRepair(
         repairAttempts: run.repairAttempts + 1,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         failure: null,
     }));
     const result = await options.implementation.implementer.run({
@@ -258,6 +278,8 @@ function reviewFailureReason(
     review: ParsedReview,
     expectedIdentity: string,
     currentIdentity: string,
+    expectedPlanningIdentity: string,
+    currentPlanningIdentity: string,
 ): string | undefined {
     if (review.sections.length !== 6) return "review is missing required sections";
     if (!review.verdict) return "review verdict must be pass or changes-required";
@@ -266,6 +288,12 @@ function reviewFailureReason(
         currentIdentity !== expectedIdentity
     ) {
         return "reviewed repository identity is stale";
+    }
+    if (
+        review.reviewedPlanningArtifactIdentity !== expectedPlanningIdentity ||
+        currentPlanningIdentity !== expectedPlanningIdentity
+    ) {
+        return "reviewed planning artifact identity is stale";
     }
     if (review.verdict === "pass" && review.blockingFindingIds.length > 0) {
         return "pass review cannot contain blocking findings";

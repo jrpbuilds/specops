@@ -9,6 +9,8 @@ import {
 export type ParsedReview = {
     verdict: ReviewVerdict | undefined;
     reviewedRepositoryState: string | undefined;
+    /** Planning-artifact identity bound by the reviewer (B-02 dual identity). */
+    reviewedPlanningArtifactIdentity: string | undefined;
     blockingFindingIds: string[];
     sections: readonly ReviewSection[];
 };
@@ -20,11 +22,26 @@ export function parseReview(markdown: string): ParsedReview {
     const stateBody = sectionBody(markdown, "Reviewed state");
     const findingsBody = sectionBody(markdown, "Blocking findings");
     const verdict = parseVerdict(verdictBody);
+    const identities = parseReviewedIdentities(stateBody);
     return {
         verdict,
-        reviewedRepositoryState: stateBody?.match(/\b[a-f0-9]{64}\b/i)?.[0]?.toLowerCase(),
+        reviewedRepositoryState: identities.repository,
+        reviewedPlanningArtifactIdentity: identities.planning,
         blockingFindingIds: findingsBody ? parseBlockingFindingIds(findingsBody) : [],
         sections,
+    };
+}
+
+/** Extract the implementation and planning-artifact identities from the Reviewed state body. */
+function parseReviewedIdentities(body: string | undefined): {
+    repository: string | undefined;
+    planning: string | undefined;
+} {
+    const match = (label: string): string | undefined =>
+        body?.match(new RegExp(`${label}:\\s*\\b([a-f0-9]{64})\\b`, "i"))?.[1]?.toLowerCase();
+    return {
+        repository: match("Repository identity"),
+        planning: match("Planning artifacts"),
     };
 }
 

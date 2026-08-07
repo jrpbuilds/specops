@@ -19,13 +19,14 @@ export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
 /** Return the canonical review artifact shape for reviewer prompts and tests. */
 void reviewTemplate;
-function reviewTemplate(repositoryIdentity: string): string {
+function reviewTemplate(repositoryIdentity: string, planningArtifactIdentity: string): string {
     return [
         "## Verdict",
         "pass",
         "",
         "## Reviewed state",
         `Repository identity: ${repositoryIdentity}`,
+        `Planning artifacts: ${planningArtifactIdentity}`,
         "",
         "## Validation",
         "Describe the required validation evidence inspected.",

@@ -50,6 +50,12 @@ export type RunState = {
     currentRepositoryState: string;
     validatedRepositoryState: string | null;
     reviewedRepositoryState: string | null;
+    /**
+     * Planning-artifact identity (proposal/specs/design/tasks) bound by the
+     * last passing review (B-02). Separate from the implementation repository
+     * identity; never merged into one generic identity.
+     */
+    reviewedPlanningArtifactIdentity: string | null;
     acceptedValidationRecommendationIds: string[];
     /** Canonical accepted validation command definitions accepted at the planning checkpoint. */
     acceptedValidationCommands: AcceptedValidationCommand[];
@@ -117,6 +123,7 @@ const RUN_STATE_FIELDS = new Set([
     "currentRepositoryState",
     "validatedRepositoryState",
     "reviewedRepositoryState",
+    "reviewedPlanningArtifactIdentity",
     "acceptedValidationRecommendationIds",
     "acceptedValidationCommands",
     "artifactCorrectionAttempts",
@@ -149,6 +156,7 @@ export function createRunState(input: CreateRunStateInput): RunState {
         currentRepositoryState: input.baselineRepositoryState,
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
+        reviewedPlanningArtifactIdentity: null,
         acceptedValidationRecommendationIds: [],
         acceptedValidationCommands: [],
         artifactCorrectionAttempts: {},
@@ -187,7 +195,8 @@ export function assertRunState(state: RunState): RunState {
     }
     if (
         !isNullableIdentity(state.validatedRepositoryState) ||
-        !isNullableIdentity(state.reviewedRepositoryState)
+        !isNullableIdentity(state.reviewedRepositoryState) ||
+        !isNullableIdentity(state.reviewedPlanningArtifactIdentity)
     ) {
         throw new Error("invalid SpecOps V1 evidence repository identity");
     }
@@ -242,6 +251,9 @@ function assertRunInvariants(state: RunState): void {
     }
     if (state.reviewedRepositoryState !== null && !hasReachedReview(state.stage)) {
         throw new Error("reviewed repository identity recorded before the review boundary");
+    }
+    if (state.reviewedPlanningArtifactIdentity !== null && !hasReachedReview(state.stage)) {
+        throw new Error("reviewed planning artifact identity recorded before the review boundary");
     }
 }
 

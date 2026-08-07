@@ -15,6 +15,7 @@ import {
     resumeVerified,
     type CompletionOptions,
 } from "../src/workflow/finalize.js";
+import { planningIdentityFromArtifacts } from "../src/workflow/planning-identity.js";
 import type { OpenSpecArchiveResult } from "../src/openspec/archive.js";
 import type { OpenSpecValidationResult } from "../src/openspec/validation.js";
 import type { OpenSpecChangeStatus } from "../src/openspec/status.js";
@@ -30,6 +31,13 @@ const command: ValidationCommand = {
     maxOutputBytes: 1_024,
 };
 const tasksContent = "- [x] 8.1 Finalize\n";
+const planningArtifacts = {
+    proposal: "# Proposal\n",
+    specs: "# Specs\n",
+    design: "# Design\n",
+    tasks: tasksContent,
+};
+const planningIdentity = planningIdentityFromArtifacts(change, planningArtifacts);
 
 async function directory(): Promise<string> {
     return mkdtemp(path.join(os.tmpdir(), "specops-completion-"));
@@ -61,10 +69,11 @@ function evidence(overrides: Partial<ValidationEvidence> = {}): ValidationEviden
 function reviewMarkdown(
     verdict: "pass" | "changes-required" = "pass",
     reviewed = identity,
+    reviewedPlanning: string = planningIdentity,
 ): string {
     return [
         "## Verdict\n" + verdict,
-        "## Reviewed state\nRepository identity: " + reviewed,
+        `## Reviewed state\nRepository identity: ${reviewed}\nPlanning artifacts: ${reviewedPlanning}`,
         "## Validation\ntypecheck passed.",
         "## Blocking findings\nNone.",
         "## Non-blocking observations\n- Consider a follow-up.",
@@ -82,6 +91,7 @@ async function readyState(
         identity?: string;
         validated?: string | null;
         reviewed?: string | null;
+        reviewedPlanning?: string | null;
         repairAttempts?: number;
         tasks?: string;
     } = {},
@@ -99,6 +109,7 @@ async function readyState(
         currentRepositoryState: ident,
         validatedRepositoryState: overrides.validated ?? ident,
         reviewedRepositoryState: overrides.reviewed ?? ident,
+        reviewedPlanningArtifactIdentity: overrides.reviewedPlanning ?? planningIdentity,
         repairAttempts: overrides.repairAttempts ?? 0,
     }));
     await persistValidationEvidence(root, change, evidence({ repositoryIdentity: ident }));
@@ -201,6 +212,7 @@ function options(
             summarizeChanges: async () => [],
         } as never,
         calculateIdentity: async () => identity,
+        calculatePlanningIdentity: async () => planningIdentity,
         readEvidence: async () => [evidence()],
         readReview: async () => reviewMarkdown("pass"),
         loadTasks: async () => tasksContent,

@@ -18,6 +18,7 @@ import {
     type CompletionOptions,
 } from "./workflow/finalize.js";
 import { reconcileStage } from "./workflow/reconcile.js";
+import { calculatePlanningArtifactIdentity } from "./workflow/planning-identity.js";
 
 /** Validates a canonical OpenSpec change identifier at every tool boundary. */
 const CHANGE_NAME = /^[a-z0-9][a-z0-9-]{0,127}$/;
@@ -93,11 +94,18 @@ export const SpecOpsPlugin: Plugin = async () => ({
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 assertCoordinatorAgent(context.agent);
+                const adapter = await adapterFor(context.directory);
                 const outcome = await reconcileStage(
                     {
                         directory: context.directory,
-                        adapter: await adapterFor(context.directory),
+                        adapter,
                         resolveAcceptedValidationCommands: resolveAcceptedValidationCommands,
+                        calculatePlanningIdentity: async (_dir, change) =>
+                            calculatePlanningArtifactIdentity({
+                                directory: context.directory,
+                                change,
+                                adapter,
+                            }),
                     },
                     await readV1Run(context.directory, args.change),
                 );
@@ -238,6 +246,8 @@ async function completionOptions(
         directory,
         adapter,
         requiredCommands: accepted.required,
+        calculatePlanningIdentity: async (_dir, change) =>
+            calculatePlanningArtifactIdentity({ directory, change, adapter }),
     };
 }
 

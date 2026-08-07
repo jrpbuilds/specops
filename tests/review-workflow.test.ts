@@ -20,6 +20,7 @@ import {
     type ReviewAgentRequest,
     type ReviewWorkflowOptions,
 } from "../src/workflow/review.js";
+import { planningIdentityFromArtifacts } from "../src/workflow/planning-identity.js";
 
 const change = "review-test";
 const identity = "a".repeat(64);
@@ -38,6 +39,7 @@ const artifacts: ImplementationArtifacts = {
     design: "# Design\n",
     tasks: "- [x] 1.1 Implement review\n",
 };
+const planningIdentity = planningIdentityFromArtifacts(change, artifacts);
 
 async function directory(): Promise<string> {
     return mkdtemp(path.join(os.tmpdir(), "specops-review-"));
@@ -86,10 +88,14 @@ function review(
     reviewedIdentity = identity,
     blocking = "None.",
     omit?: string,
+    reviewedPlanningIdentity: string = planningIdentity,
 ): string {
     const sections = [
         ["Verdict", verdict],
-        ["Reviewed state", `Repository identity: ${reviewedIdentity}`],
+        [
+            "Reviewed state",
+            `Repository identity: ${reviewedIdentity}\nPlanning artifacts: ${reviewedPlanningIdentity}`,
+        ],
         ["Validation", "typecheck passed."],
         ["Blocking findings", blocking],
         ["Non-blocking observations", "- Consider a follow-up."],

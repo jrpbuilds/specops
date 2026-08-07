@@ -21,6 +21,7 @@ import {
     type ImplementationBlocker,
 } from "../src/workflow/implementation.js";
 import { runReview, type ReviewAgentRequest } from "../src/workflow/review.js";
+import { planningIdentityFromArtifacts } from "../src/workflow/planning-identity.js";
 import {
     resolveCompletion,
     resumeVerified,
@@ -83,12 +84,13 @@ function evidence(overrides: Partial<ValidationEvidence> = {}): ValidationEviden
 function reviewMarkdown(
     verdict: "pass" | "changes-required" = "pass",
     reviewed = identity,
+    reviewedPlanning: string = planningIdentity,
 ): string {
     const blocking =
         verdict === "changes-required" ? "- BF-01: the implementation is incomplete" : "None.";
     return [
         "## Verdict\n" + verdict,
-        "## Reviewed state\nRepository identity: " + reviewed,
+        `## Reviewed state\nRepository identity: ${reviewed}\nPlanning artifacts: ${reviewedPlanning}`,
         "## Validation\ntypecheck passed.",
         "## Blocking findings\n" + blocking,
         "## Non-blocking observations\n- Consider a follow-up.",
@@ -185,6 +187,7 @@ const artifacts: ImplementationArtifacts = {
     design: "# Design\n",
     tasks: tasksContent,
 };
+const planningIdentity = planningIdentityFromArtifacts(change, artifacts);
 
 type Harness = {
     root: string;
@@ -319,6 +322,7 @@ async function harness(
         },
         finalize: {
             calculateIdentity: async () => identity,
+            calculatePlanningIdentity: async () => planningIdentity,
             readEvidence: async (_dir, c) => safeEvidence(root, c),
             readReview: async (_dir, c) => readFile(reviewPath(root, c), "utf8"),
             loadTasks: async (_dir, c) =>
@@ -334,6 +338,7 @@ async function harness(
         implementation: coordinator.implementation,
         review: coordinator.review,
         calculateIdentity: async () => identity,
+        calculatePlanningIdentity: async () => planningIdentity,
         readEvidence: async (_dir, c) => safeEvidence(root, c),
         readReview: async (_dir, c) => readFile(reviewPath(root, c), "utf8"),
         loadTasks: async (_dir, c) =>
@@ -580,6 +585,7 @@ describe("V1 end-to-end release scenarios (real runtime)", () => {
             currentRepositoryState: identity,
             validatedRepositoryState: identity,
             reviewedRepositoryState: identity,
+            reviewedPlanningArtifactIdentity: planningIdentity,
         }));
         await persistValidationEvidence(root, change, evidence());
         const implementerCallsBefore = h.implementerRequests.length;
@@ -660,6 +666,7 @@ describe("V1 end-to-end release scenarios (real runtime)", () => {
             currentRepositoryState: identity,
             validatedRepositoryState: identity,
             reviewedRepositoryState: identity,
+            reviewedPlanningArtifactIdentity: planningIdentity,
         }));
         void reviewState;
         const first = await resolveCompletion(h.completion, await readV1Run(root, change), {
@@ -687,6 +694,7 @@ describe("V1 end-to-end release scenarios (real runtime)", () => {
             currentRepositoryState: identity,
             validatedRepositoryState: identity,
             reviewedRepositoryState: identity,
+            reviewedPlanningArtifactIdentity: planningIdentity,
         }));
         const verified = await resolveCompletion(h.completion, await readV1Run(root, change), {
             kind: "leave-change-open",
@@ -708,6 +716,7 @@ describe("V1 end-to-end release scenarios (real runtime)", () => {
             currentRepositoryState: identity,
             validatedRepositoryState: identity,
             reviewedRepositoryState: identity,
+            reviewedPlanningArtifactIdentity: planningIdentity,
         }));
         const result = await resolveCompletion(h.completion, await readV1Run(root, change), {
             kind: "complete-and-archive",
