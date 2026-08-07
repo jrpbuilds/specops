@@ -1,480 +1,178 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import type { Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin";
-import { contextPacket } from "./capabilities/context.js";
+import { tool, type Config, type Plugin } from "@opencode-ai/plugin";
 import { COMMANDS } from "./commands.js";
-import { doctor } from "./doctor.js";
-import { executeValidation } from "./evidence/commands.js";
-import { appendEvidence, findCommandRequirement } from "./evidence/registry.js";
-import {
-    MAX_CHANGE_NAME_LENGTH,
-    READ_ONLY_OPENSPEC_COMMANDS,
-    openSpecOrThrow,
-    onboard,
-    readConfig,
-} from "./openspec.js";
-import { publishProgress, type MetadataContext } from "./progress.js";
-import { summarize } from "./summary.js";
+import { readConfig } from "./openspec.js";
+import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { TOOL_IDS } from "./protocol.js";
-import { changeRoot, readRun, withRunLock } from "./state/store.js";
-import {
-    archiveCompletedRun,
-    cancelRun,
-    completeAction,
-    recoverDispatch,
-    finalizeRun,
-    issueDirective,
-    resumeCheckpointAction,
-    startRun,
-    answerQuestionAction,
-    answerQuestionsAction,
-    dismissQuestionAction,
-} from "./workflow/engine.js";
-import { pendingCheckpointBlockView, pendingQuestionBlockView } from "./workflow/questions.js";
+import { captureRepositoryBaseline } from "./repository/baseline.js";
+import { calculateRepositoryIdentity } from "./repository/identity.js";
+import { cancelV1Run, createV1Run, readV1Run, updateV1Run } from "./state/store.js";
+import { persistValidationEvidence } from "./validation/evidence.js";
+import { executeValidationCommand } from "./validation/executor.js";
+import type { ValidationCommand } from "./validation/registry.js";
+import { resolveCompletion, type CompletionOptions } from "./workflow/finalize.js";
+import { reconcileStage } from "./workflow/reconcile.js";
 
-/** Validated change-name pattern used by every tool that accepts a `change` argument. */
-const CHANGE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const CHANGE_NAME_SCHEMA = tool.schema.string().max(MAX_CHANGE_NAME_LENGTH).regex(CHANGE_NAME);
+/** Validates a canonical OpenSpec change identifier at every tool boundary. */
+const CHANGE_NAME = /^[a-z0-9][a-z0-9-]{0,127}$/;
+const CHANGE_NAME_SCHEMA = tool.schema.string().regex(CHANGE_NAME);
 
 /**
- * Allow-list of artifact file names that may be requested through the
- * `specops_request_context` tool. Limits the controller's view to the same
- * deterministic artifacts the workflow produces.
- */
-const CONTEXT_ARTIFACTS = new Set([
-    "routing.md",
-    "exploration.md",
-    "proposal.md",
-    "design.md",
-    "tasks.md",
-    "verification.md",
-    "review-ledger.json",
-]);
-
-/**
- * Register the final SpecOps command and tool surface.
+ * Register only the six V1 workflow tools and five public commands.
  *
- * Composes the deterministic protocol tools (start/next/complete/finalize,
- * context, validation, status, cancel) with diagnostic tools (onboard,
- * doctor, openspec) under a single OpenCode {@link Plugin}. The `config`
- * hook installs every SpecOps command without overwriting user overrides.
- * @param _input - OpenCode plugin input (currently unused).
- * @returns Plugin object exposing the SpecOps tool surface.
+ * Model delegation intentionally stays with OpenCode native tasks. Each tool
+ * owns one deterministic boundary and returns bounded JSON context; none
+ * exposes an old scheduler, dispatch identifier, or worker-output envelope.
  */
-export const SpecOpsPlugin: Plugin = async _input => ({
-    config: async config => {
+export const SpecOpsPlugin: Plugin = async () => ({
+    config: async (config: Config) => {
         config.command ??= {};
-        for (const [name, command] of Object.entries(COMMANDS)) {
-            config.command[name] ??= command;
-        }
+        for (const [name, command] of Object.entries(COMMANDS)) config.command[name] ??= command;
     },
     tool: {
-        [TOOL_IDS.startRun]: tool({
-            description: "Create a final-format deterministic run from a strict assessment.",
+        [TOOL_IDS.startOrResume]: tool({
+            description: "Start a V1 run or recover its persisted coarse stage boundary.",
             args: {
+                change: CHANGE_NAME_SCHEMA,
                 goal: tool.schema.string().min(1),
-                assessment: tool.schema.string().min(2),
-                requestedTier: tool.schema.enum(["auto", "lean", "standard", "full"]),
-                mode: tool.schema.enum(["automatic", "interactive"]),
             },
             async execute(args, context) {
-                const config = await readConfig(context.directory);
-                await onboard(context.directory);
+                const adapter = await adapterFor(context.directory);
+                await adapter.version();
+                let state;
                 try {
-                    const started = await startRun(context.directory, config, {
-                        goal: args.goal,
-                        assessmentOutput: args.assessment,
-                        requestedTier: args.requestedTier,
-                        mode: args.mode,
-                    });
-                    return summarize(started.state, started.change, "Run started");
+                    state = await readV1Run(context.directory, args.change);
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    if (/ResourceExhausted|rate.limit|429|too many requests/i.test(message)) {
-                        return "SpecOps could not start the run: the upstream LLM provider returned a rate-limit error. Wait a moment and retry with the same specops_start_run call; no run state was persisted.";
-                    }
-                    throw error;
+                    if (!isMissingRun(error)) throw error;
+                    await ensureChange(adapter, args.change, args.goal);
+                    await adapter.assertStandardSchema(args.change);
+                    const baseline = await captureRepositoryBaseline(context.directory);
+                    state = await createV1Run(context.directory, {
+                        change: args.change,
+                        goal: args.goal,
+                        baselineRepositoryState: baseline.identity,
+                    });
                 }
+                return JSON.stringify({ kind: "success", state }, null, 2);
             },
         }),
-        [TOOL_IDS.nextAction]: tool({
-            description:
-                "Return the next controller directive (dispatch, ask-question, checkpoint, block, finalize).",
+        [TOOL_IDS.reconcileStage]: tool({
+            description: "Validate one coarse V1 stage boundary and persist its bounded outcome.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                return JSON.stringify(
-                    await issueDirective(
-                        context.directory,
-                        args.change,
-                        await readConfig(context.directory),
-                    ),
-                    null,
-                    2,
+                const outcome = await reconcileStage(
+                    { directory: context.directory, adapter: await adapterFor(context.directory) },
+                    await readV1Run(context.directory, args.change),
                 );
-            },
-        }),
-        [TOOL_IDS.completeAction]: tool({
-            description: "Validate and persist an issued deterministic worker result.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                dispatchId: tool.schema.string().min(1),
-                output: tool.schema.string(),
-            },
-            async execute(args, context) {
-                const state = await completeAction(
-                    context.directory,
-                    args.change,
-                    args.dispatchId,
-                    args.output,
-                    await readConfig(context.directory),
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                const dispatch = state.dispatches.find(d => d.id === args.dispatchId);
-                const label = dispatch
-                    ? `${dispatch.capability}${dispatch.purpose === "judgment" ? " judgment" : ""} completed`
-                    : "Action completed";
-                return summarize(state, args.change, label);
-            },
-        }),
-        [TOOL_IDS.recoverDispatch]: tool({
-            description: "Recover one interrupted issued dispatch and resume the run.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                dispatchId: tool.schema.string().min(1),
-                reason: tool.schema.string().min(1),
-            },
-            async execute(args, context) {
-                const state = await recoverDispatch(
-                    context.directory,
-                    args.change,
-                    args.dispatchId,
-                    args.reason,
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                return summarize(state, args.change, "Interrupted dispatch recovered");
-            },
-        }),
-        [TOOL_IDS.answerQuestion]: tool({
-            description: "Record an answer to a worker-raised pending question.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                questionId: tool.schema.string().min(1),
-                selectedOption: tool.schema.string().optional(),
-                otherText: tool.schema.string().optional(),
-            },
-            async execute(args, context) {
-                if ((args.selectedOption === undefined) === (args.otherText === undefined)) {
-                    throw new Error("Provide exactly one of selectedOption or otherText");
-                }
-                const state = await answerQuestionAction(
-                    context.directory,
-                    args.change,
-                    args.questionId,
-                    args.selectedOption,
-                    args.otherText,
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                return summarize(state, args.change, "Question answered");
-            },
-        }),
-        [TOOL_IDS.answerQuestions]: tool({
-            description: "Answer multiple pending worker-raised questions in a single transaction.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                answers: tool.schema.array(
-                    tool.schema.object({
-                        questionId: tool.schema.string().min(1),
-                        selectedOption: tool.schema.string().optional(),
-                        otherText: tool.schema.string().optional(),
-                    }),
-                ),
-            },
-            async execute(args, context) {
-                const state = await answerQuestionsAction(
-                    context.directory,
-                    args.change,
-                    args.answers.map(a => ({
-                        questionId: a.questionId,
-                        selectedOption: a.selectedOption,
-                        otherText: a.otherText,
-                    })),
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                return summarize(state, args.change, "Questions answered");
-            },
-        }),
-        [TOOL_IDS.dismissQuestion]: tool({
-            description: "Record that the user dismissed the native question UI without answering.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                questionId: tool.schema.string().min(1),
-            },
-            async execute(args, context) {
-                const state = await dismissQuestionAction(
-                    context.directory,
-                    args.change,
-                    args.questionId,
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                return summarize(state, args.change, "Question dismissed");
-            },
-        }),
-        [TOOL_IDS.resumeCheckpoint]: tool({
-            description:
-                "Resolve a pending interactive checkpoint and resume scheduling. Use resolution=apply-implementation-fixes for verification findings that require code changes.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                feedback: tool.schema.string().optional(),
-                resolution: tool.schema
-                    .enum(["rerun-phase", "apply-implementation-fixes"])
-                    .optional(),
-            },
-            async execute(args, context) {
-                const state = await resumeCheckpointAction(
-                    context.directory,
-                    args.change,
-                    args.feedback,
-                    await readConfig(context.directory),
-                    args.resolution,
-                );
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                return summarize(state, args.change, "Checkpoint resolved");
-            },
-        }),
-        [TOOL_IDS.requestContext]: tool({
-            description: "Read bounded, scheduler-safe run context and persisted artifacts.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                artifacts: tool.schema.array(tool.schema.string()).optional(),
-            },
-            async execute(args, context) {
-                const config = await readConfig(context.directory);
-                const state = await readRun(context.directory, args.change);
-                const names = args.artifacts ?? [];
-                if (names.some(name => !CONTEXT_ARTIFACTS.has(name))) {
-                    throw new Error("requested context artifact is not available");
-                }
-
-                const artifacts = await readContextArtifacts(
-                    context.directory,
-                    args.change,
-                    names,
-                    config.review.maxContextBytes,
-                );
-                return JSON.stringify({ context: contextPacket(state), artifacts }, null, 2);
-            },
-        }),
-        [TOOL_IDS.runValidation]: tool({
-            description: "Execute a registered arbitrary validation command without a shell.",
-            args: {
-                change: CHANGE_NAME_SCHEMA,
-                dispatchId: tool.schema.string().min(1),
-                validationId: tool.schema.string().min(1),
-                executable: tool.schema.string().min(1),
-                args: tool.schema.array(tool.schema.string()),
-                cwd: tool.schema.string().optional(),
-            },
-            async execute(args, context) {
-                return withRunLock(context.directory, args.change, "run validation", async () => {
-                    const config = await readConfig(context.directory);
-                    const state = await readRun(context.directory, args.change);
-                    if (
-                        !state.dispatches.some(
-                            dispatch =>
-                                dispatch.id === args.dispatchId && dispatch.status === "issued",
-                        )
-                    ) {
-                        throw new Error("validation requires an issued dispatch");
-                    }
-
-                    const requirement = findCommandRequirement(state, args.validationId);
-                    if (
-                        !requirement ||
-                        requirement.executable !== args.executable ||
-                        JSON.stringify(requirement.args) !== JSON.stringify(args.args) ||
-                        requirement.cwd !== args.cwd
-                    ) {
-                        throw new Error(
-                            "validation command does not match the run evidence registry",
-                        );
-                    }
-
-                    const evidence = await executeValidation(
-                        context.directory,
-                        config,
-                        {
-                            ...args,
-                            implementationDiffHash: state.implementationDiffHash,
-                            policyHash: state.requirements.policyHash,
-                        },
-                        context.abort,
-                    );
-                    await appendEvidence(context.directory, args.change, evidence);
-                    return JSON.stringify(evidence, null, 2);
-                });
+                return JSON.stringify(outcome, null, 2);
             },
         }),
         [TOOL_IDS.getStatus]: tool({
-            description: "Read final-format deterministic run state.",
+            description: "Read bounded persisted context for a V1 run.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                return JSON.stringify(await readRun(context.directory, args.change), null, 2);
+                return JSON.stringify(await readV1Run(context.directory, args.change), null, 2);
             },
         }),
-        [TOOL_IDS.cancelRun]: tool({
-            description: "Persist a safe cancellation outcome for an active run.",
+        [TOOL_IDS.runValidation]: tool({
+            description:
+                "Execute one configured validation command shell-free and persist its evidence.",
             args: {
                 change: CHANGE_NAME_SCHEMA,
-                reason: tool.schema.string().min(1).optional(),
+                command: tool.schema.object({
+                    id: tool.schema.string().regex(CHANGE_NAME),
+                    executable: tool.schema.string().min(1),
+                    args: tool.schema.array(tool.schema.string()),
+                    cwd: tool.schema.string().optional(),
+                    timeoutMs: tool.schema.number().int().positive(),
+                    maxOutputBytes: tool.schema.number().int().positive(),
+                }),
             },
             async execute(args, context) {
-                const state = await cancelRun(context.directory, args.change, args.reason);
-                return summarize(state, args.change, "Run cancelled");
+                const command = args.command as ValidationCommand;
+                const identity = await calculateRepositoryIdentity(context.directory);
+                const evidence = await executeValidationCommand(
+                    context.directory,
+                    command,
+                    identity,
+                );
+                await persistValidationEvidence(context.directory, args.change, evidence);
+                const state = await updateV1Run(context.directory, args.change, run => ({
+                    ...run,
+                    currentRepositoryState: identity,
+                    failure: null,
+                }));
+                return JSON.stringify({ kind: "success", state, evidence }, null, 2);
             },
         }),
         [TOOL_IDS.finalize]: tool({
-            description: "Finalize a run only when deterministic completion gates are satisfied.",
-            args: { change: CHANGE_NAME_SCHEMA },
-            async execute(args, context) {
-                const state = await finalizeRun(
-                    context.directory,
-                    args.change,
-                    await readConfig(context.directory),
-                );
-                const questionDto = pendingQuestionBlockView(state, args.change);
-                if (questionDto) {
-                    return JSON.stringify(questionDto, null, 2);
-                }
-                const checkpointDto = pendingCheckpointBlockView(state, args.change);
-                if (checkpointDto) {
-                    return JSON.stringify(checkpointDto, null, 2);
-                }
-                await publishProgress(
-                    context as MetadataContext,
-                    context.directory,
-                    args.change,
-                    state,
-                );
-                const label =
-                    state.status === "completed"
-                        ? "Run completed"
-                        : state.status === "archive_failed"
-                          ? "Run passed, archival failed"
-                          : state.status === "passed"
-                            ? "Run passed"
-                            : "Run finalized";
-                return summarize(state, args.change, label);
-            },
-        }),
-        [TOOL_IDS.archive]: tool({
             description:
-                "Maintenance: archive or retry-archive a verified OpenSpec change (not used by the normal workflow).",
+                "Run V1 completion checks and archive only after explicit completion approval.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                const state = await archiveCompletedRun(
-                    context.directory,
-                    args.change,
-                    await readConfig(context.directory),
+                const state = await readV1Run(context.directory, args.change);
+                const adapter = await adapterFor(context.directory);
+                const result = await resolveCompletion(
+                    completionOptions(context.directory, adapter),
+                    state,
+                    { kind: "complete-and-archive" },
                 );
-                if (state.archiveError) {
-                    return (
-                        summarize(state, args.change, "Archive failed") +
-                        `\nArchive error (${state.archiveError.kind}, attempt ${state.archiveError.attempt}): ${state.archiveError.message}` +
-                        `\nCall specops_archive_run again after addressing the failure.`
-                    );
-                }
-                const label = state.archivedAt ? "Run archived" : "Archive not completed";
-                return summarize(state, args.change, label);
+                return JSON.stringify(result, null, 2);
             },
         }),
-        [TOOL_IDS.onboard]: tool({
-            description: "Install final SpecOps OpenSpec assets.",
-            args: {},
-            async execute(_args, context) {
-                await onboard(context.directory);
-                return "SpecOps final assets installed.";
-            },
-        }),
-        [TOOL_IDS.doctor]: tool({
-            description: "Diagnose final SpecOps configuration and assets.",
-            args: {},
-            async execute(_args, context) {
-                return doctor(context.directory, await readConfig(context.directory));
-            },
-        }),
-        [TOOL_IDS.openSpec]: tool({
-            description: "Run a read-only OpenSpec command.",
-            args: { args: tool.schema.array(tool.schema.string()).min(1) },
+        [TOOL_IDS.cancel]: tool({
+            description:
+                "Cancel an active V1 run without deleting artifacts or repository changes.",
+            args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                if (!READ_ONLY_OPENSPEC_COMMANDS.has(args.args[0])) {
-                    throw new Error("OpenSpec command is not read-only");
-                }
-                return openSpecOrThrow(
-                    context.directory,
-                    await readConfig(context.directory),
-                    args.args,
+                return JSON.stringify(
+                    { kind: "success", state: await cancelV1Run(context.directory, args.change) },
+                    null,
+                    2,
                 );
             },
         }),
     },
 });
 
-/**
- * Read a subset of context artifact files from a change directory, honouring
- * a byte budget so a single large artifact cannot crowd out the others.
- * @param directory - Repository root containing the `.specops` directory.
- * @param change - Change slug identifying the run's directory.
- * @param names - Artifact file names to read; must be in
- *   {@link CONTEXT_ARTIFACTS}.
- * @param limit - Maximum total bytes to return across all artifacts.
- * @returns Map of artifact file name to its (possibly truncated) content.
- */
-async function readContextArtifacts(
-    directory: string,
-    change: string,
-    names: string[],
-    limit: number,
-): Promise<Record<string, string>> {
-    const result: Record<string, string> = {};
-    let remaining = limit;
-    for (const name of names) {
-        if (remaining <= 0) {
-            break;
+/** Construct the single OpenSpec adapter used by all active V1 tool boundaries. */
+async function adapterFor(directory: string): Promise<OpenSpecAdapter> {
+    const config = await readConfig(directory);
+    return new OpenSpecAdapter({ directory, command: config.openspec.command });
+}
+
+/** Create the standard OpenSpec change only when its status cannot be found. */
+async function ensureChange(adapter: OpenSpecAdapter, change: string, goal: string): Promise<void> {
+    try {
+        await adapter.status(change);
+    } catch (error) {
+        if (
+            !(error instanceof Error) ||
+            !/not found|unknown change|does not exist/i.test(error.message)
+        ) {
+            throw error;
         }
-        const content = await readFile(path.join(changeRoot(directory, change), name), "utf8");
-        result[name] = content.slice(0, remaining);
-        remaining -= Buffer.byteLength(result[name]);
+        await adapter.createChange(change, goal);
     }
-    return result;
+}
+
+/** Identify the absent V1 metadata file without swallowing malformed legacy state. */
+function isMissingRun(error: unknown): boolean {
+    return Boolean(
+        error && typeof error === "object" && "code" in error && error.code === "ENOENT",
+    );
+}
+
+/**
+ * Supply the Phase 7 finalizer only the dependencies it consumes for the
+ * complete-and-archive action. Configuration-backed validation requirements
+ * are added by the Phase 8 migration layer; empty requirements preserve the
+ * existing V1 run data boundary until that layer is installed.
+ */
+function completionOptions(directory: string, adapter: OpenSpecAdapter): CompletionOptions {
+    return {
+        directory,
+        adapter,
+        implementation: { commands: { required: [], recommendations: [] } } as never,
+        review: {} as never,
+    };
 }

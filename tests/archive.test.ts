@@ -17,7 +17,6 @@ import { hash } from "../src/artifacts/lifecycle.js";
 import { DEFAULT_CONFIG, type SpecOpsConfig } from "../src/config.js";
 import { countIncompleteTasks, onboard } from "../src/openspec.js";
 import { SpecOpsPlugin } from "../src/orchestrator.js";
-import { TOOL_IDS } from "../src/protocol.js";
 import {
     changeRoot,
     readArchiveAttemptSidecar,
@@ -752,41 +751,10 @@ describe("archive phase", () => {
         await expect(stat(path.join(archiveDir, moved, "specops-transaction"))).rejects.toThrow();
     });
 
-    it("exposes the maintenance archive tool through the registered public tools", async () => {
-        const { directory, change } = await passedLeanRun();
+    it("does not expose a separate maintenance archive tool", async () => {
         const plugin = await SpecOpsPlugin({} as never);
-        const archiveTool = plugin.tool?.[TOOL_IDS.archive];
-        if (!archiveTool) throw new Error("archive tool was not registered");
-        // The confirmArchive tool no longer exists.
-        expect(plugin.tool?.["specops_confirm_archive"]).toBeUndefined();
-
-        const result = await archiveTool.execute({ change }, {
-            directory,
-            agent: AGENT_IDS.controller.automatic,
-        } as never);
-        const output = typeof result === "string" ? result : result.output;
-        expect(output).toContain("Run archived");
-        await expect(
-            stat(path.join(changeRoot(directory, change), "specops-run.json")),
-        ).rejects.toThrow();
-    });
-
-    it("reports maintenance success for a real completed-unarchived run", async () => {
-        const { directory, change } = await verifiedLeanRun();
-        const plugin = await SpecOpsPlugin({} as never);
-        const archiveTool = plugin.tool?.[TOOL_IDS.archive];
-        if (!archiveTool) throw new Error("archive tool was not registered");
-
-        const result = await archiveTool.execute({ change }, {
-            directory,
-            agent: AGENT_IDS.controller.interactive,
-        } as never);
-        const output = typeof result === "string" ? result : result.output;
-        expect(output).toContain("Run archived");
-        expect(output).not.toContain("Archive not completed");
-        await expect(
-            stat(path.join(changeRoot(directory, change), "specops-run.json")),
-        ).rejects.toThrow();
+        expect(Object.keys(plugin.tool ?? {})).not.toContain("specops_archive_run");
+        expect(Object.keys(plugin.tool ?? {})).not.toContain("specops_confirm_archive");
     });
 });
 

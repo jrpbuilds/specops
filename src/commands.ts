@@ -10,26 +10,26 @@ import { TOOL_IDS } from "./protocol.js";
  * no command exposes automatic execution or a separate archive path.
  */
 export const COMMANDS: NonNullable<Config["command"]> = {
-  specops: {
-    agent: AGENT_IDS.coordinator,
-    subtask: false,
-    description: "Start or resume an interactive SpecOps run",
-    template: "Start or resume SpecOps coordinator run for: $ARGUMENTS",
-  },
-  "specops-status": {
-    description: "Show the current SpecOps run status",
-    template: `Call ${TOOL_IDS.getStatus} for the active change.`,
-  },
-  "specops-cancel": {
-    description: "Cancel the current SpecOps run and preserve its work",
-    template: `Call ${TOOL_IDS.cancelRun} for the active change.`,
-  },
-  "specops-doctor": {
-    description: "Diagnose the SpecOps installation and current project",
-    template: `Call ${TOOL_IDS.doctor}.`,
-  },
-  "specops-onboard": {
-    description: "Set up standard OpenSpec support for this project",
-    template: `Call ${TOOL_IDS.onboard}.`,
-  },
+    specops: {
+        agent: AGENT_IDS.coordinator,
+        subtask: false,
+        description: "Start or resume an interactive SpecOps run",
+        template: "Start or resume SpecOps coordinator run for: $ARGUMENTS",
+    },
+    "specops-status": {
+        description: "Show the current SpecOps run status",
+        template: `Call ${TOOL_IDS.getStatus} for the active change.`,
+    },
+    "specops-cancel": {
+        description: "Cancel the current SpecOps run and preserve its work",
+        template: `Call ${TOOL_IDS.cancel} for the active change.`,
+    },
+    "specops-doctor": {
+        description: "Diagnose the SpecOps installation and current project",
+        template: "Run SpecOps installation diagnostics for the current project.",
+    },
+    "specops-onboard": {
+        description: "Set up standard OpenSpec support for this project",
+        template: "Initialize or verify standard OpenSpec support for the current project.",
+    },
 };

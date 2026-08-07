@@ -1,56 +1,21 @@
 /**
- * Canonical deterministic-protocol tool IDs.
+ * The complete V1 workflow tool catalogue.
  *
- * Command templates and plugin registration consume these values so a tool
- * rename cannot leave a public command pointing at a missing implementation.
- *
- * Each property maps a logical operation to the OpenCode tool id that callers
- * must reference verbatim.
+ * These names are intentionally the only workflow-specific tools exposed to
+ * OpenCode. Native tasks and questions handle model delegation and user
+ * interaction; no tool carries dispatch, scheduler, or provenance state.
  */
 export const TOOL_IDS = {
-    /** Create a final-format deterministic run from a strict assessment. */
-    startRun: "specops_start_run",
-    /** Return the next controller directive (dispatch, ask-question, checkpoint, block, finalize). */
-    nextAction: "specops_next_action",
-    /** Validate and persist an issued deterministic worker result. */
-    completeAction: "specops_complete_action",
-    /** Recover one interrupted issued dispatch without cancelling the run. */
-    recoverDispatch: "specops_recover_dispatch",
-    /** Record an answer to a worker-raised pending question. */
-    answerQuestion: "specops_answer_question",
-    /** Answer multiple pending questions in a single transaction. */
-    answerQuestions: "specops_answer_questions",
-    /** Record that the user dismissed the native question UI without answering. */
-    dismissQuestion: "specops_dismiss_question",
-    /** Resolve a pending checkpoint and resume scheduling. */
-    resumeCheckpoint: "specops_resume_checkpoint",
-    /** Read bounded, scheduler-safe run context and persisted artifacts. */
-    requestContext: "specops_request_context",
-    /** Execute a registered arbitrary validation command without a shell. */
-    runValidation: "specops_run_validation",
-    /** Read final-format deterministic run state. */
+    startOrResume: "specops_start_or_resume",
+    reconcileStage: "specops_reconcile_stage",
     getStatus: "specops_get_status",
-    /** Persist a safe cancellation outcome for an active run. */
-    cancelRun: "specops_cancel_run",
-    /** Finalize a run only when deterministic completion gates are satisfied. */
+    runValidation: "specops_run_validation",
     finalize: "specops_finalize",
-    /** Maintenance: archive or retry-archive a verified or completed-unarchived change regardless of auto-archive. Not used by normal workflow. */
-    archive: "specops_archive_run",
-    /** Install final SpecOps OpenSpec assets. */
-    onboard: "specops_onboard",
-    /** Diagnose final SpecOps configuration and assets. */
-    doctor: "specops_doctor",
-    /** Run a read-only OpenSpec command. */
-    openSpec: "specops_openspec",
+    cancel: "specops_cancel",
 } as const;
 
-/** Union of every canonical tool id. */
+/** Union of the six V1 workflow tool identifiers. */
 export type ToolId = (typeof TOOL_IDS)[keyof typeof TOOL_IDS];
 
-/**
- * Complete exact-set catalogue used by integration drift checks.
- *
- * Computed from {@link TOOL_IDS} so adding a tool id is the only edit needed
- * to keep drift tests in sync.
- */
+/** Immutable exact-set catalogue used by registration and drift tests. */
 export const ALL_TOOL_IDS: readonly ToolId[] = Object.values(TOOL_IDS);
