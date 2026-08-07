@@ -204,6 +204,6 @@ A cold adversarial review of the completed SpecOps 1.0 implementation produced r
 
 ### 12.5 Phase 11 verification and remediation report
 
-- [ ] 12.5.1 Re-run every original audit case and prove it now fails safely; record the reproduction-to-fix mapping
-- [ ] 12.5.2 Run the full release-proof pipeline from a clean checkout: `npm ci`, formatting, typecheck, dead-code analysis, full unit/integration tests, real V1 E2E tests, packed-install tests, OpenCode packed-plugin smoke tests, OpenSpec adapter compatibility tests, docs checks, `git diff --check`, and strict OpenSpec validation
-- [ ] 12.5.3 Produce the final remediation report mapping every B-01 through B-12 finding to: fix commit, regression test, verification evidence, and final disposition; do not publish, push, archive the OpenSpec change, or mark SpecOps 1.0 release-ready merely because the existing test suite passes
+- [x] 12.5.1 Re-run every original audit case and prove it now fails safely; record the reproduction-to-fix mapping
+- [x] 12.5.2 Run the full release-proof pipeline from a clean checkout: `npm ci`, formatting, typecheck, dead-code analysis, full unit/integration tests, real V1 E2E tests, packed-install tests, OpenCode packed-plugin smoke tests, OpenSpec adapter compatibility tests, docs checks, `git diff --check`, and strict OpenSpec validation
+- [x] 12.5.3 Produce the final remediation report mapping every B-01 through B-12 finding to: fix commit, regression test, verification evidence, and final disposition; do not publish, push, archive the OpenSpec change, or mark SpecOps 1.0 release-ready merely because the existing test suite passes
