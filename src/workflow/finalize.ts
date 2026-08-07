@@ -5,10 +5,15 @@ import type { OpenSpecArchiveResult } from "../openspec/archive.js";
 import type { OpenSpecValidationResult } from "../openspec/validation.js";
 import type { OpenSpecChangeStatus } from "../openspec/status.js";
 import { incompleteOpenSpecTasks } from "./implementation.js";
-import type { ImplementationWorkflowOptions, ImplementationResult } from "./implementation.js";
-import type { ReviewWorkflowOptions, ReviewResult } from "./review.js";
+import {
+    runImplementation,
+    type ImplementationWorkflowOptions,
+    type ImplementationResult,
+} from "./implementation.js";
+import { runReview, type ReviewWorkflowOptions, type ReviewResult } from "./review.js";
 import type { ValidationEvidence } from "../validation/executor.js";
 import { isValidationEvidenceCurrent, readValidationEvidence } from "../validation/evidence.js";
+import { invalidateValidationEvidence } from "../validation/evidence.js";
 import { parseReview } from "../review/parser.js";
 import { reviewPath } from "../state/paths.js";
 import type { ArchiveError, RunState } from "../state/schema.js";
@@ -130,6 +135,7 @@ export async function resumeVerified(
         }));
         return { kind: "verified-resumed", state: ready };
     }
+    await invalidateValidationEvidence(options.directory, state.change, identity);
     const stale = await updateV1Run(options.directory, state.change, run => ({
         ...run,
         status: "active",
@@ -156,7 +162,9 @@ async function resolveCompleteAndArchive(
         return { kind: "finalisation-rejected", state, reason };
     }
 
-    const identity = state.currentRepositoryState;
+    const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
+        options.directory,
+    );
     let archiveResult: OpenSpecArchiveResult;
     try {
         archiveResult = await options.adapter.archive(state.change);
@@ -224,13 +232,32 @@ async function resolveRequestImplementationChanges(
         failure: null,
         repairAttempts: 0,
     }));
-
-    void feedback;
-
+    await invalidateValidationEvidence(options.directory, state.change, identity, true);
+    const implementation = await runImplementation(
+        {
+            ...options.implementation,
+            directory: options.directory,
+            adapter: options.adapter,
+            userFeedback: feedback,
+        },
+        invalidated,
+    );
+    if (implementation.kind !== "ready-for-review") {
+        return { kind: "request-changes", state: implementation.state, result: implementation };
+    }
+    const review = await runReview(
+        {
+            ...options.review,
+            directory: options.directory,
+            adapter: options.adapter,
+            implementation: options.implementation,
+        },
+        implementation.state,
+    );
     return {
         kind: "request-changes",
-        state: invalidated,
-        result: { kind: "ready-for-review", state: invalidated, evidence: [] },
+        state: review.kind === "repair-validation" ? review.result.state : review.state,
+        result: review,
     };
 }
 
@@ -265,7 +292,12 @@ async function finalisationFailureReason(
         return `required tasks are not all complete: ${incomplete.map(t => t.id).join(", ")}`;
     }
 
-    const identity = state.currentRepositoryState;
+    const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
+        options.directory,
+    );
+    if (state.currentRepositoryState !== identity) {
+        return "current repository identity changed since the completion checkpoint";
+    }
     if (state.validatedRepositoryState !== identity) {
         return "validated repository identity does not match current identity";
     }
@@ -291,7 +323,10 @@ async function finalisationFailureReason(
 
     let reviewContent: string;
     try {
-        reviewContent = await (options.readReview ?? readReviewContent)(options.directory, state.change);
+        reviewContent = await (options.readReview ?? readReviewContent)(
+            options.directory,
+            state.change,
+        );
     } catch {
         return "review artifact is missing or unreadable";
     }
@@ -303,16 +338,16 @@ async function finalisationFailureReason(
         return "reviewed repository identity in review does not match current identity";
     }
 
-    if (state.repairAttempts > 0) {
-        return "repair is still active";
-    }
-
     return undefined;
 }
 
 /** Assert the run is at the completion checkpoint boundary. */
 function assertAtCompletionCheckpoint(state: RunState): void {
-    if (state.status !== "awaiting-user" && state.status !== "verified" && state.status !== "failed") {
+    if (
+        state.status !== "awaiting-user" &&
+        state.status !== "verified" &&
+        state.status !== "failed"
+    ) {
         throw new Error(`completion checkpoint is not pending (status: ${state.status})`);
     }
     if (state.stage !== "archive") {

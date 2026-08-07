@@ -43,11 +43,12 @@ export async function invalidateValidationEvidence(
     directory: string,
     change: string,
     currentIdentity: RepositoryIdentity,
+    force = false,
 ): Promise<ValidationEvidence[]> {
     const evidence = await readValidationEvidence(directory, change);
     const invalidatedAt = new Date().toISOString();
     const updated = evidence.map(item =>
-        item.repositoryIdentity === currentIdentity || item.invalidatedAt !== undefined
+        (!force && item.repositoryIdentity === currentIdentity) || item.invalidatedAt !== undefined
             ? item
             : { ...item, invalidatedAt, invalidatedBy: currentIdentity },
     );

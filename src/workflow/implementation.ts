@@ -67,10 +67,17 @@ export type ImplementationAgentRequest = {
     acceptedValidationCommands: readonly ValidationCommand[];
     prompt: string;
     state: RunState;
-    kind: "initial" | "retry" | "validation-fix" | "frontier-advice" | "review-repair";
+    kind:
+        | "initial"
+        | "retry"
+        | "validation-fix"
+        | "frontier-advice"
+        | "review-repair"
+        | "user-feedback";
     validationEvidence?: readonly ValidationEvidence[];
     frontierAdvice?: string;
     reviewBlockingFindingIds?: readonly string[];
+    userFeedback?: string;
 };
 
 /** Injectable native task boundary for the implementer. */
@@ -130,6 +137,7 @@ export type ImplementationWorkflowOptions = {
     ) => Promise<ValidationEvidence>;
     validationProcess?: ValidationProcessRunner;
     notifyMutation?: (mutation: RepositoryMutation) => void | Promise<void>;
+    userFeedback?: string;
 };
 
 /** Parse standard OpenSpec checkbox entries without storing a parallel task state. */
@@ -221,7 +229,15 @@ async function resolveImplementationWorker(
     state: RunState,
     artifacts: ImplementationArtifacts,
 ): Promise<ImplementationResult | undefined> {
-    let result = await invokeImplementer(options, state, artifacts, "initial");
+    let result = await invokeImplementer(
+        options,
+        state,
+        artifacts,
+        options.userFeedback ? "user-feedback" : "initial",
+        undefined,
+        undefined,
+        options.userFeedback,
+    );
     let retries = 0;
     let frontierUsed = false;
     while (result?.kind === "blocker") {
@@ -405,6 +421,7 @@ async function invokeImplementer(
     kind: ImplementationAgentRequest["kind"],
     validationEvidence?: readonly ValidationEvidence[],
     frontierAdvice?: string,
+    userFeedback?: string,
 ): Promise<ImplementationWorkerResult | void> {
     return options.implementer.run({
         agent: AGENT_IDS.implementer,
@@ -418,6 +435,7 @@ async function invokeImplementer(
         kind,
         validationEvidence,
         frontierAdvice,
+        userFeedback,
     });
 }
 

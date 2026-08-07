@@ -933,7 +933,8 @@ export async function readV1Run(directory: string, change: string): Promise<V1Ru
  * Atomically update a non-terminal V1 run state.
  *
  * The updater receives the last complete persisted record and must return the
- * next complete coarse state. Terminal runs deliberately cannot be continued.
+ * next complete coarse state. Terminal runs deliberately cannot be continued,
+ * except an archive failure, which is the sole retryable terminal outcome.
  */
 export async function updateV1Run(
     directory: string,
@@ -941,7 +942,10 @@ export async function updateV1Run(
     update: (state: V1RunState) => V1RunState,
 ): Promise<V1RunState> {
     const current = await readV1Run(directory, change);
-    if (isTerminalRunStatus(current.status)) {
+    if (
+        isTerminalRunStatus(current.status) &&
+        !(current.status === "failed" && current.failure?.kind === "archive")
+    ) {
         throw new Error(`cannot continue terminal SpecOps V1 run (${current.status})`);
     }
     const next = assertRunState({
