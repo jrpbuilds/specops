@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { calculateRepositoryIdentity } from "../repository/identity.js";
 import type { OpenSpecArchiveResult } from "../openspec/archive.js";
@@ -12,6 +13,7 @@ import {
 } from "./implementation.js";
 import { runReview, type ReviewWorkflowOptions, type ReviewResult } from "./review.js";
 import type { ValidationCommand } from "../validation/registry.js";
+import { canonicalCommandHash } from "../validation/registry.js";
 import type { ValidationEvidence } from "../validation/executor.js";
 import { isValidationEvidenceCurrent, readValidationEvidence } from "../validation/evidence.js";
 import { invalidateValidationEvidence } from "../validation/evidence.js";
@@ -49,6 +51,8 @@ export type CompletionOptions = {
     readEvidence?: (directory: string, change: string) => Promise<ValidationEvidence[]>;
     readReview?: (directory: string, change: string) => Promise<string>;
     loadTasks?: (directory: string, change: string) => Promise<string>;
+    /** Return whether OpenSpec has already archived the change (crash-safe resume probe). */
+    isChangeArchived?: (directory: string, change: string) => Promise<boolean>;
 };
 
 /** Presentation-only summary shown at the completion checkpoint. */
@@ -168,14 +172,42 @@ async function resolveCompleteAndArchive(
     options: CompletionOptions,
     state: RunState,
 ): Promise<CompletionResult> {
+    const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
+        options.directory,
+    );
+
+    // Crash-safe resume: if a previous archive attempt was recorded but the
+    // run never reached the completed state, OpenSpec may have already
+    // archived the change. Probe the change status; if it is gone, mark the
+    // run completed without re-invoking archive (and skip the preflight, whose
+    // artifacts are gone once archived). No state becomes completed unless
+    // upstream archival is proven to have succeeded.
+    if (state.archiveAttemptedAt !== null) {
+        const alreadyArchived = await isChangeAlreadyArchived(options, state.change);
+        if (alreadyArchived) {
+            const completed = await updateV1Run(options.directory, state.change, run => ({
+                ...run,
+                status: "completed",
+                stage: "archive",
+                archivedAt: state.archiveAttemptedAt,
+                archiveAttemptedAt: null,
+                failure: null,
+                archiveError: null,
+            }));
+            return { kind: "completed", state: completed };
+        }
+    }
+
     const reason = await finalisationFailureReason(options, state);
     if (reason) {
         return { kind: "finalisation-rejected", state, reason };
     }
 
-    const identity = await (options.calculateIdentity ?? calculateRepositoryIdentity)(
-        options.directory,
-    );
+    const attemptingAt = new Date().toISOString();
+    await updateV1Run(options.directory, state.change, run => ({
+        ...run,
+        archiveAttemptedAt: attemptingAt,
+    }));
     let archiveResult: OpenSpecArchiveResult;
     try {
         archiveResult = await options.adapter.archive(state.change);
@@ -183,15 +215,16 @@ async function resolveCompleteAndArchive(
         const message = error instanceof Error ? error.message : String(error);
         const errorRecord: ArchiveError = {
             message,
-            attemptedAt: new Date().toISOString(),
+            attemptedAt: attemptingAt,
             repositoryIdentity: identity,
         };
         const failed = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "failed",
             stage: "archive",
-            failure: { kind: "archive", message, at: errorRecord.attemptedAt },
+            failure: { kind: "archive", message, at: attemptingAt },
             archiveError: errorRecord,
+            archiveAttemptedAt: null,
         }));
         return { kind: "archive-failed", state: failed, error: errorRecord };
     }
@@ -200,15 +233,16 @@ async function resolveCompleteAndArchive(
         const message = archiveResult.stderr || archiveResult.stdout || "OpenSpec archive failed";
         const errorRecord: ArchiveError = {
             message,
-            attemptedAt: new Date().toISOString(),
+            attemptedAt: attemptingAt,
             repositoryIdentity: identity,
         };
         const failed = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "failed",
             stage: "archive",
-            failure: { kind: "archive", message, at: errorRecord.attemptedAt },
+            failure: { kind: "archive", message, at: attemptingAt },
             archiveError: errorRecord,
+            archiveAttemptedAt: null,
         }));
         return { kind: "archive-failed", state: failed, error: errorRecord };
     }
@@ -217,7 +251,8 @@ async function resolveCompleteAndArchive(
         ...run,
         status: "completed",
         stage: "archive",
-        archivedAt: new Date().toISOString(),
+        archivedAt: attemptingAt,
+        archiveAttemptedAt: null,
         failure: null,
         archiveError: null,
     }));
@@ -334,8 +369,8 @@ async function finalisationFailureReason(
     for (const command of requiredCommands) {
         const item = evidence.find(candidate => candidate.commandId === command.id);
         if (!item) return `required validation evidence missing: ${command.id}`;
-        if (!isValidationEvidenceCurrent(item, identity)) {
-            return `required validation is stale: ${command.id}`;
+        if (!isValidationEvidenceCurrent(item, identity, canonicalCommandHash(command))) {
+            return `required validation is stale or bound to a changed command definition: ${command.id}`;
         }
         if (item.timedOut || item.exitCode !== 0 || item.executionError) {
             return `required validation did not pass: ${command.id}`;
@@ -388,4 +423,23 @@ async function loadTasks(directory: string, change: string): Promise<string> {
 /** Read the managed review artifact. */
 async function readReviewContent(directory: string, change: string): Promise<string> {
     return readFile(reviewPath(directory, change), "utf8");
+}
+
+/**
+ * Return whether OpenSpec has already archived the change. OpenSpec archive
+ * moves the change directory out of `openspec/changes/`, so an absent change
+ * root proves upstream archival succeeded. Used for crash-safe resume when
+ * `archiveAttemptedAt` is set but the run never reached the completed state.
+ */
+async function isChangeAlreadyArchived(
+    options: CompletionOptions,
+    change: string,
+): Promise<boolean> {
+    if (options.isChangeArchived) return options.isChangeArchived(options.directory, change);
+    try {
+        await access(path.join(options.directory, "openspec", "changes", change));
+        return false;
+    } catch {
+        return true;
+    }
 }

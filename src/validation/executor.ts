@@ -3,6 +3,7 @@ import path from "node:path";
 import { runProcess, type ProcessResult } from "../process.js";
 import type { RepositoryIdentity } from "../repository/identity.js";
 import type { ValidationCommand } from "./registry.js";
+import { canonicalCommandHash } from "./registry.js";
 
 /** Durable, identity-bound result from a single required validation command. */
 export type ValidationEvidence = {
@@ -22,6 +23,12 @@ export type ValidationEvidence = {
     stderrTruncated: boolean;
     repositoryIdentity: RepositoryIdentity;
     outputHash: string;
+    /**
+     * SHA-256 over the complete canonical command definition accepted when
+     * this evidence was recorded. Gates reject evidence whose definition no
+     * longer matches the accepted set.
+     */
+    commandDefinitionHash: string;
     executionError?: string;
     invalidatedAt?: string;
     invalidatedBy?: RepositoryIdentity;
@@ -92,6 +99,7 @@ export async function executeValidationCommand(
             stderrTruncated: false,
             repositoryIdentity,
             outputHash: hashOutput("", ""),
+            commandDefinitionHash: canonicalCommandHash(command),
             executionError,
         };
     } finally {
@@ -126,6 +134,7 @@ function createEvidence(
         stderrTruncated: result.stderrTruncated,
         repositoryIdentity,
         outputHash: hashOutput(result.stdout, result.stderr),
+        commandDefinitionHash: canonicalCommandHash(command),
     };
 }
 

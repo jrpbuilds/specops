@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /** Explicit shell-free command configuration accepted for a V1 validation gate. */
 export type ValidationCommand = {
     id: string;
@@ -74,6 +76,26 @@ export function validateValidationCommands(commands: ValidationCommand[]): void 
 /** Return an immutable-by-convention copy of a command configuration. */
 function copyCommand(command: ValidationCommand): ValidationCommand {
     return { ...command, args: [...command.args] };
+}
+
+/**
+ * Return a stable SHA-256 hash over the complete canonical command
+ * definition (executable, args, cwd, timeoutMs, maxOutputBytes). Evidence is
+ * bound to this hash so a stale record with the same id but a changed
+ * definition cannot satisfy a gate.
+ */
+export function canonicalCommandHash(command: ValidationCommand): string {
+    return createHash("sha256")
+        .update(
+            JSON.stringify([
+                command.executable,
+                [...command.args],
+                command.cwd ?? ".",
+                command.timeoutMs,
+                command.maxOutputBytes,
+            ]),
+        )
+        .digest("hex");
 }
 
 /** Return whether a configured numeric bound is a positive integer. */

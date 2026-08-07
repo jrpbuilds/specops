@@ -1,5 +1,4 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import { writeFileAtomic } from "./atomic.js";
 import { runStatePath } from "./paths.js";
 import {
@@ -19,24 +18,18 @@ export class LegacyRunStateError extends Error {
     }
 }
 
-/** Atomically create one coarse V1 run without overwriting existing metadata. */
+/**
+ * Atomically create one coarse V1 run. Uses a single atomic write after an
+ * existence precheck; never leaves an abandoned `.<uuid>.create` copy on
+ * disk. Concurrent creation is rejected deterministically.
+ */
 export async function createV1Run(
     directory: string,
     input: CreateRunStateInput,
 ): Promise<RunState> {
     const state = createRunState(input);
     const destination = runStatePath(directory, input.change);
-    await mkdir(runStatePath(directory, input.change).replace(/[/\\]run\.json$/, ""), {
-        recursive: true,
-    });
-    try {
-        await readFile(destination, "utf8");
-        throw new Error(`SpecOps V1 run already exists for change ${input.change}`);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    const temporary = `${destination}.${randomUUID()}.create`;
-    await writeFileAtomic(temporary, `${JSON.stringify(state, null, 2)}\n`);
+    await mkdir(destination.replace(/[/\\]run\.json$/, ""), { recursive: true });
     try {
         await readFile(destination, "utf8");
         throw new Error(`SpecOps V1 run already exists for change ${input.change}`);

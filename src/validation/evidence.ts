@@ -63,12 +63,23 @@ export async function invalidateValidationEvidence(
     return updated;
 }
 
-/** Return whether every evidence record remains fresh for the supplied identity. */
+/**
+ * Return whether every evidence record remains fresh for the supplied identity
+ * and canonical command definition. A record bound to a different repository
+ * state, an invalidated record, or a record whose command definition no
+ * longer matches the accepted canonical definition is not current.
+ */
 export function isValidationEvidenceCurrent(
     evidence: ValidationEvidence,
     currentIdentity: RepositoryIdentity,
+    acceptedCommandDefinitionHash?: string,
 ): boolean {
-    return evidence.repositoryIdentity === currentIdentity && evidence.invalidatedAt === undefined;
+    return (
+        evidence.repositoryIdentity === currentIdentity &&
+        evidence.invalidatedAt === undefined &&
+        (acceptedCommandDefinitionHash === undefined ||
+            evidence.commandDefinitionHash === acceptedCommandDefinitionHash)
+    );
 }
 
 /** Validate persisted evidence before it can participate in workflow gates. */
@@ -83,7 +94,8 @@ function assertValidationEvidence(value: unknown): ValidationEvidence {
         !Array.isArray(evidence.args) ||
         typeof evidence.cwd !== "string" ||
         typeof evidence.repositoryIdentity !== "string" ||
-        typeof evidence.outputHash !== "string"
+        typeof evidence.outputHash !== "string" ||
+        typeof evidence.commandDefinitionHash !== "string"
     ) {
         throw new Error("invalid validation evidence");
     }

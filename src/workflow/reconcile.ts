@@ -33,6 +33,15 @@ export type ReconcileStageOptions = {
     directory: string;
     adapter: ReconcileOpenSpecAdapter;
     calculateIdentity?: (directory: string) => Promise<string>;
+    /**
+     * Resolve the canonical accepted validation command definitions for the
+     * active run. Invoked once at the planning checkpoint (tasks -> implementation)
+     * so the accepted set is persisted and frozen before any validation runs.
+     */
+    resolveAcceptedValidationCommands?: (
+        directory: string,
+        change: string,
+    ) => Promise<import("../validation/registry.js").ValidationCommand[]>;
 };
 
 /**
@@ -99,11 +108,16 @@ async function reconcilePlanningArtifact(
     const validation = await options.adapter.validate(state.change, true);
     if (validation.valid) {
         const nextStage = nextPlanningStage(artifact);
+        const acceptedCommands =
+            nextStage === "implementation" && options.resolveAcceptedValidationCommands
+                ? await options.resolveAcceptedValidationCommands(options.directory, state.change)
+                : state.acceptedValidationCommands;
         const next = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "active",
             stage: nextStage,
             failure: null,
+            acceptedValidationCommands: acceptedCommands,
         }));
         const owningAgent =
             nextStage === "implementation" || !isPlanningArtifact(nextStage)

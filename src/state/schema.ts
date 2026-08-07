@@ -51,11 +51,25 @@ export type RunState = {
     validatedRepositoryState: string | null;
     reviewedRepositoryState: string | null;
     acceptedValidationRecommendationIds: string[];
+    /** Canonical accepted validation command definitions accepted at the planning checkpoint. */
+    acceptedValidationCommands: AcceptedValidationCommand[];
     artifactCorrectionAttempts: Partial<Record<"proposal" | "specs" | "design" | "tasks", number>>;
     repairAttempts: number;
     failure: RunFailure | null;
     archiveError: ArchiveError | null;
     archivedAt: string | null;
+    /** Set immediately before invoking OpenSpec archive; cleared on completion. Crash-safe resume probe. */
+    archiveAttemptedAt: string | null;
+};
+
+/** Canonical accepted validation command definition persisted at the planning checkpoint. */
+export type AcceptedValidationCommand = {
+    id: string;
+    executable: string;
+    args: string[];
+    cwd?: string;
+    timeoutMs: number;
+    maxOutputBytes: number;
 };
 
 /** Arguments used to construct the initial persisted run state. */
@@ -104,11 +118,13 @@ const RUN_STATE_FIELDS = new Set([
     "validatedRepositoryState",
     "reviewedRepositoryState",
     "acceptedValidationRecommendationIds",
+    "acceptedValidationCommands",
     "artifactCorrectionAttempts",
     "repairAttempts",
     "failure",
     "archiveError",
     "archivedAt",
+    "archiveAttemptedAt",
 ]);
 
 const TERMINAL_STATUSES = new Set<RunStatus>(["completed", "blocked", "failed", "cancelled"]);
@@ -134,11 +150,13 @@ export function createRunState(input: CreateRunStateInput): RunState {
         validatedRepositoryState: null,
         reviewedRepositoryState: null,
         acceptedValidationRecommendationIds: [],
+        acceptedValidationCommands: [],
         artifactCorrectionAttempts: {},
         repairAttempts: 0,
         failure: null,
         archiveError: null,
         archivedAt: null,
+        archiveAttemptedAt: null,
     };
     return assertRunState(state);
 }
@@ -179,6 +197,9 @@ export function assertRunState(state: RunState): RunState {
     if (!isRecommendationIds(state.acceptedValidationRecommendationIds)) {
         throw new Error("invalid SpecOps V1 accepted validation recommendations");
     }
+    if (!isAcceptedValidationCommands(state.acceptedValidationCommands)) {
+        throw new Error("invalid SpecOps V1 accepted validation commands");
+    }
     if (!isNonNegativeInteger(state.repairAttempts)) {
         throw new Error("invalid SpecOps V1 repair attempts");
     }
@@ -189,13 +210,102 @@ export function assertRunState(state: RunState): RunState {
     if (state.archivedAt !== null && !isTimestamp(state.archivedAt)) {
         throw new Error("invalid SpecOps V1 archivedAt timestamp");
     }
+    if (state.archiveAttemptedAt !== null && !isTimestamp(state.archiveAttemptedAt)) {
+        throw new Error("invalid SpecOps V1 archiveAttemptedAt timestamp");
+    }
     if ((state.status === "blocked" || state.status === "failed") && state.failure === null) {
         throw new Error(`${state.status} SpecOps V1 run requires failure details`);
     }
     if (state.status !== "blocked" && state.status !== "failed" && state.failure !== null) {
         throw new Error("only blocked or failed SpecOps V1 runs may retain failure details");
     }
+    assertRunInvariants(state);
     return state;
+}
+
+/**
+ * Enforce legal status/stage/evidence/archive cross-invariants so a corrupted
+ * `run.json` cannot satisfy a workflow gate (B-06). These are checked on
+ * every read so corruption is rejected rather than silently honoured.
+ */
+function assertRunInvariants(state: RunState): void {
+    if (state.status === "completed") {
+        if (state.archivedAt === null) {
+            throw new Error("completed SpecOps V1 run requires an archivedAt timestamp");
+        }
+    }
+    if (state.status === "verified" && state.stage !== "archive") {
+        throw new Error("verified SpecOps V1 run must be at the archive stage");
+    }
+    if (state.validatedRepositoryState !== null && !hasReachedValidation(state.stage)) {
+        throw new Error("validated repository identity recorded before the validation boundary");
+    }
+    if (state.reviewedRepositoryState !== null && !hasReachedReview(state.stage)) {
+        throw new Error("reviewed repository identity recorded before the review boundary");
+    }
+}
+
+/** Return whether a stage is at or beyond the validation boundary. */
+function hasReachedValidation(stage: RunStage): boolean {
+    const order: readonly RunStage[] = [
+        "exploration",
+        "proposal",
+        "specs",
+        "design",
+        "tasks",
+        "implementation",
+        "validation",
+        "review",
+        "repair",
+        "archive",
+    ];
+    return order.indexOf(stage) >= order.indexOf("validation");
+}
+
+/** Return whether a stage is at or beyond the review boundary. */
+function hasReachedReview(stage: RunStage): boolean {
+    const order: readonly RunStage[] = [
+        "exploration",
+        "proposal",
+        "specs",
+        "design",
+        "tasks",
+        "implementation",
+        "validation",
+        "review",
+        "repair",
+        "archive",
+    ];
+    return order.indexOf(stage) >= order.indexOf("review");
+}
+
+/** Validate persisted accepted validation command definitions. */
+function isAcceptedValidationCommands(value: unknown): value is AcceptedValidationCommand[] {
+    if (!Array.isArray(value)) return false;
+    const ids = new Set<string>();
+    return value.every(item => {
+        if (!isRecord(item)) return false;
+        if (
+            typeof item.id !== "string" ||
+            !/^[a-z0-9][a-z0-9-]{0,127}$/.test(item.id) ||
+            ids.has(item.id)
+        )
+            return false;
+        ids.add(item.id);
+        return (
+            typeof item.executable === "string" &&
+            item.executable.trim().length > 0 &&
+            Array.isArray(item.args) &&
+            item.args.every(arg => typeof arg === "string") &&
+            (item.cwd === undefined || typeof item.cwd === "string") &&
+            typeof item.timeoutMs === "number" &&
+            Number.isInteger(item.timeoutMs) &&
+            item.timeoutMs > 0 &&
+            typeof item.maxOutputBytes === "number" &&
+            Number.isInteger(item.maxOutputBytes) &&
+            item.maxOutputBytes > 0
+        );
+    });
 }
 
 /** Return whether a value is a plain object. */

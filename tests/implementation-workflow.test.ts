@@ -8,6 +8,7 @@ import {
     acceptValidationCommands,
     acceptedValidationCommandsForRun,
 } from "../src/validation/commands.js";
+import { canonicalCommandHash } from "../src/validation/registry.js";
 import { readValidationEvidence } from "../src/validation/evidence.js";
 import type { ValidationEvidence } from "../src/validation/executor.js";
 import type { ValidationCommand, ValidationRecommendation } from "../src/validation/registry.js";
@@ -81,6 +82,7 @@ function evidence(
         stderrTruncated: false,
         repositoryIdentity,
         outputHash: "c".repeat(64),
+        commandDefinitionHash: canonicalCommandHash(command),
         ...overrides,
     };
 }

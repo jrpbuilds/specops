@@ -7,6 +7,7 @@ import { AGENT_PERMISSIONS, ownedPathPatterns } from "../src/agents/permissions.
 import { parseReview } from "../src/review/parser.js";
 import { createV1Run, readV1Run, updateV1Run } from "../src/state/store.js";
 import { acceptValidationCommands } from "../src/validation/commands.js";
+import { canonicalCommandHash } from "../src/validation/registry.js";
 import { persistValidationEvidence } from "../src/validation/evidence.js";
 import type { ValidationEvidence } from "../src/validation/executor.js";
 import type { ValidationCommand } from "../src/validation/registry.js";
@@ -75,6 +76,7 @@ function evidence(overrides: Partial<ValidationEvidence> = {}): ValidationEviden
         stderrTruncated: false,
         repositoryIdentity: identity,
         outputHash: "c".repeat(64),
+        commandDefinitionHash: canonicalCommandHash(command),
         ...overrides,
     };
 }

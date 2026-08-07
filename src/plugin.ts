@@ -6,6 +6,7 @@ import { WORKFLOW_TOOL_IDS } from "./workflow/tools.js";
 import { captureRepositoryBaseline } from "./repository/baseline.js";
 import { calculateRepositoryIdentity } from "./repository/identity.js";
 import { cancelV1Run, createV1Run, readV1Run, updateV1Run } from "./state/store.js";
+import type { AcceptedValidationCommand } from "./state/schema.js";
 import { persistValidationEvidence } from "./validation/evidence.js";
 import { executeValidationCommand } from "./validation/executor.js";
 import { acceptedValidationCommandsForRun } from "./validation/commands.js";
@@ -76,7 +77,11 @@ export const SpecOpsPlugin: Plugin = async () => ({
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
                 const outcome = await reconcileStage(
-                    { directory: context.directory, adapter: await adapterFor(context.directory) },
+                    {
+                        directory: context.directory,
+                        adapter: await adapterFor(context.directory),
+                        resolveAcceptedValidationCommands: resolveAcceptedValidationCommands,
+                    },
                     await readV1Run(context.directory, args.change),
                 );
                 return JSON.stringify(outcome, null, 2);
@@ -225,4 +230,24 @@ function completionActionFromArgs(value: {
         return { kind: "request-implementation-changes", feedback: value.feedback ?? "" };
     }
     return { kind: value.kind };
+}
+
+/**
+ * Resolve the canonical accepted validation command definitions for the
+ * active run (configured commands plus persisted accepted explorer
+ * recommendations) so the planning checkpoint can freeze them before any
+ * validation runs. Called once at the tasks -> implementation boundary.
+ */
+async function resolveAcceptedValidationCommands(
+    directory: string,
+    change: string,
+): Promise<AcceptedValidationCommand[]> {
+    const configuration = await loadV1Configuration(directory);
+    const state = await readV1Run(directory, change);
+    const accepted = acceptedValidationCommandsForRun(
+        configuration.validation.commands,
+        [],
+        state.acceptedValidationRecommendationIds,
+    );
+    return accepted.required;
 }
