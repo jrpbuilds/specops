@@ -35,8 +35,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
         expect(sources.join("\n")).not.toContain("capabilities/");
     });
 
-    // Phase 2 replaces the 24-agent capability registry.
-    it.skip("registers exactly the seven V1 agents", async () => {
+    it("registers exactly the seven V1 agents", async () => {
         const agentIdsModule = "../src/agents/ids.js";
         const { ALL_AGENT_IDS } = await import(agentIdsModule);
 
