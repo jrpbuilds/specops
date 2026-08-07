@@ -111,7 +111,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 9. Phase 8 — Commands, status, doctor, and installation migration
 
-- [ ] 9.1 Replace the public command set in `src/commands.ts` with exactly `/specops`, `/specops-status`, `/specops-cancel`, `/specops-doctor`, `/specops-onboard`; remove `/specops-auto` and `/specops-archive`
+- [x] 9.1 Replace the public command set in `src/commands.ts` with exactly `/specops`, `/specops-status`, `/specops-cancel`, `/specops-doctor`, `/specops-onboard`; remove `/specops-auto` and `/specops-archive`
 - [ ] 9.2 Replace `src/protocol.ts` with the exact six-tool catalogue (`specops_start_or_resume`, `specops_reconcile_stage`, `specops_get_status`, `specops_run_validation`, `specops_finalize`, `specops_cancel`); implement `specops_reconcile_stage` as the coarse boundary reconciler (inspect expected stage output, invoke OpenSpec validation where applicable, validate/parse review output where applicable, atomically persist the stage transition, return a bounded outcome); remove all dispatch/scheduler tool IDs
 - [ ] 9.3 Implement `/specops-status` output (goal, change, status, stage, OpenSpec artifact status, correction attempts, identity summary, validation results, review verdict, repair count, checkpoint state, blocked/failed reason)
 - [ ] 9.4 Rewrite `src/doctor.ts` with the spec §25 checks, distinguishing errors/warnings/info with remediation (legacy schema warning targets user-project installs; absence-of-required-custom-schemas validates the package)
