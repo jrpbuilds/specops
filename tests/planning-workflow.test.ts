@@ -24,6 +24,7 @@ import {
 import { explorationPath } from "../src/state/paths.js";
 import { createV1Run, readV1Run, updateV1Run } from "../src/state/store.js";
 import type { OpenSpecChangeStatus } from "../src/openspec/status.js";
+import type { OpenSpecArchiveResult } from "../src/openspec/archive.js";
 import type { OpenSpecValidationResult } from "../src/openspec/validation.js";
 import { OpenSpecOperationalError } from "../src/openspec/errors.js";
 import type { ValidationCommand, ValidationRecommendation } from "../src/validation/registry.js";
@@ -106,6 +107,10 @@ class FakeAdapter implements CoordinatorOpenSpecAdapter {
 
     async validate(): Promise<OpenSpecValidationResult> {
         return this.validations.shift() ?? validation(true);
+    }
+
+    async archive(): Promise<OpenSpecArchiveResult> {
+        return { success: true, code: 0, stdout: "{}", stderr: "" };
     }
 }
 

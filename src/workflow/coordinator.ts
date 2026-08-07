@@ -19,12 +19,42 @@ import {
     type ImplementationWorkflowOptions,
 } from "./implementation.js";
 import { runReview, type ReviewResult, type ReviewWorkflowOptions } from "./review.js";
+import {
+    completionOverview,
+    resumeVerified,
+    resolveCompletion,
+    type CompletionAction,
+    type CompletionOptions,
+    type CompletionResult,
+} from "./finalize.js";
+
+/** Re-export completion types for the command layer. */
+export type { CompletionAction, CompletionResult, CompletionOptions };
+
+/** Resolve a completion checkpoint action directly. */
+export async function resolveCompletionAction(
+    options: CoordinatorOptions,
+    state: RunState,
+    action: CompletionAction,
+): Promise<CompletionResult> {
+    if (!options.finalize) throw new Error("completion options are not configured");
+    return resolveCompletion(
+        {
+            ...options.finalize,
+            directory: options.directory,
+            adapter: options.adapter,
+        },
+        state,
+        action,
+    );
+}
 
 /** Adapter contract consumed by the coordinator and intentionally fake-friendly. */
 export type CoordinatorOpenSpecAdapter = PlanningOpenSpecAdapter & {
     version(): Promise<string>;
     assertStandardSchema(change: string): Promise<string>;
     createChange(change: string, goal: string): Promise<void>;
+    archive(change: string): Promise<import("../openspec/archive.js").OpenSpecArchiveResult>;
 };
 
 /** Native explorer task boundary. The explorer alone writes the managed report. */
@@ -45,6 +75,7 @@ export type CoordinatorOptions = {
     planners: PlanningAgentRunner;
     implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">;
     review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">;
+    finalize?: Omit<CompletionOptions, "directory" | "adapter">;
     captureBaseline?: (directory: string) => Promise<RepositoryBaseline>;
     recover?: (
         directory: string,
@@ -53,10 +84,14 @@ export type CoordinatorOptions = {
     ) => Promise<{ state: RunState }>;
 };
 
-/** Result returned at the next coordinator-owned planning boundary. */
-export type CoordinatorResult = (PlanningResult | ImplementationResult | ReviewResult) & {
-    resumed: boolean;
-};
+/** Result returned at the next coordinator-owned boundary. */
+export type CoordinatorResult = (
+    | PlanningResult
+    | ImplementationResult
+    | ReviewResult
+    | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }
+    | CompletionResult
+) & { resumed: boolean };
 
 /** Start a standard OpenSpec change or resume its persisted coarse V1 planning boundary. */
 export async function startOrResumePlanning(
@@ -91,7 +126,7 @@ export async function startOrResumePlanning(
 async function runWithOperationalFailure(
     options: CoordinatorOptions,
     state: RunState,
-): Promise<PlanningResult | ImplementationResult | ReviewResult> {
+): Promise<PlanningResult | ImplementationResult | ReviewResult | CompletionResult | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }> {
     try {
         return await resumePlanning(options, state);
     } catch (error) {
@@ -114,7 +149,17 @@ async function runWithOperationalFailure(
 async function resumePlanning(
     options: CoordinatorOptions,
     state: Awaited<ReturnType<typeof readV1Run>>,
-): Promise<PlanningResult | ImplementationResult | ReviewResult> {
+): Promise<PlanningResult | ImplementationResult | ReviewResult | CompletionResult | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }> {
+    if (state.status === "verified" && options.finalize) {
+        const result = await resumeVerified(
+            { ...options.finalize, directory: options.directory, adapter: options.adapter },
+            state,
+        );
+        return result;
+    }
+    if (state.status === "awaiting-user" && state.stage === "archive") {
+        return { kind: "ready-for-completion", state, overview: completionOverview(state) };
+    }
     if (state.stage === "exploration") {
         await options.explorer.run({
             agent: AGENT_IDS.explorer,

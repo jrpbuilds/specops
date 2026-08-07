@@ -25,6 +25,13 @@ export type RunFailure = {
     at: string;
 };
 
+/** Retryable archive failure recorded when OpenSpec archival fails. */
+export type ArchiveError = {
+    message: string;
+    attemptedAt: string;
+    repositoryIdentity: string;
+};
+
 /**
  * The complete, intentionally coarse persisted state for one V1 run.
  *
@@ -47,6 +54,8 @@ export type RunState = {
     artifactCorrectionAttempts: Partial<Record<"proposal" | "specs" | "design" | "tasks", number>>;
     repairAttempts: number;
     failure: RunFailure | null;
+    archiveError: ArchiveError | null;
+    archivedAt: string | null;
 };
 
 /** Arguments used to construct the initial persisted run state. */
@@ -98,6 +107,8 @@ const RUN_STATE_FIELDS = new Set([
     "artifactCorrectionAttempts",
     "repairAttempts",
     "failure",
+    "archiveError",
+    "archivedAt",
 ]);
 
 const TERMINAL_STATUSES = new Set<RunStatus>(["completed", "blocked", "failed", "cancelled"]);
@@ -126,6 +137,8 @@ export function createRunState(input: CreateRunStateInput): RunState {
         artifactCorrectionAttempts: {},
         repairAttempts: 0,
         failure: null,
+        archiveError: null,
+        archivedAt: null,
     };
     return assertRunState(state);
 }
@@ -170,6 +183,12 @@ export function assertRunState(state: RunState): RunState {
         throw new Error("invalid SpecOps V1 repair attempts");
     }
     if (!isFailure(state.failure)) throw new Error("invalid SpecOps V1 failure details");
+    if (!isArchiveError(state.archiveError)) {
+        throw new Error("invalid SpecOps V1 archive error");
+    }
+    if (state.archivedAt !== null && !isTimestamp(state.archivedAt)) {
+        throw new Error("invalid SpecOps V1 archivedAt timestamp");
+    }
     if ((state.status === "blocked" || state.status === "failed") && state.failure === null) {
         throw new Error(`${state.status} SpecOps V1 run requires failure details`);
     }
@@ -241,5 +260,16 @@ function isFailure(value: unknown): value is RunFailure | null {
             ["blocked", "validation", "operational", "archive"].includes(String(value.kind)) &&
             isNonEmptyString(value.message) &&
             isTimestamp(value.at))
+    );
+}
+
+/** Return whether archive error details are valid. */
+function isArchiveError(value: unknown): value is ArchiveError | null {
+    return (
+        value === null ||
+        (isRecord(value) &&
+            isNonEmptyString(value.message) &&
+            isTimestamp(value.attemptedAt) &&
+            isIdentity(value.repositoryIdentity))
     );
 }
