@@ -52,7 +52,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 8 replaces the command surface.
-    it.skip("exposes exactly the five V1 public commands", async () => {
+    it("exposes exactly the five V1 public commands", async () => {
         const { COMMANDS } = await import("../src/commands.js");
 
         expect(Object.keys(COMMANDS).sort()).toEqual([
@@ -65,7 +65,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 8 removes automatic mode from public commands.
-    it.skip("does not expose /specops-auto", async () => {
+    it("does not expose /specops-auto", async () => {
         const { COMMANDS } = await import("../src/commands.js");
 
         expect(COMMANDS).not.toHaveProperty("specops-auto");
@@ -80,7 +80,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 8 replaces the deterministic dispatch protocol.
-    it.skip("does not retain old protocol tool IDs", async () => {
+    it("does not retain old protocol tool IDs", async () => {
         const protocol = await readFile(path.join(repositoryRoot, "src", "protocol.ts"), "utf8");
 
         for (const tool of [
@@ -113,7 +113,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 8 reduces the protocol to the V1 tool catalogue.
-    it.skip("registers exactly the six V1 workflow tools", async () => {
+    it("registers exactly the six V1 workflow tools", async () => {
         const { ALL_TOOL_IDS } = await import("../src/protocol.js");
 
         expect([...ALL_TOOL_IDS].sort()).toEqual([

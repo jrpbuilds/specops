@@ -74,6 +74,25 @@ const { AGENT_IDS, ALL_AGENT_IDS } = idsModule;
 const hooks = await pluginModule.default.server(fakePluginInput(packageDirectory));
 const config = {};
 await hooks.config(config);
+assert(
+    Object.keys(config.command).sort().join("|") ===
+        ["specops", "specops-cancel", "specops-doctor", "specops-onboard", "specops-status"].join(
+            "|",
+        ),
+    "packed runtime did not register the exact V1 command catalogue",
+);
+assert(
+    Object.keys(hooks.tool).sort().join("|") ===
+        [
+            "specops_cancel",
+            "specops_finalize",
+            "specops_get_status",
+            "specops_reconcile_stage",
+            "specops_run_validation",
+            "specops_start_or_resume",
+        ].join("|"),
+    "packed runtime did not register the exact V1 workflow tool catalogue",
+);
 await hooks["chat.message"]?.(
     { sessionID: "packed-planner", agent: AGENT_IDS.planner },
     { message: {}, parts: [] },
@@ -95,43 +114,9 @@ await hooks["permission.ask"]?.(
 );
 assert(deniedEdit.status === "deny", "packed permission hook allowed an out-of-scope path");
 
-const globalConfigPath = path.join(isolatedConfigHome, "opencode", "specops.json");
-const globalConfig = JSON.parse(await readFile(globalConfigPath, "utf8"));
-const globalSchemaPath = path.join(isolatedConfigHome, "opencode", "specops.schema.json");
-const packagedSchema = await readFile(
-    path.join(packageDirectory, "examples", "specops.schema.json"),
-    "utf8",
-);
-assert(
-    globalConfig.$schema === "./specops.schema.json",
-    "packed install global config schema reference drifted",
-);
-assert(
-    (await readFile(globalSchemaPath, "utf8")) === packagedSchema,
-    "packed install did not materialise sibling specops.schema.json",
-);
-assert(
-    [
-        "version",
-        "openspec",
-        "workflow",
-        "routing",
-        "automation",
-        "escalation",
-        "frontier",
-        "review",
-        "integrations",
-    ].every(key => key in globalConfig),
-    "packed install global config is not complete",
-);
-
 const disabledConfigPath = path.join(packageDirectory, ".opencode", "specops.json");
 await mkdir(path.dirname(disabledConfigPath), { recursive: true });
-await writeFile(
-    disabledConfigPath,
-    `${JSON.stringify({ integrations: { mcp: "disabled" } })}\n`,
-    "utf8",
-);
+await writeFile(disabledConfigPath, `${JSON.stringify(v1Configuration("disabled"))}\n`, "utf8");
 const disabledHooks = await pluginModule.default.server(fakePluginInput(packageDirectory));
 const disabledConfig = {
     mcp: {
@@ -507,6 +492,26 @@ function fakePluginInput(directory) {
         serverUrl: new URL("http://127.0.0.1"),
         $() {},
         experimental_workspace: { register() {} },
+    };
+}
+
+function v1Configuration(mcp) {
+    return {
+        version: 1,
+        models: Object.fromEntries(
+            [
+                "specops-coordinator",
+                "specops-explorer",
+                "specops-planner",
+                "specops-designer",
+                "specops-implementer",
+                "specops-reviewer",
+                "specops-frontier",
+            ].map(id => [id, {}]),
+        ),
+        openspec: { command: null },
+        validation: { commands: [] },
+        integrations: { mcp },
     };
 }
 
