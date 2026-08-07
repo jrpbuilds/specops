@@ -128,3 +128,17 @@ Repository inspection of the installed `@opencode-ai/plugin` API confirms the `p
 ## Open Questions
 
 None. The seven corrections from the planning review (configuration contradiction, recovery language, tool boundary gap, guarded-writing concreteness, migration semantics, bootstrap task completion, and branch-anchoring) are resolved by the decisions above.
+
+## Post-approval Remediation: Phase 11 — Adversarial remediation and release proof
+
+After Phase 0–10 implementation completed, a cold adversarial review produced release-blocking findings B-01 through B-12. Phase 11 (`tasks.md §12`) remediates those findings. This is **defect evidence against the already-approved design**, not a new design authority: the proposal, delta specifications, decisions above, and `docs/specops-1.0-technical-spec.md` remain authoritative.
+
+Phase 11 is bounded by the same constraints as the rewrite itself:
+
+- The six-tool catalogue is retained; workflow wiring is repaired, not expanded. No `nextAction`, scheduler directives, dispatch IDs, capability graphs, or hidden controller protocol are reintroduced.
+- No product scope is broadened and no deferred 1.1 functionality (automatic mode, skills, specialist reviewers) is added.
+- Fixes target active V1 code; no compatibility layers are added.
+- A regression test reproduces each reproduced defect before its fix where practical.
+- No state may become `completed` unless upstream OpenSpec archival is proven to have succeeded.
+
+Findings are grouped for remediation in dependency order: active runtime integration (B-01, B-08, B-11), freshness and completion integrity (B-02, B-03, B-04, B-06), permission/filesystem/process/repository-state hardening (B-05, B-07, B-09, B-10), and release-proof correction (B-12 plus non-blocking stale release material). Any finding that would require an architectural amendment rather than a wiring/integrity/hardening fix stops for explicit amendment rather than being silently invented.
