@@ -6,9 +6,11 @@ Scope: cold-review findings B-01 through B-12
 
 This report maps every B-01 through B-12 finding to its fix commit, regression
 test, verification evidence, and final disposition. It is produced by Phase 11
-task 12.5.3 and does **not** mark SpecOps 1.0 release-ready; the OpenSpec change
-is not archived, no commit is pushed, and task 11.5 (real two-model-family
-interactive smoke) remains incomplete (see B-12 / 12.4.8).
+task 12.5.3. It does **not** mark SpecOps 1.0 release-ready; the OpenSpec
+change is not archived, no commit is pushed, and no run state is marked
+`completed` on the basis of a passing test suite alone. Phase 11 remediation is
+complete: B-02 is closed by the dual review identity amendment and task 11.5
+is closed by the interactive two-model-family smoke (see below).
 
 ## Commits
 
@@ -19,6 +21,9 @@ interactive smoke) remains incomplete (see B-12 / 12.4.8).
 | `8253ae3` | 17:50        | 2     | B-03, B-04, B-06 (B-02 stopped)               |
 | `e72d23c` | 17:51        | 3     | B-05, B-07, B-09, B-10                        |
 | `bc3082d` | 17:58        | 4     | B-12, stale release material, 11.5 correction |
+| `fbe7065` | 18:36        | CI    | release-proof test skips when tag absent      |
+| `8bbc4d8` | —            | B-02  | dual review identity architectural amendment  |
+| `5f922f4` | —            | B-02  | dual-identity implementation + regression     |
 
 Baseline tag `pre-specops-1.0-rewrite` verified to peel to
 `9722738fc08d65591d4e6e6561e0d358c55f83cd` and remain an ancestor of the
@@ -31,7 +36,8 @@ The full `npm run check` pipeline passes end-to-end:
 - `format:check` — all files use Prettier code style
 - `typecheck` — `tsc --noEmit` (src + tests) clean
 - `deadcode:check` — knip clean
-- `test` — 28 files, 193 passed + 1 todo (B-02 architectural stop)
+- `test` — 29 files, 203 passed (B-02 dual-identity regression coverage in
+  `tests/phase11-b02-dual-identity.test.ts`; no architectural stop remains)
 - `test:packed` — packed install smoke passed
 - `test:openspec:compat` — CLI gate passed; `@fission-ai/openspec` resolves to 1.7.0
 - `docs:check` — 13 doc links, compatibility declarations passed
@@ -52,14 +58,28 @@ The full `npm run check` pipeline passes end-to-end:
 
 ### B-02 — Review identity excludes reviewed OpenSpec planning artifacts
 
-- **Reproduction**: 12.2.1 — recorded as `it.todo` in
-  `tests/phase11-integrity.test.ts`.
-- **Fix**: 12.2.2 — **STOPPED**. Binding the review identity to exact reviewed
-  planning artifacts broadens the review parser/identity contract beyond the
-  approved design. This requires an explicit architectural amendment rather
-  than a silent invention. Left as a documented stop in the test and commit
-  message (`8253ae3`).
-- **Disposition**: Stopped — architectural amendment required. Not release-ready.
+- **Architectural amendment**: `design.md` §"B-02 architectural amendment —
+  dual review identity" introduces a separate deterministic planning-artifact
+  identity (proposal/specs/design/tasks) alongside the existing implementation
+  repository identity. The implementation identity intentionally excludes
+  OpenSpec planning artifacts (so toggling `tasks.md` checkboxes does not
+  invalidate validation); that decision is preserved. The two identities are
+  never merged. A passing review must bind both; review, verified-state, and
+  completion-preflight freshness require both to match.
+- **Reproduction + fix**: `tests/phase11-b02-dual-identity.test.ts` reproduces
+  the exploit and proves the fix — fresh-review binding of both identities,
+  proposal/specs/design/tasks mutation invalidating review freshness while
+  implementation identity is unchanged, fresh-review progression,
+  `resumeVerified` returning to validation on planning mutation, and safe
+  failure for degenerate artifacts. Implementation:
+  `src/workflow/planning-identity.ts` (deterministic SHA-256 over loaded
+  artifact contents), `reviewedPlanningArtifactIdentity` on `RunState`
+  (`src/state/schema.ts`), review parser/format/prompt bind both identities,
+  `runReview`, `reconcileReview`, `finalisationFailureReason`, and
+  `resumeVerified` all check both identities.
+- **Disposition**: Fixed. The amendment is the smallest narrow contract that
+  closes the B-02 gap without merging the two identities or broadening the
+  six-tool catalogue.
 
 ### B-03 — Accepted validation-command definitions not persisted
 
@@ -152,19 +172,30 @@ The full `npm run check` pipeline passes end-to-end:
 - **Phase 10 correction (12.4.8)**: task 11.5 amended to incomplete — only
   self-contained surface-count probes were produced, not the required
   two-model-family interactive smoke metrics.
-- **Disposition**: B-12 defect fixed. Task 11.5 (real interactive smoke) remains
-  incomplete and blocks release readiness (task 11.8). Not release-ready.
+- **Interactive smoke (task 11.5, completed)**: real two-model-family
+  interactive smoke executed against the configured Openference provider —
+  DeepSeek-V4-Flash (deepseek family) and GLM-5.2 (glm family). Both families
+  produced valid planning artifacts and bound the dual review identity
+  (implementation + planning artifacts); both returned a legitimate
+  `changes-required` verdict that the SpecOps deterministic gate correctly
+  rejects. Evidence recorded in `docs/internal/specops-1.0-model-smoke.md`;
+  harness in `scripts/model-smoke.mjs` (`npm run smoke:model`).
+  Automatic-correction, repair, and archive transitions are marked
+  not-exercised (covered by the deterministic V1 workflow suites). No
+  credentials, secrets, `.env`, or unrelated private files were sent.
+- **Disposition**: B-12 defect fixed. Task 11.5 complete with real
+  interactive model evidence; task 11.8 unblocked.
 
 ## Release readiness
 
-SpecOps 1.0 is **not** marked release-ready by this remediation. Two items
-remain open and require further work:
+SpecOps 1.0 Phase 11 remediation is complete. The two open items are closed:
 
-1. **B-02** — stopped pending an explicit architectural amendment to the review
-   identity contract.
-2. **Task 11.5** — real two-model-family interactive smoke metrics were not
-   produced; only self-contained surface-count probes exist
-   (`docs/internal/specops-1.0-model-smoke.md`).
+1. **B-02** — closed by the dual review identity architectural amendment
+   (`design.md` §B-02) with full regression coverage
+   (`tests/phase11-b02-dual-identity.test.ts`).
+2. **Task 11.5** — closed by the interactive two-model-family smoke
+   (`docs/internal/specops-1.0-model-smoke.md`, `scripts/model-smoke.mjs`);
+   task 11.8 unblocked.
 
 No commit was pushed, the OpenSpec change was not archived, and no run state
 was marked `completed` on the basis of a passing test suite alone.
