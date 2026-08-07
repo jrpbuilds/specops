@@ -100,14 +100,14 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 8. Phase 7 — Completion checkpoint, verified state, and archive
 
-- [ ] 8.1 Create `src/workflow/finalization.ts` for the completion checkpoint (Complete and archive / Request implementation changes / Leave change open / Cancel)
-- [ ] 8.2 Implement Request implementation changes (route feedback to implementer, invalidate validation+review, rerun both, re-present checkpoint)
-- [ ] 8.3 Implement the verified-but-open state (`verified`; preserve active change and identities; resume later; invalidate verified evidence on repository mutation)
-- [ ] 8.4 Implement finalisation checks (supported OpenSpec version, `spec-driven`, OpenSpec-valid change, all required tasks complete, all required validation passed, validated identity == current, review pass, reviewed identity == current, no repair active)
-- [ ] 8.5 Implement archive through the adapter (`adapter.archiveChange`); mark `completed` only after success; prevent accidental continuation
-- [ ] 8.6 Implement retryable archive failure (persist error, attempt time, identity, change; retry without rerunning when identity unchanged; require fresh validation and review when identity changed)
-- [ ] 8.7 Write `tests/completion-workflow.test.ts` (overview, complete and archive, request changes, leave open, resume verified, verified invalidation, cancellation, finalisation rejections, archive success/failure/retry, mutation before retry, terminal completed)
-- [ ] 8.8 Verify Phase 7: the full interactive workflow completes; user approval is required before archive; verified-open works; archive failures are recoverable; completed means OpenSpec archive succeeded
+- [x] 8.1 Create `src/workflow/finalize.ts` for the completion checkpoint (Complete and archive / Request implementation changes / Leave change open / Cancel)
+- [x] 8.2 Implement Request implementation changes (route feedback to implementer, invalidate validation+review, rerun both, re-present checkpoint)
+- [x] 8.3 Implement the verified-but-open state (`verified`; preserve active change and identities; resume later; invalidate verified evidence on repository mutation)
+- [x] 8.4 Implement finalisation checks (supported OpenSpec version, `spec-driven`, OpenSpec-valid change, all required tasks complete, all required validation passed, validated identity == current, review pass, reviewed identity == current, no repair active)
+- [x] 8.5 Implement archive through the adapter (`adapter.archiveChange`); mark `completed` only after success; prevent accidental continuation
+- [x] 8.6 Implement retryable archive failure (persist error, attempt time, identity, change; retry without rerunning when identity unchanged; require fresh validation and review when identity changed)
+- [x] 8.7 Write `tests/completion-workflow.test.ts` (overview, complete and archive, request changes, leave open, resume verified, verified invalidation, cancellation, finalisation rejections, archive success/failure/retry, mutation before retry, terminal completed)
+- [x] 8.8 Verify Phase 7: the full interactive workflow completes; user approval is required before archive; verified-open works; archive failures are recoverable; completed means OpenSpec archive succeeded
 
 ## 9. Phase 8 — Commands, status, doctor, and installation migration
 
@@ -122,7 +122,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 
 ## 10. Phase 9 — Legacy architecture removal
 
-- [ ] 10.1 Delete the old workflow engine modules (`src/workflow/{engine,scheduler,actions,directive,contracts,contracts.generated,archive,completion,interactive,questions,reviews,run-start,run-state,writer-guards,artifacts,previews,checkpoints}.ts`) after confirming no residual imports
+- [ ] 10.1 Delete the old workflow engine modules (`src/workflow/{engine,finalization,scheduler,actions,directive,contracts,contracts.generated,archive,completion,interactive,questions,reviews,run-start,run-state,writer-guards,artifacts,previews,checkpoints}.ts`) after confirming no residual imports
 - [ ] 10.2 Delete `src/capabilities/` only after every retained legacy consumer is removed or migrated, then delete `src/protocol.ts` (replaced) and `scripts/evaluate-review-fixer.mjs`; verify legacy capability modules are absent from packaged output, obsolete IDs remain only where strictly required for one-time V2-to-V3 migration, and no obsolete ID is reachable through the active runtime or public package exports
 - [ ] 10.3 Delete `src/escalation/`, `src/frontier/`, `src/routing/`, `src/artifacts/`, and `src/evidence/registry.ts` (folded into `validation/registry.ts`)
 - [ ] 10.4 Rewrite `src/types.ts` to remove obsolete concepts (tiers, risk facets, capability IDs, dispatch purposes, frontier tiers, judgments, refutation, escalation claims, old repair modes, artifact invalidation graphs, checkpoint provenance)
@@ -132,7 +132,7 @@ Each phase group below corresponds to a Phase 0–10 stage of the SpecOps 1.0 re
 - [ ] 10.8 Delete obsolete tests asserting removed behaviour (lean/standard/full routing, specialist selection, correctness/compliance judgments, refutation, typed escalation, dispatch recovery, automatic mode, phase-by-phase checkpoints, custom schema validation, generated contracts); replace with tests for the new product requirements
 - [ ] 10.9 Run `npm run deadcode:check` (knip) and remove dead modules, unused exports, stale scripts, unused dependencies, and obsolete generated outputs
 - [ ] 10.10 Search for excluded architecture terms (`lean`, `standard`, `full`, `refuter`, `correctness-judge`, `compliance-judge`, `specialist`, `dispatchId`, `nextAction`, `completeAction`, `riskFacet`, `frontier-low`, `frontier-high`, `specops-auto`, `specops-lean`, `specops-standard`); review matches manually; keep legitimate prose, delete active architecture references
-- [ ] 10.11 Verify Phase 9: no old scheduler/dispatch engine, custom schemas, obsolete agents, old protocol tools, or dead compatibility layer remain; `deadcode:check` passes; no active references to excluded architecture terms outside migration docs and changelog
+- [ ] 10.11 Verify Phase 9: no old scheduler/dispatch engine, custom schemas, obsolete agents, old protocol tools, or dead compatibility layer remain; `deadcode:check` passes; no active references to excluded architecture terms outside migration docs and changelog; legacy `src/workflow/finalization.ts` is deleted and no active V1 runtime imports it; `src/workflow/finalize.ts` remains the canonical V1 finalisation module
 
 ## 11. Phase 10 — Documentation, end-to-end validation, and release preparation
 
