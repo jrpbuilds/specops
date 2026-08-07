@@ -9,6 +9,7 @@ import { cancelV1Run, createV1Run, readV1Run, updateV1Run } from "./state/store.
 import { persistValidationEvidence } from "./validation/evidence.js";
 import { executeValidationCommand } from "./validation/executor.js";
 import type { ValidationCommand } from "./validation/registry.js";
+import { formatV1Status, getV1Status } from "./status.js";
 import { resolveCompletion, type CompletionOptions } from "./workflow/finalize.js";
 import { reconcileStage } from "./workflow/reconcile.js";
 
@@ -70,7 +71,13 @@ export const SpecOpsPlugin: Plugin = async () => ({
             description: "Read bounded persisted context for a V1 run.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
-                return JSON.stringify(await readV1Run(context.directory, args.change), null, 2);
+                return formatV1Status(
+                    await getV1Status(
+                        context.directory,
+                        args.change,
+                        await adapterFor(context.directory),
+                    ),
+                );
             },
         }),
         [TOOL_IDS.runValidation]: tool({
