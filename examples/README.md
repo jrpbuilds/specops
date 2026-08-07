@@ -1,60 +1,47 @@
 # Example project configuration
 
-Copy both files into a clean project's `.opencode/` directory:
+SpecOps 1.0 stores project configuration at `.opencode/specops.json` and global
+configuration at `~/.config/opencode/specops.json` (or `$XDG_CONFIG_HOME/opencode/
+specops.json` when XDG is configured). On first plugin load, `/specops-onboard`
+writes a complete editable project file; existing files are preserved.
+
+The `specops.json` in this directory is an illustrative project configuration
+covering the four V1 sections: `models`, `openspec`, `validation`, and
+`integrations`. Copy it into a clean project to start from a known shape:
 
 ```bash
 mkdir -p .opencode
 cp examples/specops.json .opencode/specops.json
-cp examples/specops.schema.json .opencode/specops.schema.json
 ```
 
-`specops.json` demonstrates the final configuration shape. The adjacent JSON Schema documents
-every supported field and rejects unknown properties. The JSON Schema validates the complete
-merged configuration shape; partial global or project files will show editor warnings for
-missing required sections — this is expected and such files are still valid at runtime via the
-partial validator.
-
-SpecOps creates a complete editable `~/.config/opencode/specops.json` on first plugin load (or
-`$XDG_CONFIG_HOME/opencode/specops.json` when XDG is configured). Existing files are preserved. A
-matching `specops.schema.json` is written next to it automatically so editor validation works
-offline.
-
-To create it manually, copy both files into the global config directory:
-
-```bash
-mkdir -p ~/.config/opencode
-cp examples/specops.global.json ~/.config/opencode/specops.json
-cp examples/specops.schema.json ~/.config/opencode/specops.schema.json
-```
-
-The automatically created global file and `specops.global.json` use a relative `$schema:
-./specops.schema.json` reference. You may still delete sections you do not want to override; only the
-sections you set are merged.
 Values are resolved in this order:
 
-1. Built-in defaults (`DEFAULT_CONFIG`).
+1. Built-in defaults.
 2. Global user configuration at `~/.config/opencode/specops.json`.
 3. Project `.opencode/specops.json`.
 
-Plain objects merge recursively. Arrays, primitives, and explicit `null` replace earlier
-values. Use `/specops-doctor` to see project overrides that shadow global values.
+Plain objects merge recursively. Arrays, primitives, and explicit `null`
+replace earlier values. Run `/specops-doctor` to see project overrides that
+shadow global values.
 
-The project configuration controls workflow policy, budgets, evidence commands, environment
-handling, and review thresholds. It does not define agents. The exact canonical agent catalogue
-is materialised separately in OpenCode's configuration directory from the packaged capability
-registry.
+The project configuration selects the model for each of the seven SpecOps
+agents, the OpenSpec command used for validation and archival, the
+shell-free validation commands, and the MCP integration policy. It does not
+define the agent catalogue; the canonical seven-agent manifest is materialised
+separately in OpenCode's configuration directory.
 
-Verification commands accept an arbitrary executable and argument array. They run directly
-without a shell and remain subject to confined working directories, timeouts, controlled
-environment changes, and output limits.
+Verification commands accept an arbitrary executable and an argument array.
+They run directly without a shell and remain subject to confined working
+directories, timeouts, controlled environment changes, and output limits.
+Evidence is bound to the complete canonical command definition, so changing
+an executable, argument, working directory, or limit invalidates stale
+evidence.
 
-The same file configures visible and non-interactive automatic runs. For CI:
-
-```bash
-opencode run --command specops-auto --dir "$PWD" --format json "workflow goal"
-```
-
-Set `workflow.defaultTier` in `specops.json` when automation requires a minimum tier.
+The interactive V1 commands are `/specops`, `/specops-status`, `/specops-doctor`,
+`/specops-onboard`, and `/specops-cancel`. There is no non-interactive
+`/specops-auto` command in V1; the coordinator agent drives the workflow through
+the six registered tools.
 
 See [Configuration](../docs/configuration.md) for field semantics and
-[Security and integrations](../docs/security-and-integrations.md) for the execution boundary.
+[Security and integrations](../docs/security-and-integrations.md) for the
+execution boundary.

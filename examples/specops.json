@@ -1,0 +1,29 @@
+{
+    "version": 1,
+    "models": {
+        "specops-coordinator": { "model": "provider/model-id" },
+        "specops-explorer": { "model": "provider/model-id" },
+        "specops-planner": { "model": "provider/model-id" },
+        "specops-designer": { "model": "provider/model-id" },
+        "specops-implementer": { "model": "provider/model-id" },
+        "specops-reviewer": { "model": "provider/model-id" },
+        "specops-frontier": { "model": "provider/model-id" }
+    },
+    "openspec": {
+        "command": ["npx", "@fission-ai/openspec@1.7.x"]
+    },
+    "validation": {
+        "commands": [
+            {
+                "id": "typecheck",
+                "executable": "npx",
+                "args": ["tsc", "--noEmit"],
+                "timeoutMs": 120000,
+                "maxOutputBytes": 1048576
+            }
+        ]
+    },
+    "integrations": {
+        "mcp": "ask"
+    }
+}

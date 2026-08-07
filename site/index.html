@@ -707,40 +707,31 @@
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><code>/specops-auto</code></td>
-                                    <td>Run visible deterministic SpecOps workflow</td>
-                                    <td>primary agent <code>specops-auto-controller</code></td>
-                                </tr>
-                                <tr>
                                     <td><code>/specops</code></td>
-                                    <td>Run deterministic SpecOps workflow with checkpoints</td>
                                     <td>
-                                        primary agent <code>specops-interactive-controller</code>
+                                        Run the evidence-gated SpecOps workflow with checkpoints
                                     </td>
+                                    <td>primary agent <code>specops-coordinator</code></td>
                                 </tr>
                                 <tr>
                                     <td><code>/specops-onboard</code></td>
-                                    <td>Install final SpecOps OpenSpec assets</td>
-                                    <td>protocol tool <code>specops_onboard</code></td>
+                                    <td>Install the final SpecOps OpenSpec assets</td>
+                                    <td>workflow tool <code>specops_start_or_resume</code></td>
                                 </tr>
                                 <tr>
                                     <td><code>/specops-status</code></td>
                                     <td>Show final SpecOps run status</td>
-                                    <td>protocol tool <code>specops_get_status</code></td>
+                                    <td>workflow tool <code>specops_get_status</code></td>
                                 </tr>
                                 <tr>
-                                    <td><code>/specops-archive</code></td>
-                                    <td>Confirm and archive a passed OpenSpec change</td>
-                                    <td>
-                                        interactive controller and protocol tools
-                                        <code>specops_archive_run</code> /
-                                        <code>specops_confirm_archive</code>
-                                    </td>
+                                    <td><code>/specops-cancel</code></td>
+                                    <td>Cancel an active SpecOps run</td>
+                                    <td>workflow tool <code>specops_cancel</code></td>
                                 </tr>
                                 <tr>
                                     <td><code>/specops-doctor</code></td>
-                                    <td>Diagnose final SpecOps installation</td>
-                                    <td>protocol tool <code>specops_doctor</code></td>
+                                    <td>Diagnose the final SpecOps installation</td>
+                                    <td>workflow tool <code>specops_run_validation</code></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -750,11 +741,13 @@
                     <p>
                         Press <kbd>Ctrl</kbd> + <kbd>P</kbd> and select
                         <strong>SpecOps: Configure agent models</strong>. Choose any model already
-                        configured in OpenCode—and an exposed variant—for each of the 24 controller
-                        and worker roles. For dependable remediation, assign a strong coding model
-                        to <code>specops-repairer</code>; adaptive escalation uses the separate
-                        <code>specops-frontier-low</code> and
-                        <code>specops-frontier-high</code> mappings.
+                        configured in OpenCode—and an exposed variant—for each of the seven SpecOps
+                        roles: <code>specops-coordinator</code>, <code>specops-explorer</code>,
+                        <code>specops-planner</code>, <code>specops-designer</code>,
+                        <code>specops-implementer</code>, <code>specops-reviewer</code>, and
+                        <code>specops-frontier</code>. For dependable remediation, assign a strong
+                        coding model to <code>specops-implementer</code>; the frontier role provides
+                        adaptive escalation advice when a stage is blocked.
                     </p>
                     <figure class="product-proof">
                         <img
@@ -798,7 +791,7 @@
                         OpenCode's supported CLI adapter:
                     </p>
                     <div class="code-block-wrap">
-                        <pre><code id="cli-command">opencode run --command specops-auto --dir /path/to/project \
+                        <pre><code id="cli-command">opencode run --command specops --dir /path/to/project \
   "add a health endpoint with tests"</code></pre>
                         <button
                             class="copy-button small"
