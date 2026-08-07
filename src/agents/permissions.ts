@@ -44,7 +44,10 @@ export function ownedPathPatterns(
     agent: AgentId,
     context: OwnedPathContext = {},
 ): readonly string[] {
-    const change = validChangeName(context.change) ? context.change : "*";
+    // No trusted active change resolved: deny rather than fall back to the
+    // '*' wildcard, which would let a writer edit any change's artifacts.
+    if (!validChangeName(context.change)) return [];
+    const change = context.change;
     const openSpecChange = `openspec/changes/${change}`;
     const run = `.specops/runs/${change}`;
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, readlink } from "node:fs/promises";
 import path from "node:path";
 import { runProcess, type ProcessResult } from "../process.js";
 
@@ -32,6 +32,12 @@ export type RepositoryIdentityOptions = {
 /**
  * Calculate a deterministic implementation identity from HEAD plus current
  * tracked, staged, deleted, and non-ignored untracked state.
+ *
+ * Each entry records its index/worktree status, path, POSIX mode (so a
+ * chmod is detected), and content. Symlinks are captured by their link
+ * target string rather than by following the link, so a symlink pointing
+ * outside the repository can never pull outside content into the identity
+ * (B-10 symlink containment).
  */
 export async function calculateRepositoryIdentity(
     directory: string,
@@ -52,7 +58,7 @@ export async function calculateRepositoryIdentity(
                 entry.indexStatus,
                 entry.worktreeStatus,
                 entry.path,
-                content === undefined ? "deleted" : hash(content),
+                content === undefined ? "deleted" : content,
             ]);
         }),
     );
@@ -96,18 +102,54 @@ export function isRelevantPath(pathname: string, includeOpenSpecPlanning: boolea
     );
 }
 
-/** Read a current path's bytes, treating deleted paths as a stable marker. */
+/**
+ * Read a current path's bytes, treating deleted paths as a stable marker.
+ *
+ * Symlinks are captured by their link target string (not followed) so a link
+ * pointing outside the repository cannot pull outside content into the
+ * identity. The POSIX mode is included so a chmod is detected even when the
+ * content is unchanged. Both are contained to the repository root: a
+ * resolved symlink target outside the root is recorded as "outside" rather
+ * than followed.
+ */
 async function readTrackedContent(
     directory: string,
     relative: string,
-): Promise<Buffer | undefined> {
+): Promise<string | undefined> {
     const root = path.resolve(directory);
     const target = path.resolve(directory, relative);
     if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
         throw new Error(`git status returned an unsafe repository path: ${relative}`);
     }
+    let stats;
     try {
-        return await readFile(target);
+        stats = await lstat(target);
+    } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+        throw error;
+    }
+    const mode = stats.mode & 0o777;
+    if (stats.isSymbolicLink()) {
+        let linkTarget: string;
+        try {
+            linkTarget = await readlink(target);
+        } catch {
+            return JSON.stringify({ kind: "symlink", mode, target: "unreadable" });
+        }
+        const resolved = path.resolve(path.dirname(target), linkTarget);
+        const contained = resolved === root || resolved.startsWith(`${root}${path.sep}`);
+        return JSON.stringify({
+            kind: "symlink",
+            mode,
+            target: contained ? linkTarget : "outside",
+        });
+    }
+    if (!stats.isFile()) {
+        return JSON.stringify({ kind: "special", mode });
+    }
+    try {
+        const content = await readFile(target);
+        return JSON.stringify({ kind: "file", mode, hash: hash(content) });
     } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
         throw error;

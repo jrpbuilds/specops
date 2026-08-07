@@ -42,6 +42,7 @@ export type ValidationProcessRunner = (
     signal?: AbortSignal,
     environment?: Record<string, string>,
     maxOutputBytes?: number,
+    timeoutMs?: number,
 ) => Promise<ProcessResult>;
 
 /** Execute one configured command with bounded output and a hard timeout. */
@@ -69,6 +70,7 @@ export async function executeValidationCommand(
             controller.signal,
             { PATH: process.env.PATH ?? "", NO_COLOR: "1" },
             command.maxOutputBytes,
+            command.timeoutMs,
         );
         return createEvidence(
             command,

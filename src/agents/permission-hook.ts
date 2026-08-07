@@ -1,6 +1,9 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import type { Hooks } from "@opencode-ai/plugin";
 import { type AgentId } from "./ids.js";
 import { ownsEditPath, type OwnedPathContext } from "./permissions.js";
+import { readV1Run } from "../state/store.js";
 
 type PermissionRequest = {
     type?: string;
@@ -24,6 +27,34 @@ export class ActiveAgentSessions {
 }
 
 /**
+ * Resolve the trusted active change and stage for a directory from persisted
+ * run state. Returns an empty context — which denies path-scoped edits rather
+ * than wildcarding — when no single non-terminal run exists. This is the
+ * B-05 mitigation: path-scoped writers never fall back to the '*' wildcard.
+ */
+export async function resolveOwnedPathContext(directory: string): Promise<OwnedPathContext> {
+    const runsDir = path.join(directory, ".specops", "runs");
+    const names = await readdir(runsDir).catch(() => []);
+    const active: OwnedPathContext[] = [];
+    for (const name of names) {
+        try {
+            const state = await readV1Run(directory, name);
+            if (
+                state.status === "active" ||
+                state.status === "awaiting-user" ||
+                state.status === "verified"
+            ) {
+                active.push({ change: state.change, stage: state.stage });
+            }
+        } catch {
+            // Skip unreadable or corrupt run directories; corruption is rejected.
+        }
+    }
+    if (active.length !== 1) return {};
+    return active[0];
+}
+
+/**
  * Create the native OpenCode edit-permission hook for artifact writers.
  *
  * A missing agent, missing pattern, unknown request type, or path outside the
@@ -32,12 +63,15 @@ export class ActiveAgentSessions {
  */
 export function createPermissionAskHook(
     sessions: ActiveAgentSessions,
-    contextForSession: (sessionID: string | undefined) => OwnedPathContext = () => ({}),
+    contextForSession: (
+        sessionID: string | undefined,
+    ) => OwnedPathContext | Promise<OwnedPathContext> = () => ({}),
 ): NonNullable<Hooks["permission.ask"]> {
     return async (input, output) => {
         const request = input as PermissionRequest;
         if (request.type !== "edit") return;
         const agent = sessions.get(request.sessionID);
+        const context = await contextForSession(request.sessionID);
         const patterns = request.pattern
             ? typeof request.pattern === "string"
                 ? [request.pattern]
@@ -46,9 +80,7 @@ export function createPermissionAskHook(
         output.status =
             agent &&
             patterns.length > 0 &&
-            patterns.every(pattern =>
-                ownsEditPath(agent, pattern, contextForSession(request.sessionID)),
-            )
+            patterns.every(pattern => ownsEditPath(agent, pattern, context))
                 ? "allow"
                 : "deny";
     };

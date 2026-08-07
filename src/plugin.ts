@@ -1,5 +1,6 @@
 import { tool, type Config, type Plugin } from "@opencode-ai/plugin";
 import { COMMANDS } from "./commands.js";
+import { AGENT_IDS } from "./agents/ids.js";
 import { loadV1Configuration } from "./config/loader.js";
 import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { WORKFLOW_TOOL_IDS } from "./workflow/tools.js";
@@ -21,6 +22,20 @@ import { reconcileStage } from "./workflow/reconcile.js";
 /** Validates a canonical OpenSpec change identifier at every tool boundary. */
 const CHANGE_NAME = /^[a-z0-9][a-z0-9-]{0,127}$/;
 const CHANGE_NAME_SCHEMA = tool.schema.string().regex(CHANGE_NAME);
+
+/**
+ * Defense-in-depth authorization for the six V1 workflow tools: only the
+ * coordinator agent may drive them. Other agents (or unscoped callers) are
+ * rejected so a misconfigured or adversarial agent cannot mutate run state,
+ * reconcile boundaries, or finalize a change out of band (B-07).
+ */
+function assertCoordinatorAgent(agent: string | undefined): void {
+    if (agent !== AGENT_IDS.coordinator) {
+        throw new Error(
+            `specops workflow tools are restricted to the coordinator agent (caller: ${agent ?? "unknown"})`,
+        );
+    }
+}
 
 /** Discriminated completion-action argument accepted by the registered finalizer. */
 const COMPLETION_ACTION_SCHEMA = tool.schema.object({
@@ -53,6 +68,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 goal: tool.schema.string().min(1),
             },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 const adapter = await adapterFor(context.directory);
                 await adapter.version();
                 let state;
@@ -76,6 +92,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
             description: "Validate one coarse V1 stage boundary and persist its bounded outcome.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 const outcome = await reconcileStage(
                     {
                         directory: context.directory,
@@ -91,6 +108,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
             description: "Read bounded persisted context for a V1 run.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 return formatV1Status(
                     await getV1Status(
                         context.directory,
@@ -108,6 +126,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 commandId: tool.schema.string().regex(CHANGE_NAME),
             },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 const configuration = await loadV1Configuration(context.directory);
                 const state = await readV1Run(context.directory, args.change);
                 const accepted = acceptedValidationCommandsForRun(
@@ -141,6 +160,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 completionAction: COMPLETION_ACTION_SCHEMA,
             },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 const state = await readV1Run(context.directory, args.change);
                 const adapter = await adapterFor(context.directory);
                 const action = completionActionFromArgs(args.completionAction);
@@ -157,6 +177,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 "Cancel an active V1 run without deleting artifacts or repository changes.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
+                assertCoordinatorAgent(context.agent);
                 return JSON.stringify(
                     { kind: "success", state: await cancelV1Run(context.directory, args.change) },
                     null,

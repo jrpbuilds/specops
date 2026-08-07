@@ -1,5 +1,9 @@
 import type { Config, Plugin } from "@opencode-ai/plugin";
-import { ActiveAgentSessions, createPermissionAskHook } from "./agents/permission-hook.js";
+import {
+    ActiveAgentSessions,
+    createPermissionAskHook,
+    resolveOwnedPathContext,
+} from "./agents/permission-hook.js";
 import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js";
 import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./agents/manifest.js";
 import {
@@ -49,7 +53,9 @@ export const SpecOpsPluginWithManifest: Plugin = async input => {
     const sessions = new ActiveAgentSessions();
     const innerChatMessage = inner["chat.message"];
     const innerPermissionAsk = inner["permission.ask"];
-    const permissionAsk = createPermissionAskHook(sessions);
+    const permissionAsk = createPermissionAskHook(sessions, () =>
+        resolveOwnedPathContext(input.directory),
+    );
 
     return {
         ...inner,
