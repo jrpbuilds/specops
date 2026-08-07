@@ -12,9 +12,42 @@ import {
     validateManifest,
     type SpecOpsManifest,
 } from "./agents/manifest.js";
+import { writeFileAtomic } from "./state/atomic.js";
 
 type AgentConfig = NonNullable<NonNullable<Config["agent"]>[string]>;
 type AgentPermissionConfig = NonNullable<AgentConfig["permission"]>;
+
+/** Strict persisted configuration consumed only by active V1 integration code. */
+export type V1Configuration = {
+    version: 1;
+    models: Record<AgentId, { model?: string; variant?: string }>;
+    openspec: { command: string[] | null };
+    validation: {
+        commands: Array<{
+            id: string;
+            executable: string;
+            args: string[];
+            cwd?: string;
+            timeoutMs: number;
+            maxOutputBytes: number;
+        }>;
+    };
+    integrations: { mcp: "allow" | "disabled" };
+};
+
+/** Report emitted exactly when a legacy configuration file is migrated. */
+export type ConfigurationMigrationReport = { path: string; removedFields: readonly string[] };
+
+/** Default V1 choices defer models and validation policy to explicit users. */
+export const DEFAULT_V1_CONFIGURATION: V1Configuration = {
+    version: 1,
+    models: Object.fromEntries(ALL_AGENT_IDS.map(id => [id, {}])) as V1Configuration["models"],
+    openspec: { command: null },
+    validation: { commands: [] },
+    integrations: { mcp: "allow" },
+};
+
+let configurationMigrationReports: ConfigurationMigrationReport[] = [];
 
 /** Result of loading or materialising the agent model manifest. */
 export type ManifestMaterialisation = {
@@ -71,6 +104,210 @@ export function resolveGlobalConfigPath(
     homeDirectory: string = os.homedir(),
 ): string {
     return path.join(resolveOpenCodeConfigDirectory(environment, homeDirectory), "specops.json");
+}
+
+/** Load the merged V1 configuration after one-time migration of recognised V2 files. */
+export async function loadV1Configuration(directory: string): Promise<V1Configuration> {
+    const reports = await migrateV1Configuration(directory);
+    configurationMigrationReports = reports;
+    const [global, project] = await Promise.all([
+        readV1ConfigurationFile(resolveGlobalConfigPath()),
+        readV1ConfigurationFile(path.join(directory, ".opencode", "specops.json")),
+    ]);
+    return mergeV1Configuration(global, project);
+}
+
+/** Return and clear the reports created by the most recent migration attempt. */
+export function consumeConfigurationMigrationReports(): ConfigurationMigrationReport[] {
+    const reports = configurationMigrationReports;
+    configurationMigrationReports = [];
+    return reports;
+}
+
+/** Migrate each recognised legacy SpecOps configuration exactly once. */
+export async function migrateV1Configuration(
+    directory: string,
+): Promise<ConfigurationMigrationReport[]> {
+    const reports = await Promise.all([
+        migrateV1ConfigurationFile(resolveGlobalConfigPath()),
+        migrateV1ConfigurationFile(path.join(directory, ".opencode", "specops.json")),
+    ]);
+    return reports.filter((report): report is ConfigurationMigrationReport => report !== undefined);
+}
+
+/** Strictly validate one V1 configuration without retaining obsolete fields. */
+export function validateV1Configuration(value: unknown): V1Configuration {
+    if (!isRecord(value) || value.version !== 1)
+        throw new Error("invalid V1 SpecOps configuration version");
+    if (!hasOnlyKeys(value, ["version", "models", "openspec", "validation", "integrations"])) {
+        throw new Error("invalid V1 SpecOps configuration field");
+    }
+    if (
+        !isRecord(value.models) ||
+        Object.keys(value.models).sort().join("|") !== [...ALL_AGENT_IDS].sort().join("|")
+    ) {
+        throw new Error("invalid V1 SpecOps model mappings");
+    }
+    for (const id of ALL_AGENT_IDS) {
+        const model = value.models[id];
+        if (
+            !isRecord(model) ||
+            !hasOnlyKeys(model, ["model", "variant"]) ||
+            (model.model !== undefined &&
+                (typeof model.model !== "string" || !model.model.trim())) ||
+            (model.variant !== undefined &&
+                (typeof model.variant !== "string" || !model.variant.trim()))
+        ) {
+            throw new Error(`invalid V1 model mapping for ${id}`);
+        }
+    }
+    if (
+        !isRecord(value.openspec) ||
+        !hasOnlyKeys(value.openspec, ["command"]) ||
+        (value.openspec.command !== null &&
+            (!Array.isArray(value.openspec.command) ||
+                value.openspec.command.some(item => typeof item !== "string" || !item)))
+    ) {
+        throw new Error("invalid V1 OpenSpec command configuration");
+    }
+    if (
+        !isRecord(value.validation) ||
+        !hasOnlyKeys(value.validation, ["commands"]) ||
+        !Array.isArray(value.validation.commands)
+    ) {
+        throw new Error("invalid V1 validation configuration");
+    }
+    for (const command of value.validation.commands) validateV1Command(command);
+    if (
+        !isRecord(value.integrations) ||
+        !hasOnlyKeys(value.integrations, ["mcp"]) ||
+        (value.integrations.mcp !== "allow" && value.integrations.mcp !== "disabled")
+    ) {
+        throw new Error("invalid V1 MCP integration configuration");
+    }
+    return structuredClone(value) as V1Configuration;
+}
+
+/** Migrate a V2 file atomically; current V1 and unrelated files remain untouched. */
+export async function migrateV1ConfigurationFile(
+    destination: string,
+): Promise<ConfigurationMigrationReport | undefined> {
+    let raw: unknown;
+    try {
+        raw = JSON.parse(await readFile(destination, "utf8"));
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+        throw new Error(
+            `cannot migrate SpecOps configuration ${destination}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+    if (isRecord(raw) && raw.version === 1) {
+        validateV1Configuration(raw);
+        return undefined;
+    }
+    if (!isRecord(raw) || raw.version !== 2) {
+        throw new Error(
+            `unsupported existing SpecOps configuration at ${destination}; it was not modified`,
+        );
+    }
+    const removedFields = legacyConfigurationFields(raw);
+    const migrated = validateV1Configuration({
+        version: 1,
+        models: structuredClone(DEFAULT_V1_CONFIGURATION.models),
+        openspec: { command: legacyCommand(raw) },
+        validation: { commands: [] },
+        integrations: { mcp: legacyMcp(raw) },
+    });
+    await writeFileAtomic(destination, `${JSON.stringify(migrated, null, 2)}\n`);
+    return { path: destination, removedFields };
+}
+
+/** Read an optional V1 file; a missing file contributes no override. */
+async function readV1ConfigurationFile(destination: string): Promise<V1Configuration | undefined> {
+    try {
+        return validateV1Configuration(JSON.parse(await readFile(destination, "utf8")));
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+        throw error;
+    }
+}
+
+/** Merge dedicated global and project configuration preserving only V1 choices. */
+function mergeV1Configuration(
+    global: V1Configuration | undefined,
+    project: V1Configuration | undefined,
+): V1Configuration {
+    const base = global ?? DEFAULT_V1_CONFIGURATION;
+    const override = project;
+    return validateV1Configuration({
+        version: 1,
+        models: { ...base.models, ...(override?.models ?? {}) },
+        openspec: override?.openspec ?? base.openspec,
+        validation: override?.validation ?? base.validation,
+        integrations: override?.integrations ?? base.integrations,
+    });
+}
+
+/** Validate one shell-free required validation command. */
+function validateV1Command(value: unknown): void {
+    if (
+        !isRecord(value) ||
+        !hasOnlyKeys(value, ["id", "executable", "args", "cwd", "timeoutMs", "maxOutputBytes"]) ||
+        typeof value.id !== "string" ||
+        !/^[a-z0-9][a-z0-9-]{0,127}$/.test(value.id) ||
+        typeof value.executable !== "string" ||
+        !value.executable ||
+        !Array.isArray(value.args) ||
+        value.args.some(arg => typeof arg !== "string") ||
+        (value.cwd !== undefined &&
+            (typeof value.cwd !== "string" ||
+                value.cwd.startsWith("/") ||
+                value.cwd.split(/[\\/]/).includes(".."))) ||
+        !Number.isInteger(value.timeoutMs) ||
+        (value.timeoutMs as number) <= 0 ||
+        !Number.isInteger(value.maxOutputBytes) ||
+        (value.maxOutputBytes as number) <= 0
+    ) {
+        throw new Error("invalid V1 validation command");
+    }
+}
+
+/** Extract all known retired configuration fields for explicit migration reporting. */
+function legacyConfigurationFields(value: Record<string, unknown>): string[] {
+    return [
+        "workflow",
+        "routing",
+        "automation",
+        "escalation",
+        "frontier",
+        "review",
+        "openspec.autoArchive",
+    ]
+        .filter(field =>
+            field === "openspec.autoArchive"
+                ? isRecord(value.openspec) && "autoArchive" in value.openspec
+                : field in value,
+        )
+        .sort();
+}
+
+/** Preserve the only legacy values that remain genuine V1 user choices. */
+function legacyCommand(value: Record<string, unknown>): string[] | null {
+    const command = isRecord(value.openspec) ? value.openspec.command : undefined;
+    return Array.isArray(command) && command.every(item => typeof item === "string" && item)
+        ? [...command]
+        : null;
+}
+
+/** Preserve the only legacy integration toggle retained by V1. */
+function legacyMcp(value: Record<string, unknown>): "allow" | "disabled" {
+    const mcp = isRecord(value.integrations) ? value.integrations.mcp : undefined;
+    return mcp === "disabled" ? "disabled" : "allow";
+}
+
+/** Narrow a plain JSON configuration object. */
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+    return Object.keys(value).every(key => allowed.includes(key));
 }
 
 /**

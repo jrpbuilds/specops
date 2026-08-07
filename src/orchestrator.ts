@@ -1,6 +1,6 @@
 import { tool, type Config, type Plugin } from "@opencode-ai/plugin";
 import { COMMANDS } from "./commands.js";
-import { readConfig } from "./openspec.js";
+import { loadV1Configuration } from "./installation.js";
 import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { TOOL_IDS } from "./protocol.js";
 import { captureRepositoryBaseline } from "./repository/baseline.js";
@@ -8,7 +8,6 @@ import { calculateRepositoryIdentity } from "./repository/identity.js";
 import { cancelV1Run, createV1Run, readV1Run, updateV1Run } from "./state/store.js";
 import { persistValidationEvidence } from "./validation/evidence.js";
 import { executeValidationCommand } from "./validation/executor.js";
-import type { ValidationCommand } from "./validation/registry.js";
 import { formatV1Status, getV1Status } from "./status.js";
 import { resolveCompletion, type CompletionOptions } from "./workflow/finalize.js";
 import { reconcileStage } from "./workflow/reconcile.js";
@@ -85,17 +84,15 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 "Execute one configured validation command shell-free and persist its evidence.",
             args: {
                 change: CHANGE_NAME_SCHEMA,
-                command: tool.schema.object({
-                    id: tool.schema.string().regex(CHANGE_NAME),
-                    executable: tool.schema.string().min(1),
-                    args: tool.schema.array(tool.schema.string()),
-                    cwd: tool.schema.string().optional(),
-                    timeoutMs: tool.schema.number().int().positive(),
-                    maxOutputBytes: tool.schema.number().int().positive(),
-                }),
+                commandId: tool.schema.string().regex(CHANGE_NAME),
             },
             async execute(args, context) {
-                const command = args.command as ValidationCommand;
+                const configuration = await loadV1Configuration(context.directory);
+                const command = configuration.validation.commands.find(
+                    item => item.id === args.commandId,
+                );
+                if (!command)
+                    throw new Error(`configured validation command not found: ${args.commandId}`);
                 const identity = await calculateRepositoryIdentity(context.directory);
                 const evidence = await executeValidationCommand(
                     context.directory,
@@ -119,7 +116,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 const state = await readV1Run(context.directory, args.change);
                 const adapter = await adapterFor(context.directory);
                 const result = await resolveCompletion(
-                    completionOptions(context.directory, adapter),
+                    await completionOptions(context.directory, adapter),
                     state,
                     { kind: "complete-and-archive" },
                 );
@@ -143,7 +140,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
 
 /** Construct the single OpenSpec adapter used by all active V1 tool boundaries. */
 async function adapterFor(directory: string): Promise<OpenSpecAdapter> {
-    const config = await readConfig(directory);
+    const config = await loadV1Configuration(directory);
     return new OpenSpecAdapter({ directory, command: config.openspec.command });
 }
 
@@ -170,16 +167,19 @@ function isMissingRun(error: unknown): boolean {
 }
 
 /**
- * Supply the Phase 7 finalizer only the dependencies it consumes for the
- * complete-and-archive action. Configuration-backed validation requirements
- * are added by the Phase 8 migration layer; empty requirements preserve the
- * existing V1 run data boundary until that layer is installed.
+ * Supply the Phase 7 finalizer the strict V1 required validation command set.
  */
-function completionOptions(directory: string, adapter: OpenSpecAdapter): CompletionOptions {
+async function completionOptions(
+    directory: string,
+    adapter: OpenSpecAdapter,
+): Promise<CompletionOptions> {
+    const configuration = await loadV1Configuration(directory);
     return {
         directory,
         adapter,
-        implementation: { commands: { required: [], recommendations: [] } } as never,
+        implementation: {
+            commands: { required: configuration.validation.commands, recommendations: [] },
+        } as never,
         review: {} as never,
     };
 }

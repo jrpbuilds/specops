@@ -5,11 +5,15 @@ import { fileURLToPath } from "node:url";
 import { ALL_AGENT_IDS } from "./agents/ids.js";
 import { AGENT_REGISTRY, agentPrompt } from "./agents/registry.js";
 import type { SpecOpsConfig } from "./config.js";
-import { resolveConfig } from "./config.js";
 import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { renderPrompt } from "./prompts/renderer.js";
 import { LegacyRunStateError, readV1Run } from "./state/store.js";
-import { inspectAgentManifest, resolveManifestPath } from "./installation.js";
+import {
+    consumeConfigurationMigrationReports,
+    inspectAgentManifest,
+    loadV1Configuration,
+    resolveManifestPath,
+} from "./installation.js";
 import { runProcess } from "./process.js";
 
 /** Severity classes used by V1 diagnostics. */
@@ -62,8 +66,14 @@ export async function collectDoctorDiagnostics(
     await checkConfiguration(
         diagnostics,
         directory,
-        dependencies.resolveConfiguration ?? resolveConfig,
+        dependencies.resolveConfiguration ?? loadV1Configuration,
     );
+    for (const report of consumeConfigurationMigrationReports()) {
+        diagnostics.push({
+            level: "warning",
+            message: `migrated legacy configuration ${report.path}; removed fields: ${report.removedFields.join(", ") || "none"}`,
+        });
+    }
     await checkWritablePaths(diagnostics, directory);
     await checkLegacySchemas(diagnostics, directory);
     await checkLegacyRuns(diagnostics, directory);

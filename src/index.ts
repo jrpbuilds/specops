@@ -7,8 +7,7 @@ import {
     registerManifestAgents,
     resolveManifestPath,
 } from "./installation.js";
-import { materializeGlobalConfig } from "./config.js";
-import { readConfig } from "./openspec.js";
+import { loadV1Configuration } from "./installation.js";
 import { SpecOpsPlugin } from "./orchestrator.js";
 
 /**
@@ -46,7 +45,7 @@ export async function loadOrInitManifest(): Promise<SpecOpsManifest> {
 export const SpecOpsPluginWithManifest: Plugin = async input => {
     const inner = await SpecOpsPlugin(input);
     const materialisation = await materializeAgentManifest();
-    await materializeGlobalConfig();
+    await loadV1Configuration(input.directory);
     const sessions = new ActiveAgentSessions();
     const innerChatMessage = inner["chat.message"];
     const innerPermissionAsk = inner["permission.ask"];
@@ -55,7 +54,7 @@ export const SpecOpsPluginWithManifest: Plugin = async input => {
     return {
         ...inner,
         config: async (config: Config) => {
-            const specOpsConfig = await readConfig(input.directory);
+            const specOpsConfig = await loadV1Configuration(input.directory);
             await inner.config?.(config);
             registerManifestAgents(
                 config,
