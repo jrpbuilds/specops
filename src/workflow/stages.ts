@@ -1,4 +1,5 @@
 import type { RunStage, RunState } from "../state/schema.js";
+import { AGENT_IDS } from "../agents/ids.js";
 
 /** Planning stages owned by the Phase 4 coordinator. */
 const PLANNING_STAGES = ["proposal", "specs", "design", "tasks"] as const;
@@ -23,6 +24,14 @@ export function nextPlanningStage(stage: PlanningArtifact): RunStage {
         case "tasks":
             return "implementation";
     }
+}
+
+/**
+ * Return the owning agent for a planning artifact so the coordinator can
+ * dispatch it via native task with the correct OpenSpec instructions.
+ */
+export function planningArtifactOwner(stage: PlanningArtifact): string {
+    return stage === "design" ? AGENT_IDS.designer : AGENT_IDS.planner;
 }
 
 /** Return a new active state at a coarse planning boundary. */

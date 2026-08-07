@@ -8,13 +8,29 @@ import { calculateRepositoryIdentity } from "./repository/identity.js";
 import { cancelV1Run, createV1Run, readV1Run, updateV1Run } from "./state/store.js";
 import { persistValidationEvidence } from "./validation/evidence.js";
 import { executeValidationCommand } from "./validation/executor.js";
+import { acceptedValidationCommandsForRun } from "./validation/commands.js";
 import { formatV1Status, getV1Status } from "./status.js";
-import { resolveCompletion, type CompletionOptions } from "./workflow/finalize.js";
+import {
+    resolveCompletion,
+    type CompletionAction,
+    type CompletionOptions,
+} from "./workflow/finalize.js";
 import { reconcileStage } from "./workflow/reconcile.js";
 
 /** Validates a canonical OpenSpec change identifier at every tool boundary. */
 const CHANGE_NAME = /^[a-z0-9][a-z0-9-]{0,127}$/;
 const CHANGE_NAME_SCHEMA = tool.schema.string().regex(CHANGE_NAME);
+
+/** Discriminated completion-action argument accepted by the registered finalizer. */
+const COMPLETION_ACTION_SCHEMA = tool.schema.object({
+    kind: tool.schema.enum([
+        "complete-and-archive",
+        "request-implementation-changes",
+        "leave-change-open",
+        "cancel",
+    ]),
+    feedback: tool.schema.string().optional(),
+});
 
 /**
  * Register only the six V1 workflow tools and five public commands.
@@ -81,18 +97,22 @@ export const SpecOpsPlugin: Plugin = async () => ({
         }),
         [WORKFLOW_TOOL_IDS.runValidation]: tool({
             description:
-                "Execute one configured validation command shell-free and persist its evidence.",
+                "Execute one accepted validation command shell-free and persist its evidence.",
             args: {
                 change: CHANGE_NAME_SCHEMA,
                 commandId: tool.schema.string().regex(CHANGE_NAME),
             },
             async execute(args, context) {
                 const configuration = await loadV1Configuration(context.directory);
-                const command = configuration.validation.commands.find(
-                    item => item.id === args.commandId,
+                const state = await readV1Run(context.directory, args.change);
+                const accepted = acceptedValidationCommandsForRun(
+                    configuration.validation.commands,
+                    [],
+                    state.acceptedValidationRecommendationIds,
                 );
+                const command = accepted.required.find(item => item.id === args.commandId);
                 if (!command)
-                    throw new Error(`configured validation command not found: ${args.commandId}`);
+                    throw new Error(`accepted validation command not found: ${args.commandId}`);
                 const identity = await calculateRepositoryIdentity(context.directory);
                 const evidence = await executeValidationCommand(
                     context.directory,
@@ -100,25 +120,29 @@ export const SpecOpsPlugin: Plugin = async () => ({
                     identity,
                 );
                 await persistValidationEvidence(context.directory, args.change, evidence);
-                const state = await updateV1Run(context.directory, args.change, run => ({
+                const nextState = await updateV1Run(context.directory, args.change, run => ({
                     ...run,
                     currentRepositoryState: identity,
                     failure: null,
                 }));
-                return JSON.stringify({ kind: "success", state, evidence }, null, 2);
+                return JSON.stringify({ kind: "success", state: nextState, evidence }, null, 2);
             },
         }),
         [WORKFLOW_TOOL_IDS.finalize]: tool({
             description:
                 "Run V1 completion checks and archive only after explicit completion approval.",
-            args: { change: CHANGE_NAME_SCHEMA },
+            args: {
+                change: CHANGE_NAME_SCHEMA,
+                completionAction: COMPLETION_ACTION_SCHEMA,
+            },
             async execute(args, context) {
                 const state = await readV1Run(context.directory, args.change);
                 const adapter = await adapterFor(context.directory);
+                const action = completionActionFromArgs(args.completionAction);
                 const result = await resolveCompletion(
-                    await completionOptions(context.directory, adapter),
+                    await completionOptions(context.directory, adapter, state),
                     state,
-                    { kind: "complete-and-archive" },
+                    action,
                 );
                 return JSON.stringify(result, null, 2);
             },
@@ -167,19 +191,38 @@ function isMissingRun(error: unknown): boolean {
 }
 
 /**
- * Supply the Phase 7 finalizer the strict V1 required validation command set.
+ * Supply the finalizer the accepted validation command set for the active run
+ * (configured commands plus persisted accepted recommendations). The
+ * registered runtime path supplies only deterministic gate data and routes
+ * request-implementation-changes back to implementation; it never invokes
+ * worker agents.
  */
 async function completionOptions(
     directory: string,
     adapter: OpenSpecAdapter,
+    state: { acceptedValidationRecommendationIds: readonly string[] },
 ): Promise<CompletionOptions> {
     const configuration = await loadV1Configuration(directory);
+    const accepted = acceptedValidationCommandsForRun(
+        configuration.validation.commands,
+        [],
+        state.acceptedValidationRecommendationIds,
+    );
     return {
         directory,
         adapter,
-        implementation: {
-            commands: { required: configuration.validation.commands, recommendations: [] },
-        } as never,
-        review: {} as never,
+        requiredCommands: accepted.required,
     };
+}
+
+/** Coerce the schema-parsed completion action into the typed union. */
+function completionActionFromArgs(value: {
+    kind:
+        "complete-and-archive" | "request-implementation-changes" | "leave-change-open" | "cancel";
+    feedback?: string;
+}): CompletionAction {
+    if (value.kind === "request-implementation-changes") {
+        return { kind: "request-implementation-changes", feedback: value.feedback ?? "" };
+    }
+    return { kind: value.kind };
 }

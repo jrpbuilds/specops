@@ -53,7 +53,7 @@ export async function collectDoctorDiagnostics(
     dependencies: DoctorDependencies = {},
 ): Promise<DoctorDiagnostic[]> {
     const diagnostics: DoctorDiagnostic[] = [];
-    const adapter = dependencies.adapter ?? new OpenSpecAdapter({ directory });
+    const adapter = dependencies.adapter ?? (await buildConfiguredAdapter(directory));
     const packageRoot = dependencies.packageRoot ?? packageDirectory();
 
     await checkOpenCode(diagnostics, dependencies.openCodeVersion ?? defaultOpenCodeVersion);
@@ -330,6 +330,23 @@ async function defaultOpenCodeVersion(): Promise<string> {
     const result = await runProcess("opencode", ["--version"], process.cwd());
     if (result.code !== 0) throw new Error(result.stderr || result.stdout || "command failed");
     return result.stdout;
+}
+
+/**
+ * Build the OpenSpec adapter using the configured OpenSpec command override
+ * so doctor diagnostics are deterministic with respect to V1 configuration.
+ * Falls back to the default adapter when configuration cannot be loaded.
+ */
+async function buildConfiguredAdapter(directory: string): Promise<OpenSpecAdapter> {
+    try {
+        const configuration = await loadV1Configuration(directory);
+        return new OpenSpecAdapter({
+            directory,
+            command: configuration.openspec.command,
+        });
+    } catch {
+        return new OpenSpecAdapter({ directory });
+    }
 }
 
 /** Resolve the source or packed package root without caller-controlled paths. */

@@ -1,19 +1,26 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseReview } from "../review/parser.js";
+import { AGENT_IDS } from "../agents/ids.js";
 import { calculateRepositoryIdentity } from "../repository/identity.js";
 import { explorationPath, reviewPath } from "../state/paths.js";
 import type { RunState } from "../state/schema.js";
 import { updateV1Run } from "../state/store.js";
 import { isValidationEvidenceCurrent, readValidationEvidence } from "../validation/evidence.js";
 import { incompleteOpenSpecTasks } from "./implementation.js";
-import { isPlanningArtifact, nextPlanningStage } from "./stages.js";
+import { MAX_REVIEW_REPAIRS } from "./limits.js";
+import { isPlanningArtifact, nextPlanningStage, planningArtifactOwner } from "./stages.js";
 
 /** The only outcomes a coordinator receives after reconciling one stage boundary. */
 export type ReconcileOutcome =
-    | { kind: "success"; state: RunState; message: string }
+    | { kind: "success"; state: RunState; message: string; next?: { stage: string; agent: string } }
     | { kind: "correction-required"; state: RunState; message: string; issues: unknown[] }
-    | { kind: "user-input-required"; state: RunState; message: string }
+    | {
+          kind: "user-input-required";
+          state: RunState;
+          message: string;
+          next?: { stage: string; agent: string };
+      }
     | { kind: "blocked"; state: RunState; message: string };
 
 /** Minimal OpenSpec validation capability used at planning boundaries. */
@@ -72,7 +79,12 @@ async function reconcileExploration(
         stage: "proposal",
         failure: null,
     }));
-    return { kind: "success", state: next, message: "exploration report accepted" };
+    return {
+        kind: "success",
+        state: next,
+        message: "exploration report accepted",
+        next: { stage: "proposal", agent: AGENT_IDS.planner },
+    };
 }
 
 /** Reconcile one standard OpenSpec planning artifact through upstream validation. */
@@ -86,13 +98,23 @@ async function reconcilePlanningArtifact(
     }
     const validation = await options.adapter.validate(state.change, true);
     if (validation.valid) {
+        const nextStage = nextPlanningStage(artifact);
         const next = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "active",
-            stage: nextPlanningStage(artifact),
+            stage: nextStage,
             failure: null,
         }));
-        return { kind: "success", state: next, message: `${artifact} passed OpenSpec validation` };
+        const owningAgent =
+            nextStage === "implementation" || !isPlanningArtifact(nextStage)
+                ? undefined
+                : planningArtifactOwner(nextStage);
+        return {
+            kind: "success",
+            state: next,
+            message: `${artifact} passed OpenSpec validation`,
+            next: owningAgent ? { stage: nextStage, agent: owningAgent } : undefined,
+        };
     }
 
     const attempts = (state.artifactCorrectionAttempts[artifact] ?? 0) + 1;
@@ -212,6 +234,14 @@ async function reconcileReview(
         };
     }
     if (parsed.verdict === "changes-required") {
+        if (state.repairAttempts >= MAX_REVIEW_REPAIRS) {
+            const blocked = await block(
+                options,
+                state,
+                "review repair attempts exhausted; retry with a new run, switch model, repair manually, or cancel",
+            );
+            return blocked;
+        }
         const next = await updateV1Run(options.directory, state.change, run => ({
             ...run,
             status: "active",

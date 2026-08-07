@@ -11,6 +11,7 @@ import {
     type ImplementationResult,
 } from "./implementation.js";
 import { runReview, type ReviewWorkflowOptions, type ReviewResult } from "./review.js";
+import type { ValidationCommand } from "../validation/registry.js";
 import type { ValidationEvidence } from "../validation/executor.js";
 import { isValidationEvidenceCurrent, readValidationEvidence } from "../validation/evidence.js";
 import { invalidateValidationEvidence } from "../validation/evidence.js";
@@ -28,12 +29,22 @@ type FinalizationOpenSpecAdapter = {
     archive(change: string): Promise<OpenSpecArchiveResult>;
 };
 
-/** Dependencies for the V1 completion checkpoint and archive gate. */
+/**
+ * Dependencies for the V1 completion checkpoint and archive gate.
+ *
+ * The `implementation` and `review` runners are optional: the registered
+ * runtime path supplies only the deterministic gate data (`requiredCommands`,
+ * identity, evidence, review content) and routes `request-implementation-changes`
+ * back to the implementation stage for the coordinator to re-drive; the
+ * coordinator path supplies the runners so it can re-run implementation and
+ * review in one call.
+ */
 export type CompletionOptions = {
     directory: string;
     adapter: FinalizationOpenSpecAdapter;
-    implementation: Omit<ImplementationWorkflowOptions, "directory" | "adapter">;
-    review: Omit<ReviewWorkflowOptions, "directory" | "adapter">;
+    implementation?: Omit<ImplementationWorkflowOptions, "directory" | "adapter">;
+    review?: Omit<ReviewWorkflowOptions, "directory" | "adapter">;
+    requiredCommands?: readonly ValidationCommand[];
     calculateIdentity?: (directory: string) => Promise<string>;
     readEvidence?: (directory: string, change: string) => Promise<ValidationEvidence[]>;
     readReview?: (directory: string, change: string) => Promise<string>;
@@ -68,7 +79,7 @@ export type CompletionResult =
     | {
           kind: "request-changes";
           state: RunState;
-          result: ImplementationResult | ReviewResult;
+          result: ImplementationResult | ReviewResult | { kind: "routed-back"; feedback: string };
       }
     | { kind: "verified-stale"; state: RunState; reason: string }
     | { kind: "verified-resumed"; state: RunState };
@@ -233,11 +244,23 @@ async function resolveRequestImplementationChanges(
         repairAttempts: 0,
     }));
     await invalidateValidationEvidence(options.directory, state.change, identity, true);
+
+    // Runtime path: no implementer/reviewer runners are available to a
+    // TypeScript tool boundary, so route back to the implementation stage and
+    // let the coordinator re-drive the implementer via native task. The
+    // coordinator path (runners supplied) re-runs implementation and review.
+    if (!options.implementation?.implementer) {
+        return {
+            kind: "request-changes",
+            state: invalidated,
+            result: { kind: "routed-back", feedback },
+        };
+    }
     const implementation = await runImplementation(
         {
             ...options.implementation,
             directory: options.directory,
-            adapter: options.adapter,
+            adapter: options.adapter as never,
             userFeedback: feedback,
         },
         invalidated,
@@ -247,9 +270,9 @@ async function resolveRequestImplementationChanges(
     }
     const review = await runReview(
         {
-            ...options.review,
+            ...options.review!,
             directory: options.directory,
-            adapter: options.adapter,
+            adapter: options.adapter as never,
             implementation: options.implementation,
         },
         implementation.state,
@@ -306,7 +329,9 @@ async function finalisationFailureReason(
         options.directory,
         state.change,
     );
-    for (const command of options.implementation.commands.required) {
+    const requiredCommands =
+        options.implementation?.commands?.required ?? options.requiredCommands ?? [];
+    for (const command of requiredCommands) {
         const item = evidence.find(candidate => candidate.commandId === command.id);
         if (!item) return `required validation evidence missing: ${command.id}`;
         if (!isValidationEvidenceCurrent(item, identity)) {
