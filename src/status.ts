@@ -7,7 +7,7 @@ import { readValidationEvidence } from "./validation/evidence.js";
 import type { ValidationEvidence } from "./validation/executor.js";
 
 /** OpenSpec status subset displayed without exposing workflow internals. */
-export type StatusOpenSpec = {
+type StatusOpenSpec = {
     schemaName: string;
     complete: boolean;
     artifacts: Array<{ id: string; status: string }>;

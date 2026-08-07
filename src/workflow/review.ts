@@ -42,7 +42,7 @@ export type ReviewAgentRequest = {
 };
 
 /** Injectable native-task boundary for the reviewer, which owns only review.md. */
-export type ReviewAgentRunner = {
+type ReviewAgentRunner = {
     run(request: ReviewAgentRequest): Promise<void>;
 };
 

@@ -29,10 +29,9 @@ import {
 } from "./finalize.js";
 
 /** Re-export completion types for the command layer. */
-export type { CompletionAction, CompletionResult, CompletionOptions };
-
 /** Resolve a completion checkpoint action directly. */
-export async function resolveCompletionAction(
+void resolveCompletionAction;
+async function resolveCompletionAction(
     options: CoordinatorOptions,
     state: RunState,
     action: CompletionAction,
@@ -58,7 +57,7 @@ export type CoordinatorOpenSpecAdapter = PlanningOpenSpecAdapter & {
 };
 
 /** Native explorer task boundary. The explorer alone writes the managed report. */
-export type ExplorerRunner = {
+type ExplorerRunner = {
     run(input: {
         agent: typeof AGENT_IDS.explorer;
         change: string;

@@ -4,10 +4,10 @@ import { ALL_AGENT_IDS, type AgentId } from "./agents/ids.js";
 import { DEFAULT_MANIFEST, manifestAgentConfig, type SpecOpsManifest } from "./agents/manifest.js";
 import {
     materializeAgentManifest,
-    loadV1Configuration,
     registerManifestAgents,
     resolveManifestPath,
 } from "./installation.js";
+import { loadV1Configuration } from "./config/loader.js";
 import { SpecOpsPlugin } from "./plugin.js";
 
 /**

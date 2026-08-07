@@ -20,7 +20,7 @@ import type { ArchiveError, RunState } from "../state/schema.js";
 import { cancelV1Run, updateV1Run } from "../state/store.js";
 
 /** Adapter surface needed for finalisation preflight and archive. */
-export type FinalizationOpenSpecAdapter = {
+type FinalizationOpenSpecAdapter = {
     version(): Promise<string>;
     assertStandardSchema(change: string): Promise<string>;
     validate(change: string): Promise<OpenSpecValidationResult>;

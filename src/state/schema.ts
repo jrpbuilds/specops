@@ -1,5 +1,5 @@
 /** Current on-disk schema version for coarse SpecOps V1 run state. */
-export const RUN_STATE_VERSION = 1 as const;
+const RUN_STATE_VERSION = 1 as const;
 
 /** Lifecycle status for a coarse SpecOps run. */
 export type RunStatus =
@@ -19,7 +19,7 @@ export type RunStage =
     | "archive";
 
 /** Details retained when a run cannot continue normally. */
-export type RunFailure = {
+type RunFailure = {
     kind: "blocked" | "validation" | "operational" | "archive";
     message: string;
     at: string;

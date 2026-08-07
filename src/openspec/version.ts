@@ -1,6 +1,7 @@
 import { OpenSpecCompatibilityError } from "./errors.js";
 
-export const SUPPORTED_OPENSPEC_RANGE = ">=1.7.0 <1.8.0";
+const SUPPORTED_OPENSPEC_RANGE = ">=1.7.0 <1.8.0";
+void SUPPORTED_OPENSPEC_RANGE;
 
 /** Parse and validate one OpenSpec semantic version from command stdout. */
 export function parseOpenSpecVersion(output: string): string {

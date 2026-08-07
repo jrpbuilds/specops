@@ -38,7 +38,7 @@ export type V1Configuration = {
 export type ConfigurationMigrationReport = { path: string; removedFields: readonly string[] };
 
 /** Default V1 choices defer models and validation policy to explicit users. */
-export const DEFAULT_V1_CONFIGURATION: V1Configuration = {
+const DEFAULT_V1_CONFIGURATION: V1Configuration = {
     version: 1,
     models: Object.fromEntries(ALL_AGENT_IDS.map(id => [id, {}])) as V1Configuration["models"],
     openspec: { command: null },
@@ -98,7 +98,7 @@ export function resolveManifestPath(
 }
 
 /** Resolve the global user-editable SpecOps configuration path. */
-export function resolveGlobalConfigPath(
+function resolveGlobalConfigPath(
     environment: NodeJS.ProcessEnv = process.env,
     homeDirectory: string = os.homedir(),
 ): string {
@@ -124,9 +124,7 @@ export function consumeConfigurationMigrationReports(): ConfigurationMigrationRe
 }
 
 /** Migrate each recognised legacy SpecOps configuration exactly once. */
-export async function migrateV1Configuration(
-    directory: string,
-): Promise<ConfigurationMigrationReport[]> {
+async function migrateV1Configuration(directory: string): Promise<ConfigurationMigrationReport[]> {
     const reports = await Promise.all([
         migrateV1ConfigurationFile(resolveGlobalConfigPath()),
         migrateV1ConfigurationFile(path.join(directory, ".opencode", "specops.json")),

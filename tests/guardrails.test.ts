@@ -72,7 +72,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 1 removes all bundled SpecOps schemas.
-    it.skip("does not bundle specops schemas", async () => {
+    it("does not bundle specops schemas", async () => {
         const schemaRoot = path.join(repositoryRoot, "schemas");
         const schemas = existsSync(schemaRoot) ? await readdir(schemaRoot) : [];
 
@@ -81,7 +81,12 @@ describe("SpecOps 1.0 architecture guardrails", () => {
 
     // Phase 8 replaces the deterministic dispatch protocol.
     it("does not retain old protocol tool IDs", async () => {
-        const protocol = await readFile(path.join(repositoryRoot, "src", "protocol.ts"), "utf8");
+        const protocolPath = path.join(repositoryRoot, "src", "protocol.ts");
+        expect(existsSync(protocolPath)).toBe(false);
+        const protocol = await readFile(
+            path.join(repositoryRoot, "src", "workflow", "tools.ts"),
+            "utf8",
+        );
 
         for (const tool of [
             "specops_start_run",
@@ -98,7 +103,7 @@ describe("SpecOps 1.0 architecture guardrails", () => {
     });
 
     // Phase 2 moves generated prompts to Markdown files.
-    it.skip("ships the seven V1 prompt files", async () => {
+    it("ships the seven V1 prompt files", async () => {
         const prompts = await readdir(path.join(repositoryRoot, "prompts"));
 
         expect(prompts.sort()).toEqual([

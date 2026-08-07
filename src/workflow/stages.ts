@@ -1,7 +1,7 @@
 import type { RunStage, RunState } from "../state/schema.js";
 
 /** Planning stages owned by the Phase 4 coordinator. */
-export const PLANNING_STAGES = ["proposal", "specs", "design", "tasks"] as const;
+const PLANNING_STAGES = ["proposal", "specs", "design", "tasks"] as const;
 
 /** A standard OpenSpec artifact authored during planning. */
 export type PlanningArtifact = (typeof PLANNING_STAGES)[number];

@@ -14,7 +14,7 @@ import {
 } from "./stages.js";
 
 /** The two automatic correction attempts allowed after an initial artifact write. */
-export const MAX_ARTIFACT_CORRECTIONS = 2;
+const MAX_ARTIFACT_CORRECTIONS = 2;
 
 /** Narrow adapter surface needed by planning, intentionally easy to fake in tests. */
 export type PlanningOpenSpecAdapter = {

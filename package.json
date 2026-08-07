@@ -69,9 +69,6 @@
         "node": ">=24.18.1"
     },
     "knip": {
-        "ignoreBinaries": [
-            "opencode"
-        ],
         "ignore": [
             "site/**"
         ]

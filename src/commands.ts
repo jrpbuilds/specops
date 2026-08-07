@@ -18,11 +18,11 @@ export const COMMANDS: NonNullable<Config["command"]> = {
     },
     "specops-status": {
         description: "Show the current SpecOps run status",
-    template: `Call ${WORKFLOW_TOOL_IDS.getStatus} for the active change.`,
+        template: `Call ${WORKFLOW_TOOL_IDS.getStatus} for the active change.`,
     },
     "specops-cancel": {
         description: "Cancel the current SpecOps run and preserve its work",
-    template: `Call ${WORKFLOW_TOOL_IDS.cancel} for the active change.`,
+        template: `Call ${WORKFLOW_TOOL_IDS.cancel} for the active change.`,
     },
     "specops-doctor": {
         description: "Diagnose the SpecOps installation and current project",

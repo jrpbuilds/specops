@@ -31,7 +31,7 @@ describe("V1 workflow protocol", () => {
             "specops_run_validation",
             "specops_start_or_resume",
         ]);
-    expect([...ALL_WORKFLOW_TOOL_IDS].sort()).toEqual(Object.keys(plugin.tool ?? {}).sort());
+        expect([...ALL_WORKFLOW_TOOL_IDS].sort()).toEqual(Object.keys(plugin.tool ?? {}).sort());
     });
 
     it("atomically advances a complete explorer output to the proposal boundary", async () => {

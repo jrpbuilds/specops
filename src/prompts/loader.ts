@@ -14,7 +14,7 @@ const PROMPT_FILES: Record<AgentId, string> = {
 };
 
 /** Resolve the package-relative prompt directory in source and packed installs. */
-export function promptDirectory(): string {
+function promptDirectory(): string {
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
 }
 

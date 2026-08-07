@@ -1,6 +1,6 @@
 import { tool, type Config, type Plugin } from "@opencode-ai/plugin";
 import { COMMANDS } from "./commands.js";
-import { loadV1Configuration } from "./installation.js";
+import { loadV1Configuration } from "./config/loader.js";
 import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { WORKFLOW_TOOL_IDS } from "./workflow/tools.js";
 import { captureRepositoryBaseline } from "./repository/baseline.js";
@@ -29,7 +29,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
         for (const [name, command] of Object.entries(COMMANDS)) config.command[name] ??= command;
     },
     tool: {
-    [WORKFLOW_TOOL_IDS.startOrResume]: tool({
+        [WORKFLOW_TOOL_IDS.startOrResume]: tool({
             description: "Start a V1 run or recover its persisted coarse stage boundary.",
             args: {
                 change: CHANGE_NAME_SCHEMA,
@@ -55,7 +55,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 return JSON.stringify({ kind: "success", state }, null, 2);
             },
         }),
-    [WORKFLOW_TOOL_IDS.reconcileStage]: tool({
+        [WORKFLOW_TOOL_IDS.reconcileStage]: tool({
             description: "Validate one coarse V1 stage boundary and persist its bounded outcome.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
@@ -66,7 +66,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 return JSON.stringify(outcome, null, 2);
             },
         }),
-    [WORKFLOW_TOOL_IDS.getStatus]: tool({
+        [WORKFLOW_TOOL_IDS.getStatus]: tool({
             description: "Read bounded persisted context for a V1 run.",
             args: { change: CHANGE_NAME_SCHEMA },
             async execute(args, context) {
@@ -79,7 +79,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 );
             },
         }),
-    [WORKFLOW_TOOL_IDS.runValidation]: tool({
+        [WORKFLOW_TOOL_IDS.runValidation]: tool({
             description:
                 "Execute one configured validation command shell-free and persist its evidence.",
             args: {
@@ -108,7 +108,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 return JSON.stringify({ kind: "success", state, evidence }, null, 2);
             },
         }),
-    [WORKFLOW_TOOL_IDS.finalize]: tool({
+        [WORKFLOW_TOOL_IDS.finalize]: tool({
             description:
                 "Run V1 completion checks and archive only after explicit completion approval.",
             args: { change: CHANGE_NAME_SCHEMA },
@@ -123,7 +123,7 @@ export const SpecOpsPlugin: Plugin = async () => ({
                 return JSON.stringify(result, null, 2);
             },
         }),
-    [WORKFLOW_TOOL_IDS.cancel]: tool({
+        [WORKFLOW_TOOL_IDS.cancel]: tool({
             description:
                 "Cancel an active V1 run without deleting artifacts or repository changes.",
             args: { change: CHANGE_NAME_SCHEMA },

@@ -14,7 +14,7 @@ export type RepositoryStatusEntry = {
 };
 
 /** Injectable direct process runner for deterministic identity tests. */
-export type RepositoryProcessRunner = (
+type RepositoryProcessRunner = (
     command: string,
     args: string[],
     cwd: string,

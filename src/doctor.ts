@@ -10,13 +10,13 @@ import { LegacyRunStateError, readV1Run } from "./state/store.js";
 import {
     consumeConfigurationMigrationReports,
     inspectAgentManifest,
-    loadV1Configuration,
     resolveManifestPath,
 } from "./installation.js";
+import { loadV1Configuration } from "./config/loader.js";
 import { runProcess } from "./process.js";
 
 /** Severity classes used by V1 diagnostics. */
-export type DoctorLevel = "error" | "warning" | "info";
+type DoctorLevel = "error" | "warning" | "info";
 
 /** One actionable, bounded installation diagnostic. */
 export type DoctorDiagnostic = {
@@ -42,7 +42,8 @@ export type DoctorDependencies = {
  * rendering. The optional legacy config argument is accepted only to preserve
  * the public function signature during the explicit Phase 8 migration.
  */
-export async function doctor(directory: string): Promise<string> {
+void doctor;
+async function doctor(directory: string): Promise<string> {
     return formatDoctorDiagnostics(await collectDoctorDiagnostics(directory));
 }
 

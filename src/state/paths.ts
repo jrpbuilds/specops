@@ -1,19 +1,19 @@
 import path from "node:path";
 
 /** Return the canonical root containing all SpecOps-owned V1 run state. */
-export function runsRoot(directory: string): string {
+function runsRoot(directory: string): string {
     return path.resolve(directory, ".specops", "runs");
 }
 
 /** Validate a change name before it becomes part of a managed filesystem path. */
-export function assertSafeChangeName(change: string): void {
+function assertSafeChangeName(change: string): void {
     if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(change)) {
         throw new Error(`unsafe SpecOps change name: ${change}`);
     }
 }
 
 /** Return the canonical state directory for one change without allowing traversal. */
-export function runDirectory(directory: string, change: string): string {
+function runDirectory(directory: string, change: string): string {
     assertSafeChangeName(change);
     return resolveManagedPath(runsRoot(directory), change);
 }

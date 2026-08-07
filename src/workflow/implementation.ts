@@ -16,8 +16,6 @@ import {
 import type { ValidationCommand } from "../validation/registry.js";
 import { MAX_VALIDATION_FIXES } from "./limits.js";
 
-export { MAX_VALIDATION_FIXES } from "./limits.js";
-
 /** Complete approved artifacts supplied to every implementer invocation. */
 export type ImplementationArtifacts = {
     exploration: string;
@@ -54,7 +52,7 @@ export type ImplementationBlocker =
       };
 
 /** Result reported by the implementer after a bounded implementation attempt. */
-export type ImplementationWorkerResult =
+type ImplementationWorkerResult =
     { kind: "completed" } | { kind: "blocker"; blocker: ImplementationBlocker };
 
 /** Full native-task request for the only code-writing implementation agent. */
@@ -81,12 +79,12 @@ export type ImplementationAgentRequest = {
 };
 
 /** Injectable native task boundary for the implementer. */
-export type ImplementationAgentRunner = {
+type ImplementationAgentRunner = {
     run(request: ImplementationAgentRequest): Promise<ImplementationWorkerResult | void>;
 };
 
 /** Read-only native task boundary for a one-time frontier consultation. */
-export type FrontierRunner = {
+type FrontierRunner = {
     run(request: {
         agent: typeof AGENT_IDS.frontier;
         change: string;

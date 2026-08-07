@@ -17,7 +17,7 @@ export type ReconcileOutcome =
     | { kind: "blocked"; state: RunState; message: string };
 
 /** Minimal OpenSpec validation capability used at planning boundaries. */
-export type ReconcileOpenSpecAdapter = {
+type ReconcileOpenSpecAdapter = {
     validate(item?: string, strict?: boolean): Promise<{ valid: boolean; issues: unknown[] }>;
 };
 

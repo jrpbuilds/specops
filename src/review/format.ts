@@ -18,7 +18,8 @@ export const REVIEW_VERDICTS = ["pass", "changes-required"] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
 /** Return the canonical review artifact shape for reviewer prompts and tests. */
-export function reviewTemplate(repositoryIdentity: string): string {
+void reviewTemplate;
+function reviewTemplate(repositoryIdentity: string): string {
     return [
         "## Verdict",
         "pass",

@@ -1,6 +1,6 @@
 import { object, parseOpenSpecJson, string } from "./json.js";
 
-export type OpenSpecArtifactStatus = {
+type OpenSpecArtifactStatus = {
     id: string;
     outputPath: string;
     status: string;
