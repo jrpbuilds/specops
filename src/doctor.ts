@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALL_AGENT_IDS } from "./agents/ids.js";
 import { AGENT_REGISTRY, agentPrompt } from "./agents/registry.js";
-import type { SpecOpsConfig } from "./config.js";
 import { OpenSpecAdapter } from "./openspec/adapter.js";
 import { renderPrompt } from "./prompts/renderer.js";
 import { LegacyRunStateError, readV1Run } from "./state/store.js";
@@ -43,7 +42,7 @@ export type DoctorDependencies = {
  * rendering. The optional legacy config argument is accepted only to preserve
  * the public function signature during the explicit Phase 8 migration.
  */
-export async function doctor(directory: string, _config?: SpecOpsConfig): Promise<string> {
+export async function doctor(directory: string): Promise<string> {
     return formatDoctorDiagnostics(await collectDoctorDiagnostics(directory));
 }
 

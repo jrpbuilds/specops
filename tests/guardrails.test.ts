@@ -114,9 +114,9 @@ describe("SpecOps 1.0 architecture guardrails", () => {
 
     // Phase 8 reduces the protocol to the V1 tool catalogue.
     it("registers exactly the six V1 workflow tools", async () => {
-        const { ALL_TOOL_IDS } = await import("../src/protocol.js");
+        const { ALL_WORKFLOW_TOOL_IDS } = await import("../src/workflow/tools.js");
 
-        expect([...ALL_TOOL_IDS].sort()).toEqual([
+        expect([...ALL_WORKFLOW_TOOL_IDS].sort()).toEqual([
             "specops_cancel",
             "specops_finalize",
             "specops_get_status",

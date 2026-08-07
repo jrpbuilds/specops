@@ -27,7 +27,7 @@
     "scripts": {
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "generate": "npm run build && node scripts/generate-docs.mjs && npm run format",
+        "generate": "npm run build && npm run format",
         "build": "node scripts/clean.mjs && tsc",
         "clean:specops": "node scripts/clean-specops-cache.mjs",
         "prepublishOnly": "npm run build",

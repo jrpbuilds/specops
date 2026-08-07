@@ -8,7 +8,7 @@ import {
     registerManifestAgents,
     resolveManifestPath,
 } from "./installation.js";
-import { SpecOpsPlugin } from "./orchestrator.js";
+import { SpecOpsPlugin } from "./plugin.js";
 
 /**
  * Default manifest location resolved with OpenCode's XDG configuration rules.

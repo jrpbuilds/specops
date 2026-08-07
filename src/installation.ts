@@ -5,7 +5,6 @@ import path from "node:path";
 import type { Config } from "@opencode-ai/plugin";
 import { ALL_AGENT_IDS, AGENT_IDS, type AgentId } from "./agents/ids.js";
 import { AGENT_REGISTRY } from "./agents/registry.js";
-import type { SpecOpsConfig } from "./config.js";
 import {
     DEFAULT_MANIFEST,
     manifestAgentConfig,
@@ -463,7 +462,7 @@ function mcpToolPattern(serverName: string): string {
 /** Build MCP permission rules for the effective OpenCode server catalogue. */
 function mcpPermissionRules(
     config: Config,
-    mcpPolicy: SpecOpsConfig["integrations"]["mcp"],
+    mcpPolicy: "allow" | "disabled",
 ): Record<string, "allow" | "deny"> {
     const action = mcpPolicy === "disabled" ? "deny" : "allow";
     const servers = config.mcp ?? {};
@@ -496,7 +495,7 @@ function existingAgentPermission(agent: unknown): AgentPermissionConfig {
 export function registerManifestAgents(
     config: Config,
     manifest: SpecOpsManifest,
-    mcpPolicy: SpecOpsConfig["integrations"]["mcp"] = "allow",
+    mcpPolicy: "allow" | "disabled" = "allow",
 ): void {
     config.agent ??= {};
     const mcpRules = mcpPermissionRules(config, mcpPolicy);
