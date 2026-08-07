@@ -35,7 +35,6 @@
         "test": "vitest run",
         "test:packed": "npm run build && node scripts/test-packed-install.mjs",
         "smoke:opencode": "npm run build && SPECOPS_OPENCODE_SMOKE=1 node scripts/test-packed-install.mjs",
-        "eval:review-fixer": "node scripts/evaluate-review-fixer.mjs",
         "onboard": "node scripts/onboard.mjs",
         "test:openspec:compat": "npx --yes @fission-ai/openspec@1.7.0 schemas --json && npx --yes @fission-ai/openspec@1.7.0 validate rewrite-specops-1-0 --strict",
         "docs:check": "node scripts/check-doc-links.mjs && node scripts/check-compatibility.mjs",
