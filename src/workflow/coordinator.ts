@@ -89,7 +89,11 @@ export type CoordinatorResult = (
     | PlanningResult
     | ImplementationResult
     | ReviewResult
-    | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }
+    | {
+          kind: "ready-for-completion";
+          state: RunState;
+          overview: ReturnType<typeof completionOverview>;
+      }
     | CompletionResult
 ) & { resumed: boolean };
 
@@ -126,7 +130,17 @@ export async function startOrResumePlanning(
 async function runWithOperationalFailure(
     options: CoordinatorOptions,
     state: RunState,
-): Promise<PlanningResult | ImplementationResult | ReviewResult | CompletionResult | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }> {
+): Promise<
+    | PlanningResult
+    | ImplementationResult
+    | ReviewResult
+    | CompletionResult
+    | {
+          kind: "ready-for-completion";
+          state: RunState;
+          overview: ReturnType<typeof completionOverview>;
+      }
+> {
     try {
         return await resumePlanning(options, state);
     } catch (error) {
@@ -149,7 +163,17 @@ async function runWithOperationalFailure(
 async function resumePlanning(
     options: CoordinatorOptions,
     state: Awaited<ReturnType<typeof readV1Run>>,
-): Promise<PlanningResult | ImplementationResult | ReviewResult | CompletionResult | { kind: "ready-for-completion"; state: RunState; overview: ReturnType<typeof completionOverview> }> {
+): Promise<
+    | PlanningResult
+    | ImplementationResult
+    | ReviewResult
+    | CompletionResult
+    | {
+          kind: "ready-for-completion";
+          state: RunState;
+          overview: ReturnType<typeof completionOverview>;
+      }
+> {
     if (state.status === "verified" && options.finalize) {
         const result = await resumeVerified(
             { ...options.finalize, directory: options.directory, adapter: options.adapter },
