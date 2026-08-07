@@ -142,3 +142,18 @@ Phase 11 is bounded by the same constraints as the rewrite itself:
 - No state may become `completed` unless upstream OpenSpec archival is proven to have succeeded.
 
 Findings are grouped for remediation in dependency order: active runtime integration (B-01, B-08, B-11), freshness and completion integrity (B-02, B-03, B-04, B-06), permission/filesystem/process/repository-state hardening (B-05, B-07, B-09, B-10), and release-proof correction (B-12 plus non-blocking stale release material). Any finding that would require an architectural amendment rather than a wiring/integrity/hardening fix stops for explicit amendment rather than being silently invented.
+
+### B-02 architectural amendment — dual review identity (implementation + planning artifacts)
+
+B-02 found that a review's reviewed identity excludes the reviewed OpenSpec planning artifacts, so mutating a reviewed `proposal.md`/`specs`/`design.md`/`tasks.md` after a passing review does not invalidate the review. The original architecture deliberately excludes OpenSpec planning artifacts from the implementation repository identity (so toggling `tasks.md` checkboxes does not invalidate implementation validation). That decision is **preserved**: OpenSpec planning artifacts are **not** folded into the implementation repository identity.
+
+Instead a separate deterministic **planning-artifact identity** is introduced. It covers the exact current OpenSpec `proposal.md`, all delta-spec files for the active change, `design.md`, and `tasks.md` that constitute the reviewer's requirements context. It is computed with deterministic ordering and content hashing (SHA-256 over canonical-sorted, non-empty artifact contents) and does not depend on timestamps or conversational state. It fails safely (rejects the gate) if an expected reviewed artifact disappears, becomes unreadable, or cannot be identified. It excludes `.specops` evidence and review output.
+
+A passing review must bind **both** identities:
+
+1. the implementation repository identity it reviewed (existing `reviewedRepositoryState`); and
+2. the planning-artifact identity it reviewed (new `reviewedPlanningArtifactIdentity`, recorded in the review artifact's `Reviewed state` section and in run state).
+
+Review freshness, `verified`-state freshness, and completion preflight require both identities to match current state. Any mutation to reviewed implementation state **or** reviewed planning artifacts invalidates review freshness and requires a fresh review before verification/completion. Unchanged planning artifacts do not invalidate implementation validation evidence (the two identities remain distinct and are never merged into one generic identity).
+
+This is a narrow, explicit amendment to the review freshness contract only. The implementation repository identity, validation evidence binding, and the six-tool catalogue are unchanged.
